@@ -117,7 +117,7 @@ with `bench tasks normalize`:
 
 ```md
 ---
-preset: [code-change]
+profile: [code-change]   # authoring preset; expanded by `bench tasks normalize`
 name: my-namespace/my-task
 image: ubuntu:24.04
 verifier: verifier/
