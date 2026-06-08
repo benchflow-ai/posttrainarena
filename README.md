@@ -65,10 +65,10 @@ tasks/
 - **`oracle/`** — a reference solution that achieves a passing reward, so
   reviewers (and CI) can confirm the task is solvable.
 
-The fastest way to start is to copy the template:
+The fastest way to start is to scaffold one:
 
 ```bash
-cp -R tasks/template tasks/your-task-name
+bench tasks init tasks/your-task-name
 ```
 
 The full authoring reference — frontmatter schema, body sections, verifier and
