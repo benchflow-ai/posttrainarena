@@ -106,7 +106,7 @@ Accepted tasks are released openly.
 ## Links
 
 - Website — https://posttrain.com
-- Task spec — https://posttrain.com/docs/spec
+- Task spec — [SPEC.md](SPEC.md)
 - Environment catalog — https://posttrain.com/catalog
 - Discord — https://discord.gg/mZ9Rc8q8W3
 
