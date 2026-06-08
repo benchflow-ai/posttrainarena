@@ -5,7 +5,7 @@
 Contribute an RL environment. We post-train a model on it and score what
 generalizes across eight under-served domains.
 
-[Website](https://posttrain.com) · [Full spec](https://posttrain.com/docs/spec) · [Browse the catalog](https://posttrain.com/catalog) · [Discord](https://discord.gg/mZ9Rc8q8W3)
+[Website](https://posttrain.com) · [Full spec](SPEC.md) · [Browse the catalog](https://posttrain.com/catalog) · [Discord](https://discord.gg/mZ9Rc8q8W3)
 
 ---
 
@@ -72,8 +72,7 @@ bench tasks init tasks/your-task-name
 ```
 
 The full authoring reference — frontmatter schema, body sections, verifier and
-oracle contracts — is in **[SPEC.md](SPEC.md)** (and rendered at
-[posttrain.com/docs/spec](https://posttrain.com/docs/spec)).
+oracle contracts — is in **[SPEC.md](SPEC.md)**.
 
 ## Validate locally
 
