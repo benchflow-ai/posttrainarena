@@ -1,0 +1,286 @@
+{
+  "workers": [
+    "amara",
+    "boris",
+    "chen",
+    "divya",
+    "elif",
+    "farid",
+    "gita",
+    "hugo",
+    "ines",
+    "jonas"
+  ],
+  "days": [
+    "mon",
+    "tue",
+    "wed",
+    "thu",
+    "fri",
+    "sat",
+    "sun"
+  ],
+  "shifts": [
+    "opening",
+    "midday",
+    "closing"
+  ],
+  "availability": {
+    "amara": {
+      "mon": [
+        "opening"
+      ],
+      "tue": [
+        "closing"
+      ],
+      "wed": [
+        "opening"
+      ],
+      "thu": [
+        "midday"
+      ],
+      "fri": [],
+      "sat": [
+        "opening",
+        "midday"
+      ],
+      "sun": [
+        "closing"
+      ]
+    },
+    "boris": {
+      "mon": [
+        "opening",
+        "midday"
+      ],
+      "tue": [
+        "opening",
+        "midday",
+        "closing"
+      ],
+      "wed": [
+        "opening"
+      ],
+      "thu": [
+        "midday",
+        "closing"
+      ],
+      "fri": [
+        "closing"
+      ],
+      "sat": [
+        "opening",
+        "closing"
+      ],
+      "sun": [
+        "opening",
+        "closing"
+      ]
+    },
+    "chen": {
+      "mon": [
+        "midday"
+      ],
+      "tue": [
+        "opening"
+      ],
+      "wed": [
+        "opening"
+      ],
+      "thu": [
+        "opening",
+        "closing"
+      ],
+      "fri": [],
+      "sat": [
+        "midday",
+        "closing"
+      ],
+      "sun": [
+        "opening",
+        "midday"
+      ]
+    },
+    "divya": {
+      "mon": [
+        "opening",
+        "midday",
+        "closing"
+      ],
+      "tue": [
+        "closing"
+      ],
+      "wed": [
+        "opening",
+        "midday"
+      ],
+      "thu": [
+        "midday",
+        "closing"
+      ],
+      "fri": [
+        "midday",
+        "closing"
+      ],
+      "sat": [
+        "midday",
+        "closing"
+      ],
+      "sun": []
+    },
+    "elif": {
+      "mon": [
+        "closing"
+      ],
+      "tue": [
+        "closing"
+      ],
+      "wed": [
+        "opening",
+        "midday"
+      ],
+      "thu": [],
+      "fri": [
+        "opening",
+        "closing"
+      ],
+      "sat": [
+        "closing"
+      ],
+      "sun": [
+        "opening"
+      ]
+    },
+    "farid": {
+      "mon": [
+        "midday",
+        "closing"
+      ],
+      "tue": [],
+      "wed": [
+        "midday"
+      ],
+      "thu": [
+        "midday",
+        "closing"
+      ],
+      "fri": [
+        "opening"
+      ],
+      "sat": [
+        "midday",
+        "closing"
+      ],
+      "sun": [
+        "opening"
+      ]
+    },
+    "gita": {
+      "mon": [
+        "opening"
+      ],
+      "tue": [
+        "opening"
+      ],
+      "wed": [
+        "closing"
+      ],
+      "thu": [],
+      "fri": [
+        "midday"
+      ],
+      "sat": [
+        "opening"
+      ],
+      "sun": [
+        "opening",
+        "midday",
+        "closing"
+      ]
+    },
+    "hugo": {
+      "mon": [
+        "opening"
+      ],
+      "tue": [
+        "opening",
+        "closing"
+      ],
+      "wed": [
+        "opening",
+        "closing"
+      ],
+      "thu": [
+        "closing"
+      ],
+      "fri": [
+        "midday"
+      ],
+      "sat": [],
+      "sun": [
+        "opening"
+      ]
+    },
+    "ines": {
+      "mon": [
+        "opening"
+      ],
+      "tue": [
+        "opening",
+        "midday"
+      ],
+      "wed": [
+        "midday",
+        "closing"
+      ],
+      "thu": [
+        "opening"
+      ],
+      "fri": [
+        "closing"
+      ],
+      "sat": [],
+      "sun": [
+        "midday"
+      ]
+    },
+    "jonas": {
+      "mon": [
+        "opening",
+        "closing"
+      ],
+      "tue": [
+        "midday",
+        "closing"
+      ],
+      "wed": [
+        "opening",
+        "closing"
+      ],
+      "thu": [
+        "opening",
+        "closing"
+      ],
+      "fri": [
+        "closing"
+      ],
+      "sat": [
+        "midday"
+      ],
+      "sun": [
+        "opening",
+        "midday"
+      ]
+    }
+  },
+  "rules": {
+    "max_shifts_per_day": 1,
+    "max_shifts_per_week": 5,
+    "min_coverage": {
+      "opening": 2,
+      "midday": 2,
+      "closing": 2
+    },
+    "no_closing_then_opening": true
+  }
+}

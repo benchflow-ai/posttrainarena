@@ -1,0 +1,104 @@
+{
+  "schedule": {
+    "mon": {
+      "opening": [
+        "amara",
+        "boris",
+        "divya"
+      ],
+      "midday": [
+        "chen",
+        "divya"
+      ],
+      "closing": [
+        "elif",
+        "farid"
+      ]
+    },
+    "tue": {
+      "opening": [
+        "gita",
+        "hugo"
+      ],
+      "midday": [
+        "ines"
+      ],
+      "closing": [
+        "amara",
+        "boris"
+      ]
+    },
+    "wed": {
+      "opening": [
+        "chen",
+        "divya"
+      ],
+      "midday": [
+        "elif",
+        "farid"
+      ],
+      "closing": [
+        "gita",
+        "hugo"
+      ]
+    },
+    "thu": {
+      "opening": [
+        "ines",
+        "jonas"
+      ],
+      "midday": [
+        "amara",
+        "boris"
+      ],
+      "closing": [
+        "gita",
+        "divya"
+      ]
+    },
+    "fri": {
+      "opening": [
+        "elif",
+        "farid"
+      ],
+      "midday": [
+        "gita",
+        "hugo",
+        "divya"
+      ],
+      "closing": [
+        "ines",
+        "jonas"
+      ]
+    },
+    "sat": {
+      "opening": [
+        "amara",
+        "boris"
+      ],
+      "midday": [
+        "chen",
+        "divya"
+      ],
+      "closing": [
+        "elif",
+        "farid"
+      ]
+    },
+    "sun": {
+      "opening": [
+        "gita",
+        "hugo",
+        "elif"
+      ],
+      "midday": [
+        "ines",
+        "jonas"
+      ],
+      "closing": [
+        "amara",
+        "boris"
+      ]
+    }
+  }
+}

@@ -1,0 +1,137 @@
+name: tasks-check
+
+# Validate every task directory under tasks/ against the task.md contract.
+#
+# Two-stage check:
+#  1. Fast self-contained structural pre-check (scripts/check_task.py) —
+#     runs in ~1s, no benchflow install, catches the obvious mistakes.
+#  2. Real benchflow `bench tasks check --level …` — installs the
+#     dogfood branch from the private benchflow-task-standard repo
+#     and runs schema on every task, publication-grade on the changed ones.
+#
+# Pre-release context: the task.md format the spec describes is not yet
+# in benchflow main or any PyPI release, so CI pulls from the private
+# dogfood branch via a fine-grained PAT (BENCHFLOW_TOKEN, read-only on
+# benchflow-task-standard-private). Once the new format ships on
+# benchflow main, switch to installing from public origin and delete
+# this auth step.
+
+on:
+  pull_request:
+    paths:
+      - "tasks/**"
+      - "scripts/check_task.py"
+      - ".github/workflows/tasks-check.yml"
+  push:
+    branches: [main]
+    paths:
+      - "tasks/**"
+      - "scripts/check_task.py"
+      - ".github/workflows/tasks-check.yml"
+
+concurrency:
+  group: tasks-check-${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  structural:
+    name: structural (self-contained pre-check)
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Structural check
+        run: python3 scripts/check_task.py tasks
+
+  schema:
+    name: bench tasks check --level schema (all tasks)
+    runs-on: ubuntu-latest
+    needs: structural
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+      - name: Clone private benchflow (dogfood branch)
+        # actions/checkout's token path expects classic/fine-grained PATs;
+        # gh user tokens (gho_*) need the x-access-token username form,
+        # so do the clone by hand.
+        env:
+          BENCHFLOW_TOKEN: ${{ secrets.BENCHFLOW_TOKEN }}
+        run: |
+          git clone --depth 1 --branch codex/task-md-dogfood-schema-check \
+            "https://x-access-token:${BENCHFLOW_TOKEN}@github.com/benchflow-ai/benchflow-task-standard-private.git" \
+            .benchflow
+      - uses: astral-sh/setup-uv@v5
+        with:
+          version: "latest"
+      - name: Install benchflow CLI from local checkout
+        run: uv tool install --prerelease=allow ./.benchflow
+      - name: Schema check every task
+        run: |
+          set -e
+          bench --version
+          status=0
+          for d in tasks/*/; do
+            name=$(basename "$d")
+            echo "::group::$name"
+            bench tasks check "$d" --level schema || status=1
+            echo "::endgroup::"
+          done
+          exit $status
+
+  publication-grade:
+    name: bench tasks check --level publication-grade (changed)
+    runs-on: ubuntu-latest
+    needs: schema
+    if: github.event_name == 'pull_request'
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Clone private benchflow (dogfood branch)
+        # actions/checkout's token path expects classic/fine-grained PATs;
+        # gh user tokens (gho_*) need the x-access-token username form,
+        # so do the clone by hand.
+        env:
+          BENCHFLOW_TOKEN: ${{ secrets.BENCHFLOW_TOKEN }}
+        run: |
+          git clone --depth 1 --branch codex/task-md-dogfood-schema-check \
+            "https://x-access-token:${BENCHFLOW_TOKEN}@github.com/benchflow-ai/benchflow-task-standard-private.git" \
+            .benchflow
+      - uses: astral-sh/setup-uv@v5
+        with:
+          version: "latest"
+      - name: Install benchflow CLI from local checkout
+        run: uv tool install --prerelease=allow ./.benchflow
+      - name: Detect changed task directories
+        id: changed
+        run: |
+          base="${{ github.event.pull_request.base.sha }}"
+          head="${{ github.event.pull_request.head.sha }}"
+          dirs=$(git diff --name-only "$base" "$head" -- 'tasks/*/' \
+            | awk -F/ '{print $1"/"$2}' | sort -u)
+          existing=""
+          while IFS= read -r d; do
+            [ -z "$d" ] && continue
+            [ -d "$d" ] && existing="$existing$d\n"
+          done <<< "$dirs"
+          printf "%b" "$existing" | tr -d '\r' > /tmp/changed-tasks.txt
+          count=$(wc -l < /tmp/changed-tasks.txt | tr -d ' ')
+          echo "count=$count" >> "$GITHUB_OUTPUT"
+          echo "Changed task dirs ($count):"
+          cat /tmp/changed-tasks.txt || true
+      - name: Publication-grade check (changed tasks)
+        if: steps.changed.outputs.count != '0'
+        run: |
+          set -e
+          status=0
+          while IFS= read -r d; do
+            [ -z "$d" ] && continue
+            echo "::group::$d"
+            bench tasks check "$d" --level publication-grade --sandbox docker || status=1
+            echo "::endgroup::"
+          done < /tmp/changed-tasks.txt
+          exit $status
