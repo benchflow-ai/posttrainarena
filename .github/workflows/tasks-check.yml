@@ -20,13 +20,17 @@ on:
   pull_request:
     paths:
       - "tasks/**"
+      - "submissions/**"
       - "scripts/check_task.py"
+      - "scripts/check_submission.py"
       - ".github/workflows/tasks-check.yml"
   push:
-    branches: [main]
+    branches: [main, tailwind-migration]
     paths:
       - "tasks/**"
+      - "submissions/**"
       - "scripts/check_task.py"
+      - "scripts/check_submission.py"
       - ".github/workflows/tasks-check.yml"
 
 concurrency:
@@ -39,12 +43,24 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 2
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
       - name: Structural check
         run: python3 scripts/check_task.py tasks
+
+  submissions:
+    name: team submission bounds + structure
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Validate team submissions
+        run: python3 scripts/check_submission.py
 
   schema:
     name: bench tasks check --level schema (all tasks)
@@ -52,7 +68,7 @@ jobs:
     needs: structural
     timeout-minutes: 6
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Clone private benchflow (dogfood branch)
         # actions/checkout's token path expects classic/fine-grained PATs;
         # gh user tokens (gho_*) need the x-access-token username form,
@@ -88,7 +104,7 @@ jobs:
     if: github.event_name == 'pull_request'
     timeout-minutes: 25
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0
       - name: Clone private benchflow (dogfood branch)

@@ -1,10 +1,17 @@
-# PostTrain Arena — tasks
+# PostTrain Arena — starting-kit examples
 
-Every directory at this level is one submission. The full authoring
-reference lives at <https://posttrain.com/docs/spec>; this README is a
-short index to what is here.
+Every directory at this level is one **example task package**, authored
+by the organizing team to exercise the `task.md` contract (frontmatter
+limits + prompt, an `environment/` Dockerfile with seed data, a
+pytest-based `verifier/`, and an `oracle/` that produces a passing
+trial). These are reference material for the starting kit — they are
+**not competition entries**. Team entries are corpora of 50–200
+environments and live under [`submissions/`](../submissions).
 
-## Current pool
+The full authoring reference lives at <https://posttrain.com/docs/spec>;
+this README is a short index to what is here.
+
+## Examples
 
 | Task | Author | Category | Difficulty |
 |---|---|---|---|
@@ -17,22 +24,29 @@ short index to what is here.
 | [`sensor-calibration-fit`](./sensor-calibration-fit) | Xiangyi Li | industrial-physical-systems | medium |
 | [`shift-schedule-verify`](./shift-schedule-verify) | Xiangyi Li | mathematics-or-formal-reasoning | medium |
 
-All three were ported from [SkillsBench](https://skillsbench.ai) as the
-first reference set — they exercise every part of the `task.md` contract
-(frontmatter limits + prompt, an `environment/` Dockerfile with seed
-data and bundled skills, a pytest-based `verifier/`, and an `oracle/`
-that produces a passing trial).
+The three `skillsbench-*` tasks were ported from
+[SkillsBench](https://skillsbench.ai) as the first reference set; the
+rest were authored while dogfooding the submission flow.
 
-## Adding a task
+A note on vocabulary: the `category` slugs in task frontmatter follow
+the SkillsBench taxonomy. The competition's public domain list uses
+display names (Sciences, Industrial & Energy Operations, …); the
+authoritative slug↔domain mapping will be finalized in the competition
+white-paper and starting kit.
 
-1. Copy [`template/`](./template) to `tasks/your-task-name/`.
+## Authoring your own
+
+1. Copy [`template/`](./template) into your team entry under
+   `submissions/<your-team>/envs/<your-env-name>/`.
 2. Fill in `task.md`, `environment/Dockerfile` and any seed data,
    `verifier/test_outputs.py`, and `oracle/solve.sh`.
-3. Run `bench tasks check ./tasks/your-task-name --level publication-grade`
-   until everything passes.
+3. Run `python3 scripts/check_task.py` and
+   `bench tasks check <dir> --level publication-grade` until everything
+   passes, and prove the oracle with a live docker run.
 4. Open a pull request.
 
-See [CONTRIBUTING.md](../CONTRIBUTING.md) for the full review checklist.
+See [CONTRIBUTING.md](../CONTRIBUTING.md) for the submission model
+(tracks, per-team bounds, phases) and the full review checklist.
 
 ## Naming
 
