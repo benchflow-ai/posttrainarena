@@ -1,6 +1,7 @@
-# PostTrain Arena — starting-kit examples
+# PostTrain Arena — starting kit
 
-Every directory at this level is one **example task package**, authored
+Every directory under [`examples/`](./examples) is one **example task
+package**, authored
 by the organizing team to exercise the `task.md` contract (frontmatter
 limits + prompt, an `environment/` Dockerfile with seed data, a
 pytest-based `verifier/`, and an `oracle/` that produces a passing
@@ -15,14 +16,14 @@ this README is a short index to what is here.
 
 | Task | Author | Category | Difficulty |
 |---|---|---|---|
-| [`dogfood-hello-text`](./dogfood-hello-text) | Xiangyi Li | software-engineering | easy |
-| [`skillsbench-3d-scan-calc`](./skillsbench-3d-scan-calc) | Wengao Ye | industrial-physical-systems | hard |
-| [`skillsbench-citation-check`](./skillsbench-citation-check) | Xuandong Zhao | office-white-collar | medium |
-| [`skillsbench-weighted-gdp-calc`](./skillsbench-weighted-gdp-calc) | Xiangyi Li | finance-economics | medium |
-| [`seclog-bruteforce-triage`](./seclog-bruteforce-triage) | Xiangyi Li | cybersecurity | medium |
-| [`subtitle-overlap-qc`](./subtitle-overlap-qc) | Xiangyi Li | media-content-production | medium |
-| [`sensor-calibration-fit`](./sensor-calibration-fit) | Xiangyi Li | industrial-physical-systems | medium |
-| [`shift-schedule-verify`](./shift-schedule-verify) | Xiangyi Li | mathematics-or-formal-reasoning | medium |
+| [`dogfood-hello-text`](./examples/dogfood-hello-text) | Xiangyi Li | software-engineering | easy |
+| [`skillsbench-3d-scan-calc`](./examples/skillsbench-3d-scan-calc) | Wengao Ye | industrial-physical-systems | hard |
+| [`skillsbench-citation-check`](./examples/skillsbench-citation-check) | Xuandong Zhao | office-white-collar | medium |
+| [`skillsbench-weighted-gdp-calc`](./examples/skillsbench-weighted-gdp-calc) | Xiangyi Li | finance-economics | medium |
+| [`seclog-bruteforce-triage`](./examples/seclog-bruteforce-triage) | Xiangyi Li | cybersecurity | medium |
+| [`subtitle-overlap-qc`](./examples/subtitle-overlap-qc) | Xiangyi Li | media-content-production | medium |
+| [`sensor-calibration-fit`](./examples/sensor-calibration-fit) | Xiangyi Li | industrial-physical-systems | medium |
+| [`shift-schedule-verify`](./examples/shift-schedule-verify) | Xiangyi Li | mathematics-or-formal-reasoning | medium |
 
 The three `skillsbench-*` tasks were ported from
 [SkillsBench](https://skillsbench.ai) as the first reference set; the
@@ -40,9 +41,10 @@ white-paper and starting kit.
    `submissions/<your-team>/envs/<your-env-name>/`.
 2. Fill in `task.md`, `environment/Dockerfile` and any seed data,
    `verifier/test_outputs.py`, and `oracle/solve.sh`.
-3. Run `python3 scripts/check_task.py` and
-   `bench tasks check <dir> --level publication-grade` until everything
-   passes, and prove the oracle with a live docker run.
+3. Validate: `python3 scripts/check_task.py <your envs dir>`, then
+   `scripts/run_local.sh <your env>` (oracle replay must score 1.0)
+   and `scripts/run_local.sh <your env> --skip-oracle` (empty trial
+   must not).
 4. Open a pull request.
 
 See [CONTRIBUTING.md](../CONTRIBUTING.md) for the submission model

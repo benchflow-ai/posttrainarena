@@ -38,29 +38,34 @@ team submissions.
 
 ## What is in this repo
 
-- [`tasks/`](./tasks) — organizer-authored **starting-kit examples**
-  exercising the full task contract (`task.md` + `environment/` +
-  `verifier/` + `oracle/`). Not competition entries.
+- [`starting-kit/`](./starting-kit) — the task template and
+  organizer-authored **examples** exercising the full task contract
+  (`task.md` + `environment/` + `verifier/` + `oracle/`). Not
+  competition entries.
 - [`submissions/`](./submissions) — the team submission tree: one
   directory per team entry with a `submission.yaml` manifest. See its
   README for layout and bounds.
-- [`scripts/check_task.py`](./scripts/check_task.py) and
-  [`scripts/check_submission.py`](./scripts/check_submission.py) —
-  fast self-contained local checks (the same ones CI runs first).
+- [`scripts/`](./scripts) — fully self-contained local checks: the
+  structural and submission validators CI runs, plus
+  [`run_local.sh`](./scripts/run_local.sh), a docker harness that
+  builds your image, replays your oracle, and scores it with your
+  verifier. No benchflow install, no tokens.
 - [`.github/workflows/tasks-check.yml`](./.github/workflows/tasks-check.yml)
-  — CI: structural + submission bounds → schema → publication-grade.
-  The gauntlet grows to oracle execution and leakage audits before
-  Phase 0.
+  — CI: the same two self-contained checks, identical for fork PRs.
+  The deeper gauntlet (oracle execution, instruction screening,
+  leakage audit) runs in the managed pipeline before Phase 0.
 
 ## Quick start
 
 ```bash
 mkdir -p submissions/your-team/envs
-cp -R tasks/template submissions/your-team/envs/your-env-name
+cp -R starting-kit/template submissions/your-team/envs/your-env-name
 # fill in task.md, environment/, verifier/, oracle/
 # add submissions/your-team/submission.yaml (see submissions/README.md)
 python3 scripts/check_task.py submissions/your-team/envs
 python3 scripts/check_submission.py
+scripts/run_local.sh submissions/your-team/envs/your-env-name                # oracle: expect 1.0
+scripts/run_local.sh submissions/your-team/envs/your-env-name --skip-oracle # empty: expect 0.0
 ```
 
 Then see [CONTRIBUTING.md](./CONTRIBUTING.md) for the submission

@@ -4,8 +4,8 @@ PostTrain Arena is a proposed NeurIPS 2026 competition: teams
 contribute containerized RL environments, the organizers run a managed
 SFT→GRPO post-training pipeline on **each team's corpus**, and entries
 are ranked by the held-out generalization delta of the resulting
-checkpoint. This repo hosts the starting-kit material (the task
-template and worked examples under [`tasks/`](./tasks)) and the team
+checkpoint. This repo hosts the starting kit (the task template and
+worked examples under [`starting-kit/`](./starting-kit)) and the team
 submission tree ([`submissions/`](./submissions)).
 
 The full authoring reference lives at
@@ -52,41 +52,41 @@ competition; teams may flag individual environments as
 
 Every environment package is one directory with four parts: `task.md`,
 `environment/`, `verifier/`, `oracle/`. The
-[task template](./tasks/template) is the fastest way to start; the
-worked examples under [`tasks/`](./tasks) exercise every part of the
-contract.
+[task template](./starting-kit/template) is the fastest way to start;
+the worked examples under
+[`starting-kit/examples/`](./starting-kit/examples) exercise every
+part of the contract.
 
 ### Step-by-step
 
 1. **Copy the template** into your team entry:
    ```bash
-   cp -R tasks/template submissions/your-team/envs/your-env-name
+   cp -R starting-kit/template submissions/your-team/envs/your-env-name
    ```
    Pick a name following `<env-or-domain>-<short-description>` — for
    example `gmail-workflow-delegation`. Category, modality, and any
    safety qualifier belong in the frontmatter, not the directory name.
 2. **Fill in the four parts.** Read the
    [spec](https://posttrain.com/docs/spec) for the full reference; the
-   [`tasks/`](./tasks) examples show real layouts.
-3. **Validate locally:**
+   [`starting-kit/examples/`](./starting-kit/examples) show real
+   layouts.
+3. **Validate locally** — everything runs with just python3 and
+   docker, no benchflow install:
    ```bash
    # Structural — fast, no Docker required
    python3 scripts/check_task.py submissions/your-team/envs
    python3 scripts/check_submission.py
 
-   # Schema-only via the benchflow CLI
-   bench tasks check ./submissions/your-team/envs/your-env-name --level schema
+   # Oracle replay — build the image, run your oracle, score it
+   scripts/run_local.sh submissions/your-team/envs/your-env-name
 
-   # Publication-grade — package-contract check
-   bench tasks check ./submissions/your-team/envs/your-env-name --level publication-grade
+   # Empty trial — prove the verifier rejects a do-nothing run
+   scripts/run_local.sh submissions/your-team/envs/your-env-name --skip-oracle
    ```
-   Get to a clean publication-grade run before opening a PR, and prove
-   oracle solvability with a live run (e.g.
-   `bench eval create --agent oracle --sandbox docker`) — the
-   publication-grade gate alone does not execute the oracle.
+   Get all four green before opening a PR: the oracle replay must
+   score 1.0 and the empty trial must not.
 4. **Open a pull request** adding or updating your team entry. In the
-   description, paste the tail of your check output and the oracle-run
-   evidence.
+   description, paste the tail of both `run_local.sh` runs.
 
 ### What reviewers check
 
@@ -121,38 +121,19 @@ on Discord and we will route it.
 
 ### CI: `tasks-check` workflow
 
-`.github/workflows/tasks-check.yml` runs four jobs:
+`.github/workflows/tasks-check.yml` runs two fully self-contained
+jobs — no secrets, no private dependencies, so fork PRs get exactly
+the same checks as everyone else:
 
 1. **structural** — `scripts/check_task.py`, ~1s, no external deps.
 2. **submissions** — `scripts/check_submission.py`: team manifest,
-   track bounds (warn below min, fail above max), per-package
-   structure.
-3. **schema** — `bench tasks check --level schema` on every task.
-4. **publication-grade** — `bench tasks check --level publication-grade --sandbox docker` on PR-changed tasks only.
+   track bounds (warn below min until the Phase 2 freeze, fail above
+   max), per-package structure.
 
-Jobs 3 and 4 install the benchflow CLI from the **private**
-`benchflow-ai/benchflow-task-standard-private` repo (branch
-`codex/task-md-dogfood-schema-check`), because the `task.md` format and
-the multi-level check live on a pre-release dogfood branch.
-
-**Required repo secret:** `BENCHFLOW_TOKEN` — a fine-grained PAT with
-read access to `benchflow-ai/benchflow-task-standard-private`
-(Contents: read). Configure under *Settings → Secrets and variables →
-Actions → New repository secret*. Without it, jobs 3 and 4 fail at
-checkout time; jobs 1–2 keep running so PRs still get fast feedback on
-the obvious mistakes.
-
-**Known limitation — fork PRs:** GitHub does not expose repository
-secrets to workflows triggered by pull requests from forks, so jobs 3
-and 4 will fail at the private-repo checkout on every external
-contribution. Until the format ships publicly, treat jobs 1–2 as the
-only required checks on fork PRs and rely on the contributor's pasted
-local output plus maintainer re-runs for the rest.
-
-Once the new format ships on `benchflow-ai/benchflow` main, swap the
-private clone steps for a single
-`uv tool install --prerelease=allow 'benchflow @ git+https://github.com/benchflow-ai/benchflow@main'`
-step and drop the `BENCHFLOW_TOKEN` secret.
+Everything deeper — schema validation, oracle execution,
+instruction-quality screening, the leakage audit — runs in the managed
+pipeline after a PR is opened, and locally via
+`scripts/run_local.sh` (docker only, no benchflow install).
 
 ## Getting help
 

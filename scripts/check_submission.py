@@ -13,8 +13,8 @@ team, on one track:
 Validates:
 - submission.yaml exists with team_name, contact_email, and a known track
 - the entry has at least one package for its track
-- environment packages pass the same structural check as tasks/
-  (delegated to scripts/check_task.py)
+- environment packages pass the same structural check as the
+  starting-kit examples (delegated to scripts/check_task.py)
 - skill packages contain a SKILL.md
 - entry count is within the track's bounds: environments 50/100/200
   min/rec/max per entry, skills 20/50/100. Counts above max are errors;

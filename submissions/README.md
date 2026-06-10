@@ -37,13 +37,14 @@ Directory names starting with `_` are ignored by CI (scratch space).
 ## Validating locally
 
 ```bash
-python3 scripts/check_submission.py            # checks submissions/
+python3 scripts/check_submission.py            # manifest + bounds + structure
 python3 scripts/check_task.py submissions/<team-entry>/envs
+scripts/run_local.sh submissions/<team-entry>/envs/<env>   # oracle replay
 ```
 
 Each environment package follows the same contract as the
-[starting-kit examples](../tasks/) — start from
-[`tasks/template/`](../tasks/template) and see
+[starting-kit examples](../starting-kit/examples) — start from
+[`starting-kit/template/`](../starting-kit/template) and see
 [CONTRIBUTING.md](../CONTRIBUTING.md) for the full walkthrough,
 validation ladder, and reviewer checklist.
 

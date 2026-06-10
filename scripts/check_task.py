@@ -148,7 +148,7 @@ def iter_task_dirs(roots: Iterable[str]) -> Iterable[Path]:
 
 
 def main(argv: list[str]) -> int:
-    targets = argv[1:] or ["tasks"]
+    targets = argv[1:] or ["starting-kit/examples", "starting-kit/template"]
     overall_ok = True
     any_seen = False
     for task_dir in iter_task_dirs(targets):
