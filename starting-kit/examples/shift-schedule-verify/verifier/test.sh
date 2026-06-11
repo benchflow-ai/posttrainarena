@@ -16,7 +16,8 @@ PYTEST_BIN="${BENCHFLOW_PYTEST_BIN:-pytest}"
 
 mkdir -p "$(dirname "$REWARD_TEXT")" "$(dirname "$REWARD_JSON")" "$(dirname "$CTRF_JSON")"
 
-if [ "${BENCHFLOW_SKIP_VERIFIER_DEPS:-0}" = "1" ]; then
+if [ "${BENCHFLOW_SKIP_VERIFIER_DEPS:-0}" = "1" ] || command -v "$PYTEST_BIN" > /dev/null 2>&1; then
+  # pytest is in the image (or named via BENCHFLOW_PYTEST_BIN) — use it.
   "$PYTEST_BIN" --ctrf "$CTRF_JSON" "$VERIFIER_DIR/test_outputs.py" -rA -v
 else
   apt-get update
