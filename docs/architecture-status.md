@@ -29,6 +29,7 @@ The supported executable reference is the Qwen3-4B pipeline under
 
 ```text
 PostTrain task lists and pinned HF snapshots
+    -> direct BenchFlow or OpenEnv protocol integration
     -> BenchFlow task loading and sandbox lifecycle
     -> BenchFlow run_bash / submit agent harness
     -> verifier-approved teacher trajectories
@@ -68,52 +69,62 @@ competition-scale readiness.
 | Docker runtime | Implemented | Local author harness and BenchFlow runtime option |
 | Daytona runtime | Implemented in pipeline | BenchFlow runtime option; credentials required for real execution |
 | TRL SFT | Implemented | Tool-aware LoRA SFT and merged checkpoint path |
-| TRL GRPO | Implemented and reward-gated | Runs only after a training-task reward gate passes |
+| TRL GRPO | Implemented | Reward-gated by default; explicit `always` policy supports zero-reward plumbing runs |
 | Harbor | Not a dependency | No Harbor adapter or trajectory translation is used |
-| OpenEnv client/server lifecycle | **Not implemented** | No `openenv` dependency, `openenv.yaml`, `EnvClient`, served environment, or lifecycle test exists |
+| OpenEnv client/server lifecycle | Implemented | Pinned dependency, served adapter, typed client, real lifecycle tests, finalization, state, and session isolation |
+| OpenEnv/BenchFlow Docker parity | Manually validated | Checked-in security task produced identical output and reward `1.0` through both integrations; CI uses a no-spend fake BenchFlow boundary |
 | HF Jobs execution | **Not implemented** | No HF Jobs launcher or deployment workflow exists |
 | Final Qwen3-8B competition recipe | Draft | Current reproducible reference pins Qwen3-4B |
 | Demonstrated model-quality lift | Not yet | Reproduced smoke measured zero lift |
 
-## OpenEnv roadmap
+## OpenEnv integration
 
-The current repository is **not OpenEnv-compatible**. A BenchFlow environment
-method named `reset` is not evidence of OpenEnv compatibility. Credible
-compatibility requires an actual OpenEnv client/server surface and an
-end-to-end lifecycle test.
-
-The minimum adapter should provide:
+The supported path is:
 
 ```text
-integrations/openenv/
-  openenv.yaml
-  models.py
-  client.py
-  server/
-    app.py
-    posttrain_environment.py
-  tests/
-    test_lifecycle.py
-    test_task_adapter.py
+TRL
+    -> OpenEnv environment_factory adapter
+    -> OpenEnv client/server protocol
+    -> BenchFlow task, verifier, reward, and artifact engine
+    -> Docker or Daytona
 ```
 
-Acceptance requires all of the following:
+The implementation is intentionally a protocol layer:
 
-1. Start an OpenEnv-compatible server around a checked-in PostTrain task.
+```text
+benchflow_pipeline/openenv/
+  models.py
+  client.py
+  server.py
+  tool_env.py
+```
+
+Real OpenEnv HTTP/WebSocket tests verify:
+
+1. Start an OpenEnv server around the BenchFlow adapter.
 2. Connect with the real OpenEnv client.
 3. Call `reset`, execute one or more `step` actions, and retrieve state.
-4. Terminate or submit the episode and run the existing verifier.
+4. Submit or finalize an unsubmitted episode.
 5. Return reward, completion state, and artifact references through OpenEnv
    models.
 6. Reset again and prove sandbox isolation.
-7. Pass a no-secret Docker lifecycle test in CI.
-8. Document the mapping between one-shot PostTrain trials and long-lived
-   OpenEnv episodes.
+7. Keep concurrent sessions isolated.
+
+A manual Docker parity canary also runs the same checked-in task and verifier
+through the direct and OpenEnv integrations. Both paths produced identical
+oracle output, reward `1.0`, and complete BenchFlow artifact trees. The
+protocol lifecycle tests run in CI; the Docker canary remains an operator test.
+
+Set `runtime.openenv_url` only for a separately deployed copy that shares the
+pipeline's pinned task snapshots and BenchFlow artifact filesystem. When
+omitted, the pipeline starts a local server. A general remote deployment still
+requires task-resolution and artifact-transfer contracts. In both current
+cases, BenchFlow remains the task/runtime/eval engine.
 
 The related upstream discussion is
 [huggingface/OpenEnv#898](https://github.com/huggingface/OpenEnv/issues/898).
-That issue proposes validation support inside OpenEnv; it does not make this
-repository OpenEnv-compatible.
+That issue proposes validation support inside OpenEnv. This repository's
+compatibility comes from the adapter and lifecycle tests above.
 
 ## Documentation precedence
 

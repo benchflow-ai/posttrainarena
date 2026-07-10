@@ -7,7 +7,7 @@ It accepts explicit training and held-out evaluation task lists and produces a
 versioned score report after SFT and optional GRPO.
 
 For the broader system boundaries and compatibility matrix, including the
-current absence of an OpenEnv adapter, see
+implemented OpenEnv adapter boundary, see
 [`architecture-status.md`](architecture-status.md).
 
 ```text
@@ -18,7 +18,7 @@ training task list + held-out eval task list + pinned TOML recipe
     -> convert and validate tool-aware SFT data
     -> train and merge a LoRA SFT checkpoint
     -> evaluate a training-task reward gate
-    -> run GRPO only when the gate passes
+    -> run GRPO according to the configured run policy
     -> evaluate the final model on held-out tasks
     -> write paired lift and score reports
 ```
@@ -28,9 +28,34 @@ BenchFlow owns task snapshots, Daytona or Docker sandboxes, the `run_bash` and
 evaluation. TRL owns SFT and GRPO optimization. The pipeline is Harbor-free and
 does not translate Harbor trajectories.
 
-This is a BenchFlow runtime integration, not an OpenEnv implementation. It does
-not expose an OpenEnv `EnvClient`, served `Environment`, `openenv.yaml`, or HF
-Jobs launcher.
+OpenEnv is an optional protocol adapter in front of the same BenchFlow engine.
+The adapter exposes a real served `Environment` and typed `EnvClient`; it does
+not duplicate BenchFlow task loading, sandboxes, verifiers, rewards, artifacts,
+or held-out evaluation. HF Jobs launch remains out of scope.
+
+`runtime.openenv_url` currently supports only deployments that share the task
+snapshot and BenchFlow artifact filesystem with the pipeline process. A fully
+remote deployment needs a future task-resolution and artifact-transfer protocol.
+
+SFT optimization consumes verified tool-aware rows and does not call the
+environment. Environment interaction occurs during teacher collection,
+evaluation, the reward gate, and GRPO rollouts.
+
+```mermaid
+flowchart LR
+    Input["PostTrain task packages + pinned recipe"] --> Pipeline["PostTrain pipeline"]
+    Pipeline --> TRL["TRL SFT + GRPO"]
+    TRL --> Backend{"Environment integration"}
+    Backend --> Direct["Direct BenchFlow"]
+    Backend --> OE["OpenEnv protocol"]
+    OE --> BF["BenchFlow task + verifier"]
+    Direct --> BF
+    BF --> Runtime["Docker / Daytona"]
+    Runtime --> BF
+    BF --> TRL
+    TRL --> Eval["Held-out BenchFlow evaluation"]
+    Eval --> Output["score.json + paired lift artifacts"]
+```
 
 ## Public contract
 
@@ -106,10 +131,10 @@ Dry-run records the full possible path, including conditional GRPO. Therefore
 | `[model]` | Base model ID and immutable model revision |
 | `[train_dataset]` | HF task repository, revision, path, and training task-list file |
 | `[eval_dataset]` | Separate HF repository/revision and held-out task-list file |
-| `[runtime]` | Daytona or Docker sandbox, tool limits, generation counts, and vLLM toggle |
+| `[runtime]` | Direct/OpenEnv integration, Daytona/Docker sandbox, tool limits, generation counts, and vLLM toggle |
 | `[teacher]` | Teacher model, credential variable names, attempts, and required verified rows |
 | `[sft]` | Enable flag, optimizer settings, sequence length, and LoRA dimensions |
-| `[grpo]` | Enable flag, training-task gate threshold/count, optimizer settings, and steps |
+| `[grpo]` | Enable flag, run policy, training-task gate threshold/count, optimizer settings, and steps |
 | `[tracking]` | W&B or disabled reporting |
 | `[output]` | Run root relative to the recipe |
 
@@ -169,8 +194,10 @@ GRPO then starts from the pinned base model. It still gates on training tasks;
 the held-out eval set is never used to decide whether to train. Set
 `[grpo].enabled = false` for SFT-only runs.
 
-GRPO runs only when reward on the first `[grpo].gate_task_count` training tasks
-is at least `[grpo].threshold`. A skipped GRPO stage is a valid result. Larger
+By default, GRPO runs only when reward on the first `[grpo].gate_task_count`
+training tasks is at least `[grpo].threshold`. `run_policy = "always"` forces
+the stage even at zero reward to validate plumbing; it is not a learning
+recommendation. A skipped GRPO stage is a valid result. Larger
 experiments should use separate training, development/gate, and final held-out
 lists.
 

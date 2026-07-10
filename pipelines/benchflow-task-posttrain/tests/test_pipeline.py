@@ -83,3 +83,22 @@ def test_rl_only_dry_run_uses_base_model(tmp_path: Path) -> None:
     )
     assert result["grpo_planned"] is True
     assert result["grpo_ran"] is False
+
+
+def test_grpo_run_policy_can_force_zero_reward_training(tmp_path: Path) -> None:
+    config = load_config(ROOT / "configs/qwen3-4b-data-agent-smoke.toml")
+    gated = Pipeline(
+        replace(config, output_root=tmp_path), run_name="gated", dry_run=False
+    )
+    forced = Pipeline(
+        replace(
+            config,
+            output_root=tmp_path,
+            grpo=replace(config.grpo, run_policy="always"),
+        ),
+        run_name="forced",
+        dry_run=False,
+    )
+
+    assert gated._should_run_grpo(0.0) is False
+    assert forced._should_run_grpo(0.0) is True

@@ -20,11 +20,16 @@ Documentation = "https://github.com/benchflow-ai/posttrainarena/blob/main/docs/t
 [project.optional-dependencies]
 train = [
   "benchflow[trl,sandbox-daytona] @ git+https://github.com/benchflow-ai/benchflow.git@0b41232cf02e9c4f22c01e284724dd2a02c3f468",
+  "openenv @ git+https://github.com/huggingface/OpenEnv.git@6823135a714814e3efb3e39c4a9edff01e1a2a98",
   "openai>=2.0",
   "peft>=0.18,<0.19",
   "wandb>=0.25,<0.26",
 ]
-test = ["pytest>=8.0"]
+test = [
+  "benchflow[trl] @ git+https://github.com/benchflow-ai/benchflow.git@0b41232cf02e9c4f22c01e284724dd2a02c3f468",
+  "openenv @ git+https://github.com/huggingface/OpenEnv.git@6823135a714814e3efb3e39c4a9edff01e1a2a98",
+  "pytest>=8.0",
+]
 
 [project.scripts]
 posttrainarena-train = "posttrainarena.benchflow_pipeline.cli:main"

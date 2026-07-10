@@ -15,8 +15,11 @@ path = "tasks"
 task_list = "../task-lists/data-agent-eval-2.txt"
 
 [runtime]
-integration = "benchflow"
+integration = "openenv"
 sandbox = "daytona"
+# openenv_url is supported only when client and server share the pinned task
+# snapshots and BenchFlow artifact filesystem. When omitted, the pipeline
+# starts a real local OpenEnv server around BenchFlow.
 sandbox_user = "agent"
 bash_timeout_sec = 120
 max_output_chars = 8192
@@ -46,7 +49,8 @@ lora_alpha = 32
 
 [grpo]
 enabled = true
-run_policy = "on_reward"
+# Plumbing mode: run GRPO even when the training-task gate reward is zero.
+run_policy = "always"
 threshold = 0.05
 gate_task_count = 4
 max_steps = 2
