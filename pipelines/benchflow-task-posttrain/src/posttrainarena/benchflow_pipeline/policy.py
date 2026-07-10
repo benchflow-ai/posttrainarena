@@ -34,11 +34,12 @@ def _common(config: PipelineConfig, output_dir: Path, run_name: str) -> dict[str
     }
 
 
-def _model_init_kwargs(config: PipelineConfig, model: str) -> dict[str, Any] | None:
-    if model != config.model:
-        return None
-    values: dict[str, Any] = {"trust_remote_code": True}
-    if config.model_revision:
+def _model_init_kwargs(config: PipelineConfig, model: str) -> dict[str, Any]:
+    values: dict[str, Any] = {
+        "trust_remote_code": True,
+        "torch_dtype": "bfloat16",
+    }
+    if model == config.model and config.model_revision:
         values["revision"] = config.model_revision
     return values
 
@@ -79,9 +80,7 @@ def evaluate(
             "num_generations": config.runtime.num_generations,
             "num_generations_eval": 1,
         }
-        model_init_kwargs = _model_init_kwargs(config, model)
-        if model_init_kwargs:
-            values["model_init_kwargs"] = model_init_kwargs
+        values["model_init_kwargs"] = _model_init_kwargs(config, model)
         trainer = GRPOTrainer(
             model=model,
             args=GRPOConfig(**supported_kwargs(GRPOConfig, values)),
@@ -145,12 +144,10 @@ def train_grpo(
             "generation_batch_size": config.runtime.num_generations,
             "learning_rate": config.grpo.learning_rate,
             "max_steps": config.grpo.max_steps,
-            "save_steps": max(1, config.grpo.max_steps),
+            "save_strategy": "no",
             "num_generations": config.runtime.num_generations,
         }
-        model_init_kwargs = _model_init_kwargs(config, model)
-        if model_init_kwargs:
-            values["model_init_kwargs"] = model_init_kwargs
+        values["model_init_kwargs"] = _model_init_kwargs(config, model)
         trainer = GRPOTrainer(
             model=model,
             args=GRPOConfig(**supported_kwargs(GRPOConfig, values)),
