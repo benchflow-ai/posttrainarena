@@ -55,7 +55,7 @@ def train_sft(
     tokenizer = AutoTokenizer.from_pretrained(config.model, **model_kwargs)
     dataset = Dataset.from_list(render_rows(train_jsonl, tokenizer))
     model = AutoModelForCausalLM.from_pretrained(
-        config.model, torch_dtype="bfloat16", **model_kwargs
+        config.model, dtype="bfloat16", **model_kwargs
     )
     values = {
         "output_dir": str(adapter_dir),
@@ -101,7 +101,7 @@ def train_sft(
     except ImportError:
         pass
     base = AutoModelForCausalLM.from_pretrained(
-        config.model, torch_dtype="bfloat16", **model_kwargs
+        config.model, dtype="bfloat16", **model_kwargs
     )
     merged = PeftModel.from_pretrained(base, str(adapter_dir)).merge_and_unload()
     output_dir.mkdir(parents=True, exist_ok=True)

@@ -37,7 +37,7 @@ def _common(config: PipelineConfig, output_dir: Path, run_name: str) -> dict[str
 def _model_init_kwargs(config: PipelineConfig, model: str) -> dict[str, Any]:
     values: dict[str, Any] = {
         "trust_remote_code": True,
-        "torch_dtype": "bfloat16",
+        "dtype": "bfloat16",
     }
     if model == config.model and config.model_revision:
         values["revision"] = config.model_revision
@@ -154,6 +154,9 @@ def train_grpo(
             **integration.trainer_kwargs(),
         )
         result = trainer.train()
+        import torch
+
+        trainer.model.to(dtype=torch.bfloat16)
         trainer.save_model(str(output_dir))
         processing_class = getattr(trainer, "processing_class", None)
         if processing_class is not None:
