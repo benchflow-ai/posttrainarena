@@ -1,117 +1,110 @@
 # PostTrain Arena
 
-A proposed NeurIPS 2026 competition on agentic RL environments across
-diverse domains beyond coding. PostTrain Arena inverts the usual
-contract: **teams contribute containerized RL environments**, and the
-organizers run a managed SFT→GRPO post-training pipeline on each
-team's corpus. The resulting Qwen3-8B checkpoint is scored on a
-private held-out suite (BenchFlow Signals), and entries are ranked by
-the held-out generalization delta over a fixed reference baseline.
+<!-- markdownlint-disable MD013 -->
 
-Site and docs: <https://posttrain.com> · Discord:
-<https://discord.gg/mZ9Rc8q8W3> · Contact: labs@benchflow.ai
+[![Discord](https://img.shields.io/badge/Discord-Join-7289da?logo=discord&logoColor=white)](https://discord.gg/mZ9Rc8q8W3) [![GitHub](https://img.shields.io/github/stars/benchflow-ai/posttrainarena?style=social)](https://github.com/benchflow-ai/posttrainarena) [![Website](https://img.shields.io/badge/Website-posttrain.com-3C5440)](https://posttrain.com) [![Pipeline CI](https://github.com/benchflow-ai/posttrainarena/actions/workflows/benchflow-posttrain-pipeline.yml/badge.svg)](https://github.com/benchflow-ai/posttrainarena/actions/workflows/benchflow-posttrain-pipeline.yml) [![License](https://img.shields.io/badge/License-AGPL--3.0-3C5440)](LICENSE)
 
-## The competition at a glance
+The open arena for post-training: contribute agentic RL environments, then measure what the resulting model generalizes to unseen tasks.
 
-- **Submissions are bounded by teams.** Track 2 — Environment
-  Submission (headline): 50 min / 100 recommended / 200 max
-  environments per entry, full managed pipeline, compute sponsored.
-  Track 1 — Skill Learning (low barrier): 20/50/100 `SKILL.md`
-  packages per entry, evaluated by pass@1 of a frozen reference agent.
-  Teams may enter both tracks as separate entries.
-- **Scoring.** Δ = pass-rate of the checkpoint trained on your corpus
-  minus the fixed reference baseline, on a sealed 100-task suite with
-  paired bootstrap confidence intervals. A 20-task public sample is
-  released for sanity checks.
-- **Phases.** Phase 0 warm-up (public sample only) → Phase 1
-  development (live public-sample feedback) → Phase 2 final
-  (submissions frozen, private-suite evaluation). Withdrawal allowed
-  until the Phase 2 freeze; grading is blind to author identity.
-- **Licensing (draft rules).** Submissions: CC-BY-4.0 (text/data) +
-  Apache-2.0 (code); authorship retained. Accepted environments,
-  teacher data, and trained checkpoints are released openly after the
-  competition.
+**[Website](https://posttrain.com)** · **[Authoring spec](https://posttrain.com/docs/spec)** · **[Training pipeline](./docs/training-pipeline.md)** · **[Architecture status](./docs/architecture-status.md)** · **[Contributing](./CONTRIBUTING.md)** · **[Discord](https://discord.gg/mZ9Rc8q8W3)**
 
-Status: proposal under review; rules are draft until the starting kit
-ships. This repo is the starting-kit preview and the future home of
-team submissions.
+> [!IMPORTANT]
+> PostTrain Arena is a proposed NeurIPS 2026 competition. The competition rules and final Qwen3-8B organizer recipe remain draft. The public Qwen3-4B reference pipeline is executable and end-to-end smoke validated, but it has not yet demonstrated model-quality lift.
 
-## Implementation status
+## How it works
 
-The competition rules and the checked-in training implementation have different
-stability levels:
+Most competitions fix the environment and ask teams to submit an agent. PostTrain Arena inverts that contract: teams contribute environment corpora, and the organizers hold the post-training recipe and evaluation suite fixed.
 
-- **Draft competition recipe:** the proposal currently names Qwen3-8B and a
-  fixed organizer recipe. That model, compute budget, and final scoring setup
-  remain subject to the published competition rules.
-- **Reproducible public reference:**
-  [`pipelines/benchflow-task-posttrain/`](./pipelines/benchflow-task-posttrain)
-  currently provides a pinned Qwen3-4B BenchFlow + TRL smoke recipe. It is the
-  supported code path for exercising the task-list, SFT, reward-gate, optional
-  GRPO, and held-out reporting contract.
-- **Evidence boundary:** the reproduced smoke validates pipeline mechanics but
-  measured `0.0 → 0.0`; it is not a quality-lift or final competition-scale
-  result.
-- **OpenEnv:** compatibility is planned but **not implemented**. The repository
-  has no OpenEnv client/server adapter, `openenv.yaml`, lifecycle test, or HF
-  Jobs path today.
+```text
+team task corpus
+    → fixed SFT + GRPO recipe
+    → trained team checkpoint
+    → sealed held-out evaluation
+    → Δ over a fixed reference checkpoint
+```
 
-When draft rules and implementation details differ, treat the rules as product
-design, the [architecture/status document](./docs/architecture-status.md) as the
-compatibility source of truth, and the
-[training guide](./docs/training-pipeline.md) as the current executable
-contract.
+The headline track rewards environments that teach capabilities which transfer beyond their own training tasks—not environments that only improve in-domain performance.
 
-## What is in this repo
+## Competition at a glance
 
-- [`starting-kit/`](./starting-kit) — the task template and
-  organizer-authored **examples** exercising the full task contract
-  (`task.md` + `environment/` + `verifier/` + `oracle/`). Not
-  competition entries.
-- [`submissions/`](./submissions) — the team submission tree: one
-  directory per team entry with a `submission.yaml` manifest. See its
-  README for layout and bounds.
-- [`scripts/`](./scripts) — fully self-contained local checks: the
-  structural and submission validators CI runs, plus
-  [`run_local.sh`](./scripts/run_local.sh), a docker harness that
-  builds your image, replays your oracle, and scores it with your
-  verifier. No benchflow install, no tokens.
-- [`pipelines/benchflow-task-posttrain/`](./pipelines/benchflow-task-posttrain)
-  — the public organizer-side BenchFlow + TRL implementation for pinned
-  training/eval task lists, verified teacher data, SFT, gated GRPO, and
-  held-out score reporting.
-- [`.github/workflows/tasks-check.yml`](./.github/workflows/tasks-check.yml)
-  — CI: the same two self-contained checks, identical for fork PRs.
-  The deeper gauntlet (oracle execution, instruction screening,
-  leakage audit) runs in the managed pipeline before Phase 0.
+| Track | What a team submits | Per-entry scale | Evaluation |
+| --- | --- | --- | --- |
+| **Track 2 — Environment Submission** (headline) | Containerized task packages: `task.md` + `environment/` + `verifier/` + `oracle/` | 50 minimum / 100 recommended / 200 maximum | Managed SFT→GRPO, then held-out generalization delta |
+| **Track 1 — Skill Learning** | Modular `SKILL.md` packages | 20 minimum / 50 recommended / 100 maximum | Pass@1 of a frozen reference agent |
+
+- **Scoring.** Track 2 uses `Δ = pass rate(team checkpoint) − pass rate(reference checkpoint)` on a sealed 100-task suite, with paired bootstrap confidence intervals. A 20-task public sample is reserved for sanity checks.
+- **Phases.** Phase 0 is a public-sample warm-up, Phase 1 provides development feedback, and Phase 2 freezes submissions for private evaluation. Teams may enter both tracks as separate entries.
+- **Open release.** Under the draft rules, accepted environments, teacher data, and trained checkpoints are released openly while authors retain credit.
+
+## Public implementation status
+
+The checked-in implementation is intentionally smaller than the draft competition recipe, but it exercises the same task-list-in, score-out contract.
+
+| Surface | Current public status |
+| --- | --- |
+| Participant task format and local validation | **Implemented** — eight worked examples, structural checks, Docker oracle replay, and empty-trial rejection |
+| BenchFlow task-list training and evaluation | **Implemented** — pinned snapshots, verified teacher collection, LoRA SFT, reward-gated or forced GRPO, held-out evaluation, and score reports |
+| Public data | **Available** — [2,238 training tasks](https://huggingface.co/datasets/benchflow/data_agent_rl_environment_train) and [366 held-out evaluation tasks](https://huggingface.co/datasets/benchflow/data_agent_rl_environment_eval) in native `task.md` format |
+| OpenEnv protocol path | **Implemented** — served adapter, typed client, lifecycle tests, Docker parity validation, and a native-dataset end-to-end smoke |
+| HF Jobs execution | **Not yet implemented on `main`** |
+| Final Qwen3-8B competition recipe | **Draft** — the reproducible public reference currently pins Qwen3-4B |
+| Demonstrated model-quality lift | **Not yet** — completed smokes validated system mechanics, not learning gains |
+
+> [!NOTE]
+> On July 10, 2026, a real one-train/one-held-out run completed snapshotting, baseline evaluation, verifier-approved teacher collection, LoRA SFT, a forced GRPO step, final evaluation, and artifact publication through the OpenEnv path. Scores remained `0.0 → 0.0`, so this is evidence of end-to-end operability—not quality improvement. See the [native-dataset OpenEnv smoke report](https://github.com/benchflow-ai/posttrainarena/blob/main/docs/native-dataset-openenv-smoke.md).
+
+For compatibility details and evidence boundaries, use [Architecture and implementation status](./docs/architecture-status.md) as the source of truth.
+
+## Repository layout
+
+| Path | Purpose |
+| --- | --- |
+| [`starting-kit/`](./starting-kit) | Task template and organizer-authored examples |
+| [`submissions/`](./submissions) | Team entries and `submission.yaml` contract |
+| [`scripts/`](./scripts) | Self-contained structural checks and local Docker harness |
+| [`pipelines/benchflow-task-posttrain/`](./pipelines/benchflow-task-posttrain) | Public BenchFlow + OpenEnv + TRL training implementation |
+| [`docs/`](./docs) | Architecture, operator guide, and validation evidence |
+
+The examples under `starting-kit/` are reference material, not competition entries.
 
 ## Quick start
 
+Local task authoring requires Python 3 and Docker. It does not require BenchFlow, a GPU, or provider API keys.
+
 ```bash
+git clone https://github.com/benchflow-ai/posttrainarena.git
+cd posttrainarena
+
 mkdir -p submissions/your-team/envs
 cp -R starting-kit/template submissions/your-team/envs/your-env-name
-# fill in task.md, environment/, verifier/, oracle/
-# add submissions/your-team/submission.yaml (see submissions/README.md)
+
+# Edit the task package and add submissions/your-team/submission.yaml.
 python3 scripts/check_task.py submissions/your-team/envs
 python3 scripts/check_submission.py
-scripts/run_local.sh submissions/your-team/envs/your-env-name                # oracle: expect 1.0
-scripts/run_local.sh submissions/your-team/envs/your-env-name --skip-oracle # empty: expect 0.0
+
+# The oracle must score 1.0.
+scripts/run_local.sh submissions/your-team/envs/your-env-name
+
+# A do-nothing trial must fail.
+scripts/run_local.sh submissions/your-team/envs/your-env-name --skip-oracle
 ```
 
-Then see [CONTRIBUTING.md](./CONTRIBUTING.md) for the submission
-model, validation ladder, and reviewer checklist. The authoring
-reference is at <https://posttrain.com/docs/spec>.
+See [CONTRIBUTING.md](./CONTRIBUTING.md) for the submission workflow, validation ladder, and reviewer checklist. Organizers and researchers should start with the [training pipeline guide](./docs/training-pipeline.md).
 
-Organizers and researchers reproducing the training side should start with
-the [training pipeline guide](./docs/training-pipeline.md).
+## Documentation
 
-Project policies: [documentation map](./docs/README.md),
-[security](./SECURITY.md), [support](./SUPPORT.md), and
-[code of conduct](./CODE_OF_CONDUCT.md).
+- [Task authoring specification](https://posttrain.com/docs/spec)
+- [Architecture and implementation status](./docs/architecture-status.md)
+- [Training pipeline operator guide](./docs/training-pipeline.md)
+- [Native-dataset OpenEnv smoke report](https://github.com/benchflow-ai/posttrainarena/blob/main/docs/native-dataset-openenv-smoke.md)
+- [Starting-kit guide](./starting-kit/README.md)
+- [Team submission guide](./submissions/README.md)
+- [Security](./SECURITY.md) · [Support](./SUPPORT.md) · [Code of conduct](./CODE_OF_CONDUCT.md)
+
+Questions are welcome on [Discord](https://discord.gg/mZ9Rc8q8W3) or by email at [labs@benchflow.ai](mailto:labs@benchflow.ai).
 
 ## License
 
-Repository contents: [AGPL-3.0](./LICENSE) unless noted otherwise.
-Competition submissions are licensed by their authors under CC-BY-4.0
-(text/data) + Apache-2.0 (code) at submission time, per the draft
-rules.
+Repository contents are licensed under [AGPL-3.0](./LICENSE) unless noted otherwise. Under the draft competition rules, submissions use CC-BY-4.0 for text and data and Apache-2.0 for code.
+
+<!-- markdownlint-enable MD013 -->
