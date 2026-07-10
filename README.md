@@ -36,6 +36,27 @@ Status: proposal under review; rules are draft until the starting kit
 ships. This repo is the starting-kit preview and the future home of
 team submissions.
 
+## Implementation status
+
+The competition rules and the checked-in training implementation have different
+stability levels:
+
+- **Draft competition recipe:** the proposal currently names Qwen3-8B and a
+  fixed organizer recipe. That model, compute budget, and final scoring setup
+  remain subject to the published competition rules.
+- **Reproducible public reference:**
+  [`pipelines/benchflow-task-posttrain/`](./pipelines/benchflow-task-posttrain)
+  currently provides a pinned Qwen3-4B BenchFlow + TRL smoke recipe. It is the
+  supported code path for exercising the task-list, SFT, reward-gate, optional
+  GRPO, and held-out reporting contract.
+- **Evidence boundary:** the reproduced smoke validates pipeline mechanics but
+  measured `0.0 → 0.0`; it is not a quality-lift or final competition-scale
+  result.
+
+When draft rules and implementation details differ, treat the rules as product
+design and the [training guide](./docs/training-pipeline.md) as the current
+executable contract.
+
 ## What is in this repo
 
 - [`starting-kit/`](./starting-kit) — the task template and
@@ -78,6 +99,10 @@ reference is at <https://posttrain.com/docs/spec>.
 
 Organizers and researchers reproducing the training side should start with
 the [training pipeline guide](./docs/training-pipeline.md).
+
+Project policies: [documentation map](./docs/README.md),
+[security](./SECURITY.md), [support](./SUPPORT.md), and
+[code of conduct](./CODE_OF_CONDUCT.md).
 
 ## License
 

@@ -5,16 +5,26 @@ on:
     paths:
       - "pipelines/benchflow-task-posttrain/**"
       - "docs/training-pipeline.md"
+      - "docs/README.md"
       - "README.md"
       - "CONTRIBUTING.md"
+      - "SECURITY.md"
+      - "SUPPORT.md"
+      - "CODE_OF_CONDUCT.md"
+      - ".github/pull_request_template.md"
       - ".github/workflows/benchflow-posttrain-pipeline.yml"
   push:
     branches: [main]
     paths:
       - "pipelines/benchflow-task-posttrain/**"
       - "docs/training-pipeline.md"
+      - "docs/README.md"
       - "README.md"
       - "CONTRIBUTING.md"
+      - "SECURITY.md"
+      - "SUPPORT.md"
+      - "CODE_OF_CONDUCT.md"
+      - ".github/pull_request_template.md"
       - ".github/workflows/benchflow-posttrain-pipeline.yml"
 
 concurrency:

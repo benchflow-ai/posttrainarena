@@ -69,6 +69,12 @@ baseline trained with the identical recipe, with paired bootstrap
 confidence intervals. Track 1 packages are evaluated by pass@1 of a
 frozen reference agent — no training, no internet.
 
+Qwen3-8B is the current **draft competition recipe**, not the model used by the
+checked-in reference smoke. The public implementation currently pins Qwen3-4B
+to validate the operator contract at smaller scale. See
+[`docs/training-pipeline.md`](./docs/training-pipeline.md) for exact executable
+behavior and evidence boundaries.
+
 **Phases.** Phase 0 (warm-up): public sample only, leaderboard hidden.
 Phase 1 (development): full entries accepted, public-sample scoring
 shown live. Phase 2 (final): submissions frozen, private-suite
