@@ -75,7 +75,8 @@ posttrainarena-train run \
 ```
 
 For a GPU host, `scripts/bootstrap_gpu.sh` installs this package and its pinned
-BenchFlow dependency into an isolated virtual environment.
+BenchFlow dependency into an isolated virtual environment. The script pins the
+CUDA 12.8 Torch wheel and fails immediately if the GPU is unavailable.
 
 Use `configs/qwen3-4b-data-agent-openenv-smoke.toml` to route environment
 interaction through OpenEnv. It sets `grpo.run_policy = "always"` so a

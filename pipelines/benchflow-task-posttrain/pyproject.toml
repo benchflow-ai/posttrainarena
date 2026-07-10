@@ -23,6 +23,7 @@ train = [
   "openenv @ git+https://github.com/huggingface/OpenEnv.git@6823135a714814e3efb3e39c4a9edff01e1a2a98",
   "openai>=2.0",
   "peft>=0.18,<0.19",
+  "torch==2.9.1; sys_platform == 'linux'",
   "wandb>=0.25,<0.26",
 ]
 test = [
