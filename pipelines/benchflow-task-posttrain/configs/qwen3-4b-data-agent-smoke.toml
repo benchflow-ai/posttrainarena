@@ -1,0 +1,59 @@
+[model]
+id = "Qwen/Qwen3-4B"
+revision = "1cfa9a7208912126459214e8b04321603b3df60c"
+
+[train_dataset]
+repo_id = "AdithyaSK/data_agent_rl_environment_train"
+revision = "4073bb9b817aba164d8697cbe504a646522cd07a"
+path = "tasks"
+task_list = "../task-lists/data-agent-train-15.txt"
+
+[eval_dataset]
+repo_id = "AdithyaSK/data_agent_rl_environment_eval"
+revision = "9240cc381cbadeef82923b64131e174be126c92b"
+path = "tasks"
+task_list = "../task-lists/data-agent-eval-2.txt"
+
+[runtime]
+environment = "daytona"
+sandbox_user = "agent"
+bash_timeout_sec = 120
+max_output_chars = 8192
+max_completion_length = 2048
+max_tool_calling_iterations = 25
+num_generations = 2
+use_vllm = false
+
+[teacher]
+enabled = true
+model = "glm-5.1"
+api_key_env = "GLM_API_KEY"
+base_url_env = "GLM_BASE_URL"
+max_attempts = 3
+max_tokens = 4096
+min_verified = 15
+temperature = 0.2
+
+[sft]
+enabled = true
+max_steps = 40
+learning_rate = 0.00002
+max_length = 4096
+gradient_accumulation_steps = 8
+lora_r = 16
+lora_alpha = 32
+
+[grpo]
+enabled = true
+threshold = 0.05
+gate_task_count = 4
+max_steps = 2
+learning_rate = 0.000001
+gradient_accumulation_steps = 8
+
+[tracking]
+report_to = "wandb"
+project = "posttrainarena-benchflow"
+
+[output]
+root = "../runs"

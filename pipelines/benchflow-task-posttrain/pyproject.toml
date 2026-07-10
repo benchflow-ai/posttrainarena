@@ -1,0 +1,40 @@
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[project]
+name = "posttrainarena-benchflow-pipeline"
+version = "0.1.0"
+description = "Task-list driven SFT and GRPO pipeline for BenchFlow environments"
+readme = "README.md"
+requires-python = ">=3.12"
+license = { text = "AGPL-3.0-only" }
+dependencies = []
+
+[project.urls]
+Homepage = "https://posttrain.com"
+Repository = "https://github.com/benchflow-ai/posttrainarena"
+Issues = "https://github.com/benchflow-ai/posttrainarena/issues"
+Documentation = "https://github.com/benchflow-ai/posttrainarena/blob/main/docs/training-pipeline.md"
+
+[project.optional-dependencies]
+train = [
+  "benchflow[trl,sandbox-daytona] @ git+https://github.com/benchflow-ai/benchflow.git@0b41232cf02e9c4f22c01e284724dd2a02c3f468",
+  "openai>=2.0",
+  "peft>=0.18,<0.19",
+  "wandb>=0.25,<0.26",
+]
+test = ["pytest>=8.0"]
+
+[project.scripts]
+posttrainarena-train = "posttrainarena.benchflow_pipeline.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/posttrainarena"]
+
+[tool.hatch.metadata]
+allow-direct-references = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
