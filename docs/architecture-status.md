@@ -73,6 +73,7 @@ competition-scale readiness.
 | Harbor | Not a dependency | No Harbor adapter or trajectory translation is used |
 | OpenEnv client/server lifecycle | Implemented | Pinned dependency, served adapter, typed client, real lifecycle tests, finalization, state, and session isolation |
 | OpenEnv/BenchFlow Docker parity | Manually validated | Checked-in security task produced identical output and reward `1.0` through both integrations; CI uses a no-spend fake BenchFlow boundary |
+| Native dataset OpenEnv pipeline | End-to-end smoke validated | One train and one held-out native `task.md` package completed snapshot, teacher collection, SFT, forced GRPO, final eval, and artifact publication; see `docs/native-dataset-openenv-smoke.md` |
 | HF Jobs execution | **Not implemented** | No HF Jobs launcher or deployment workflow exists |
 | Final Qwen3-8B competition recipe | Draft | Current reproducible reference pins Qwen3-4B |
 | Demonstrated model-quality lift | Not yet | Reproduced smoke measured zero lift |

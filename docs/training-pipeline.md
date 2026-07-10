@@ -35,6 +35,11 @@ The default recipes pin the public BenchFlow-native conversions:
 
 Both repositories use `task.md`, `environment/`, and `verifier/` directly.
 
+A real one-train/one-held-out OpenEnv run completed the full snapshot, teacher,
+SFT, forced-GRPO, final-eval, and publication path on these revisions. See
+[`native-dataset-openenv-smoke.md`](native-dataset-openenv-smoke.md) for the
+exact evidence and claim boundary.
+
 OpenEnv is an optional protocol adapter in front of the same BenchFlow engine.
 The adapter exposes a real served `Environment` and typed `EnvClient`; it does
 not duplicate BenchFlow task loading, sandboxes, verifiers, rewards, artifacts,
