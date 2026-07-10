@@ -3,14 +3,14 @@ id = "Qwen/Qwen3-4B"
 revision = "1cfa9a7208912126459214e8b04321603b3df60c"
 
 [train_dataset]
-repo_id = "AdithyaSK/data_agent_rl_environment_train"
-revision = "4073bb9b817aba164d8697cbe504a646522cd07a"
+repo_id = "benchflow/data_agent_rl_environment_train"
+revision = "34ff63c91731df6b3670bfcd7e3d44e6790ddc48"
 path = "tasks"
 task_list = "../task-lists/data-agent-train-15.txt"
 
 [eval_dataset]
-repo_id = "AdithyaSK/data_agent_rl_environment_eval"
-revision = "9240cc381cbadeef82923b64131e174be126c92b"
+repo_id = "benchflow/data_agent_rl_environment_eval"
+revision = "0ea976c79e3248c85737c4f7363484e4d47ce287"
 path = "tasks"
 task_list = "../task-lists/data-agent-eval-2.txt"
 

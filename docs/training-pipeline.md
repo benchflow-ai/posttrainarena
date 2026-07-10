@@ -28,6 +28,13 @@ BenchFlow owns task snapshots, Daytona or Docker sandboxes, the `run_bash` and
 evaluation. TRL owns SFT and GRPO optimization. The pipeline is Harbor-free and
 does not translate Harbor trajectories.
 
+The default recipes pin the public BenchFlow-native conversions:
+
+- `benchflow/data_agent_rl_environment_train` (`2,238` training tasks)
+- `benchflow/data_agent_rl_environment_eval` (`366` held-out tasks)
+
+Both repositories use `task.md`, `environment/`, and `verifier/` directly.
+
 OpenEnv is an optional protocol adapter in front of the same BenchFlow engine.
 The adapter exposes a real served `Environment` and typed `EnvClient`; it does
 not duplicate BenchFlow task loading, sandboxes, verifiers, rewards, artifacts,

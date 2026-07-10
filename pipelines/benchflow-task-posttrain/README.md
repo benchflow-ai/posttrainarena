@@ -24,7 +24,10 @@ training task list + held-out eval task list + TOML recipe
 BenchFlow owns task snapshots, sandbox lifecycle, tools, verifiers, rollout
 artifacts, and paired evaluation. TRL owns SFT and GRPO optimization. The
 OpenEnv is an optional protocol between them, not a second runtime or eval
-engine. The pipeline does not depend on Harbor or translate Harbor trajectories.
+engine. The default recipes pin the public BenchFlow-native `task.md` datasets
+`benchflow/data_agent_rl_environment_train` and
+`benchflow/data_agent_rl_environment_eval`. The pipeline does not depend on
+Harbor or translate Harbor trajectories.
 The optional `openenv_url` mode currently requires a shared filesystem for
 pinned task snapshots and BenchFlow artifacts; it is not a general remote
 artifact transport.
