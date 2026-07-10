@@ -15,7 +15,7 @@ def test_policy_model_loads_are_bfloat16_and_only_base_is_revision_pinned() -> N
     base = _model_init_kwargs(config, config.model)
     merged = _model_init_kwargs(config, "/tmp/sft-merged")
 
-    assert base["torch_dtype"] == "bfloat16"
+    assert base["dtype"] == "bfloat16"
     assert base["revision"] == config.model_revision
-    assert merged["torch_dtype"] == "bfloat16"
+    assert merged["dtype"] == "bfloat16"
     assert "revision" not in merged
