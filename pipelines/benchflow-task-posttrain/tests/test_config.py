@@ -15,6 +15,8 @@ def test_example_config_is_valid_and_pinned() -> None:
     config = load_config(ROOT / "configs/qwen3-4b-data-agent-smoke.toml")
 
     assert config.model == "Qwen/Qwen3-4B"
+    assert config.train_dataset.repo_id == "benchflow/data_agent_rl_environment_train"
+    assert config.eval_dataset.repo_id == "benchflow/data_agent_rl_environment_eval"
     assert len(config.train_dataset.revision) == 40
     assert len(config.eval_dataset.revision) == 40
     assert config.teacher.min_verified == 15

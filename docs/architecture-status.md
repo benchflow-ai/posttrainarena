@@ -64,7 +64,7 @@ competition-scale readiness.
 
 | Surface | Status | Evidence or boundary |
 |---|---|---|
-| PostTrain `task.md` packages | Implemented | Starting-kit examples, structural CI, and local Docker harness |
+| PostTrain `task.md` packages | Implemented | Starting-kit examples, structural CI, local Docker harness, and the public 2,238-train/366-eval data-agent datasets |
 | BenchFlow task-list training/eval | Implemented | Public pipeline, tests, CLI dry-run, and completed H100 smoke |
 | Docker runtime | Implemented | Local author harness and BenchFlow runtime option |
 | Daytona runtime | Implemented in pipeline | BenchFlow runtime option; credentials required for real execution |
