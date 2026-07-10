@@ -50,6 +50,10 @@ team submissions.
   [`run_local.sh`](./scripts/run_local.sh), a docker harness that
   builds your image, replays your oracle, and scores it with your
   verifier. No benchflow install, no tokens.
+- [`pipelines/benchflow-task-posttrain/`](./pipelines/benchflow-task-posttrain)
+  — the public organizer-side BenchFlow + TRL implementation for pinned
+  training/eval task lists, verified teacher data, SFT, gated GRPO, and
+  held-out score reporting.
 - [`.github/workflows/tasks-check.yml`](./.github/workflows/tasks-check.yml)
   — CI: the same two self-contained checks, identical for fork PRs.
   The deeper gauntlet (oracle execution, instruction screening,
@@ -71,6 +75,9 @@ scripts/run_local.sh submissions/your-team/envs/your-env-name --skip-oracle # em
 Then see [CONTRIBUTING.md](./CONTRIBUTING.md) for the submission
 model, validation ladder, and reviewer checklist. The authoring
 reference is at <https://posttrain.com/docs/spec>.
+
+Organizers and researchers reproducing the training side should start with
+the [training pipeline guide](./docs/training-pipeline.md).
 
 ## License
 

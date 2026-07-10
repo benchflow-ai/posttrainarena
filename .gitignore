@@ -1,0 +1,8 @@
+__pycache__/
+.pytest_cache/
+*.pyc
+
+pipelines/benchflow-task-posttrain/.venv/
+pipelines/benchflow-task-posttrain/runs/
+pipelines/benchflow-task-posttrain/dist/
+pipelines/benchflow-task-posttrain/*.egg-info/

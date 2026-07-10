@@ -1,0 +1,62 @@
+name: benchflow-posttrain-pipeline
+
+on:
+  pull_request:
+    paths:
+      - "pipelines/benchflow-task-posttrain/**"
+      - "docs/training-pipeline.md"
+      - "README.md"
+      - "CONTRIBUTING.md"
+      - ".github/workflows/benchflow-posttrain-pipeline.yml"
+  push:
+    branches: [main]
+    paths:
+      - "pipelines/benchflow-task-posttrain/**"
+      - "docs/training-pipeline.md"
+      - "README.md"
+      - "CONTRIBUTING.md"
+      - ".github/workflows/benchflow-posttrain-pipeline.yml"
+
+concurrency:
+  group: benchflow-posttrain-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  contracts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Install package and test dependencies
+        run: pip install -e 'pipelines/benchflow-task-posttrain[test]'
+      - name: Compile
+        run: >-
+          python -m py_compile
+          pipelines/benchflow-task-posttrain/src/posttrainarena/benchflow_pipeline/*.py
+      - name: Test no-spend contracts
+        run: python -m pytest pipelines/benchflow-task-posttrain/tests -q
+      - name: Exercise documented CLI
+        working-directory: pipelines/benchflow-task-posttrain
+        run: |
+          posttrainarena-train validate --config configs/qwen3-4b-data-agent-smoke.toml
+          posttrainarena-train plan \
+            --config configs/qwen3-4b-data-agent-smoke.toml \
+            --run-name ci-plan > /tmp/posttrainarena-plan.json
+          posttrainarena-train run \
+            --config configs/qwen3-4b-data-agent-smoke.toml \
+            --run-name ci-dry-run \
+            --dry-run > /tmp/posttrainarena-run.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          plan = json.loads(Path("/tmp/posttrainarena-plan.json").read_text())
+          run = json.loads(Path("/tmp/posttrainarena-run.json").read_text())
+          assert plan["train_task_count"] == 15
+          assert plan["eval_task_count"] == 2
+          assert run["grpo_planned"] is True
+          assert run["grpo_ran"] is False
+          PY

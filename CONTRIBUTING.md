@@ -12,6 +12,40 @@ The full authoring reference lives at
 <https://posttrain.com/docs/spec>; this file is the short version with
 links to the right places.
 
+## Contributing to the organizer training pipeline
+
+The public training implementation lives under
+[`pipelines/benchflow-task-posttrain/`](./pipelines/benchflow-task-posttrain).
+This is separate from participant task submissions and preserves these module
+boundaries:
+
+- `config.py`: validated TOML recipe contract
+- `pipeline.py`: stage order, resume behavior, and score schema
+- `teacher.py`: provider tool loop using BenchFlow `run_bash` and `submit`
+- `sft.py`: tool-aware supervised fine-tuning and merged checkpoints
+- `policy.py`: BenchFlow-backed evaluation and GRPO
+
+New recipes must pin dataset and model revisions, add explicit task lists,
+document expected compute, and keep tests no-spend. Before opening a PR:
+
+```bash
+python3 -m pip install -e 'pipelines/benchflow-task-posttrain[test]'
+python3 -m pytest pipelines/benchflow-task-posttrain/tests -q
+python3 -m py_compile \
+  pipelines/benchflow-task-posttrain/src/posttrainarena/benchflow_pipeline/*.py
+cd pipelines/benchflow-task-posttrain
+posttrainarena-train validate \
+  --config configs/qwen3-4b-data-agent-smoke.toml
+posttrainarena-train run \
+  --config configs/qwen3-4b-data-agent-smoke.toml \
+  --run-name contribution-check \
+  --dry-run
+```
+
+Never commit checkpoints, trajectories, raw provider responses, or secrets.
+See the [operator guide](./docs/training-pipeline.md) for the complete runtime
+and artifact contract.
+
 ## How submission works
 
 **Submissions are bounded by teams.** The unit of entry is a team's
