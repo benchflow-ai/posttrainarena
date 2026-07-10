@@ -1,5 +1,15 @@
 # PostTrain Arena — starting kit
 
+This directory defines the participant-facing **PostTrain task package** format.
+It is intentionally runnable with Python and Docker and does not require
+BenchFlow, TRL, or OpenEnv for authoring checks.
+
+Organizer training later consumes selected task packages through the public
+BenchFlow + TRL pipeline. The repository does **not** currently expose these
+packages as OpenEnv client/server environments. See
+[`docs/architecture-status.md`](../docs/architecture-status.md) for the exact
+boundary.
+
 Every directory under [`examples/`](./examples) is one **example task
 package**, authored
 by the organizing team to exercise the `task.md` contract (frontmatter

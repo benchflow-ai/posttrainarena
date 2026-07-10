@@ -52,10 +52,15 @@ stability levels:
 - **Evidence boundary:** the reproduced smoke validates pipeline mechanics but
   measured `0.0 → 0.0`; it is not a quality-lift or final competition-scale
   result.
+- **OpenEnv:** compatibility is planned but **not implemented**. The repository
+  has no OpenEnv client/server adapter, `openenv.yaml`, lifecycle test, or HF
+  Jobs path today.
 
 When draft rules and implementation details differ, treat the rules as product
-design and the [training guide](./docs/training-pipeline.md) as the current
-executable contract.
+design, the [architecture/status document](./docs/architecture-status.md) as the
+compatibility source of truth, and the
+[training guide](./docs/training-pipeline.md) as the current executable
+contract.
 
 ## What is in this repo
 

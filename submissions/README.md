@@ -1,5 +1,11 @@
 # Team submissions
 
+Submissions use the PostTrain Arena task-package and team-manifest contract.
+They are validated locally with the self-contained scripts in this repository;
+organizer training uses BenchFlow + TRL after intake. OpenEnv compatibility is
+not required for submissions and is not currently implemented by this repo.
+See [`docs/architecture-status.md`](../docs/architecture-status.md).
+
 A competition entry is **one directory here, owned by one team, on one
 track**. Submissions are bounded per team — you submit a corpus, not
 individual tasks, and the managed pipeline trains on your corpus as a

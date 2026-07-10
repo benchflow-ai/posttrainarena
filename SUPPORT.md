@@ -7,6 +7,10 @@ Use the channel that matches the request:
 - **Training-pipeline bugs:** open a GitHub issue with the recipe revision, task
   IDs, command, sanitized logs, and whether the failure reproduces with
   `--dry-run`.
+- **OpenEnv integration:** first check
+  [`docs/architecture-status.md`](docs/architecture-status.md). Compatibility is
+  not currently implemented; proposals should include a real OpenEnv
+  client/server lifecycle and isolation test rather than only format conversion.
 - **Competition rules or private submission questions:** email
   `labs@benchflow.ai`.
 - **Security, leaked credentials, sandbox escapes, or private eval exposure:**

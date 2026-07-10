@@ -3,6 +3,11 @@
 This is the public, reproducible training path for running SFT and conditional
 GRPO over BenchFlow-compatible task suites.
 
+The repository-wide architecture and compatibility status is documented in
+[`docs/architecture-status.md`](../../docs/architecture-status.md). In
+particular, this package does not currently provide OpenEnv compatibility or an
+HF Jobs execution path.
+
 The interface is intentionally small:
 
 ```text
