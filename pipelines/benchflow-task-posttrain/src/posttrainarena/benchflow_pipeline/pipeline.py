@@ -191,6 +191,8 @@ class Pipeline:
             return False
         if self.dry_run:
             return True
+        if self.config.grpo.run_policy == "always":
+            return True
         return gate_score is not None and gate_score >= self.config.grpo.threshold
 
     def _snapshot(
@@ -397,6 +399,7 @@ class Pipeline:
             "score_after_posttrain": final_score,
             "delta_score": delta,
             "grpo_threshold": self.config.grpo.threshold,
+            "grpo_run_policy": self.config.grpo.run_policy,
             "grpo_planned": grpo_planned,
             "grpo_ran": grpo_ran,
             "benchflow_commit": BENCHFLOW_COMMIT,

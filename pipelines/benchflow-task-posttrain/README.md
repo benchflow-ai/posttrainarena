@@ -1,12 +1,13 @@
 # BenchFlow Task-List Post-Training Pipeline
 
-This is the public, reproducible training path for running SFT and conditional
-GRPO over BenchFlow-compatible task suites.
+This is the public, reproducible training path for running SFT and optional
+GRPO over BenchFlow-compatible task suites. TRL can drive BenchFlow directly
+or through a real OpenEnv client/server protocol adapter.
 
 The repository-wide architecture and compatibility status is documented in
 [`docs/architecture-status.md`](../../docs/architecture-status.md). In
-particular, this package does not currently provide OpenEnv compatibility or an
-HF Jobs execution path.
+particular, this package provides OpenEnv protocol compatibility; HF Jobs
+execution remains outside the current implementation.
 
 The interface is intentionally small:
 
@@ -22,7 +23,11 @@ training task list + held-out eval task list + TOML recipe
 
 BenchFlow owns task snapshots, sandbox lifecycle, tools, verifiers, rollout
 artifacts, and paired evaluation. TRL owns SFT and GRPO optimization. The
-pipeline does not depend on Harbor and does not translate Harbor trajectories.
+OpenEnv is an optional protocol between them, not a second runtime or eval
+engine. The pipeline does not depend on Harbor or translate Harbor trajectories.
+The optional `openenv_url` mode currently requires a shared filesystem for
+pinned task snapshots and BenchFlow artifacts; it is not a general remote
+artifact transport.
 
 ## Repository Layout
 
@@ -36,6 +41,7 @@ benchflow-task-posttrain/
   src/.../teacher.py       verified run_bash/submit demonstrations
   src/.../sft.py           tool-aware LoRA SFT and weight merge
   src/.../policy.py        BenchFlow-backed eval and GRPO
+  src/.../openenv/         OpenEnv client/server protocol adapter
   tests/                   no-spend contract tests
 ```
 
@@ -71,6 +77,11 @@ posttrainarena-train run \
 For a GPU host, `scripts/bootstrap_gpu.sh` installs this package and its pinned
 BenchFlow dependency into an isolated virtual environment.
 
+Use `configs/qwen3-4b-data-agent-openenv-smoke.toml` to route environment
+interaction through OpenEnv. It sets `grpo.run_policy = "always"` so a
+zero-reward GRPO run can validate plumbing; production recipes should normally
+retain `run_policy = "on_reward"`.
+
 ## Credentials
 
 Load credentials from a secret manager or an untracked environment file. Do
@@ -79,7 +90,7 @@ not place them in TOML recipes, task lists, command-line arguments, or commits.
 The example recipe requires:
 
 - `HF_TOKEN` for task snapshots and optional artifact publication
-- `DAYTONA_API_KEY` for `runtime.environment = "daytona"`
+- `DAYTONA_API_KEY` for `runtime.sandbox = "daytona"`
 - `GLM_API_KEY` and `GLM_BASE_URL` for the example teacher
 - `WANDB_API_KEY` when `tracking.report_to = "wandb"`
 - any verifier-specific credentials required by the selected task packages
@@ -106,8 +117,8 @@ runs/<run-name>/reports/score.json
 
 Important fields include `baseline_score`, `sft_score`, `grpo_gate_score`,
 `score_after_posttrain`, `delta_score`, `grpo_planned`, `grpo_ran`, exact task
-IDs, dataset revisions, BenchFlow commit, and the recorded stage commands. A
-dry-run may set `grpo_planned` while leaving `grpo_ran` false.
+IDs, dataset revisions, BenchFlow commit, `grpo_run_policy`, and the recorded
+stage commands. A dry-run may set `grpo_planned` while leaving `grpo_ran` false.
 
 ## Reward Gate
 
@@ -115,6 +126,9 @@ GRPO runs only when the post-SFT score on the configured training-task gate is
 at least `grpo.threshold`. This prevents spending GPU time on a constant-zero
 reward distribution. A skipped GRPO stage is a valid pipeline result, not a
 runtime failure.
+
+`grpo.run_policy = "always"` bypasses the reward decision for end-to-end
+plumbing validation. It is not a recommendation for useful RL training.
 
 Do not use held-out eval tasks to tune this gate. Production recipes should use
 separate training, gate/development, and final evaluation lists.
@@ -144,9 +158,15 @@ Before opening a PR:
 ```bash
 python3 -m pytest pipelines/benchflow-task-posttrain/tests -q
 python3 -m py_compile \
-  pipelines/benchflow-task-posttrain/src/posttrainarena/benchflow_pipeline/*.py
+  pipelines/benchflow-task-posttrain/src/posttrainarena/benchflow_pipeline/*.py \
+  pipelines/benchflow-task-posttrain/src/posttrainarena/benchflow_pipeline/openenv/*.py
 ```
 
 New recipes should pin dataset revisions and model revisions, use new task-list
 files, document expected compute, and default to no-spend tests. Never commit
 checkpoints, trajectories, raw provider responses, or credentials.
+
+The CI protocol tests use OpenEnv's real HTTP/WebSocket transport with a fake
+BenchFlow boundary. Before changing runtime semantics, also run a real Docker
+parity canary against one checked-in task and compare reward plus artifact
+trees across `integration = "benchflow"` and `integration = "openenv"`.

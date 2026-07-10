@@ -5,10 +5,11 @@ from __future__ import annotations
 import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 
 BENCHFLOW_COMMIT = "0b41232cf02e9c4f22c01e284724dd2a02c3f468"
+GrpoRunPolicy = Literal["on_reward", "always"]
 
 
 def _table(data: dict[str, Any], name: str) -> dict[str, Any]:
@@ -33,7 +34,10 @@ class DatasetConfig:
 
 @dataclass(frozen=True)
 class RuntimeConfig:
-    environment: str = "daytona"
+    integration: str = "benchflow"
+    environment: str | None = None
+    sandbox: str | None = None
+    openenv_url: str | None = None
     sandbox_user: str | None = "agent"
     bash_timeout_sec: int = 120
     max_output_chars: int = 8192
@@ -69,6 +73,7 @@ class SftConfig:
 @dataclass(frozen=True)
 class GrpoConfig:
     enabled: bool = True
+    run_policy: GrpoRunPolicy = "on_reward"
     threshold: float = 0.05
     gate_task_count: int = 4
     max_steps: int = 5
@@ -96,10 +101,24 @@ class PipelineConfig:
     tracking: TrackingConfig = field(default_factory=TrackingConfig)
     output_root: Path = Path("runs")
 
+    @property
+    def sandbox(self) -> str:
+        return self.runtime.sandbox or self.runtime.environment or "daytona"
+
     def validate(self) -> None:
         errors: list[str] = []
-        if self.runtime.environment not in {"docker", "daytona"}:
-            errors.append("runtime.environment must be docker or daytona")
+        if self.runtime.integration not in {"benchflow", "openenv"}:
+            errors.append("runtime.integration must be benchflow or openenv")
+        if self.runtime.openenv_url and self.runtime.integration != "openenv":
+            errors.append("runtime.openenv_url requires integration = openenv")
+        if (
+            self.runtime.sandbox is not None
+            and self.runtime.environment is not None
+            and self.runtime.sandbox != self.runtime.environment
+        ):
+            errors.append("runtime.sandbox conflicts with legacy runtime.environment")
+        if self.sandbox not in {"docker", "daytona"}:
+            errors.append("runtime.sandbox must be docker or daytona")
         if self.runtime.num_generations < 2:
             errors.append("runtime.num_generations must be at least 2 for GRPO")
         if self.runtime.max_completion_length < 1:
@@ -108,6 +127,8 @@ class PipelineConfig:
             errors.append("runtime.max_tool_calling_iterations must be positive")
         if not 0 <= self.grpo.threshold <= 1:
             errors.append("grpo.threshold must be between 0 and 1")
+        if self.grpo.run_policy not in {"on_reward", "always"}:
+            errors.append("grpo.run_policy must be on_reward or always")
         if self.grpo.gate_task_count < 1:
             errors.append("grpo.gate_task_count must be positive")
         if self.grpo.max_steps < 1:
