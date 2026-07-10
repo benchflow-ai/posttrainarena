@@ -6,6 +6,10 @@ implementation under
 It accepts explicit training and held-out evaluation task lists and produces a
 versioned score report after SFT and optional GRPO.
 
+For the broader system boundaries and compatibility matrix, including the
+current absence of an OpenEnv adapter, see
+[`architecture-status.md`](architecture-status.md).
+
 ```text
 training task list + held-out eval task list + pinned TOML recipe
     -> snapshot task packages from Hugging Face
@@ -23,6 +27,10 @@ BenchFlow owns task snapshots, Daytona or Docker sandboxes, the `run_bash` and
 `submit` tools, verifiers, reward extraction, rollout artifacts, and paired
 evaluation. TRL owns SFT and GRPO optimization. The pipeline is Harbor-free and
 does not translate Harbor trajectories.
+
+This is a BenchFlow runtime integration, not an OpenEnv implementation. It does
+not expose an OpenEnv `EnvClient`, served `Environment`, `openenv.yaml`, or HF
+Jobs launcher.
 
 ## Public contract
 

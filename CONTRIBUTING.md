@@ -12,6 +12,11 @@ The full authoring reference lives at
 <https://posttrain.com/docs/spec>; this file is the short version with
 links to the right places.
 
+Before changing runtime or compatibility claims, read
+[`docs/architecture-status.md`](./docs/architecture-status.md). The current
+training implementation uses BenchFlow + TRL. OpenEnv compatibility and HF Jobs
+execution are roadmap items, not current repository features.
+
 ## Contributing to the organizer training pipeline
 
 The public training implementation lives under
@@ -44,7 +49,9 @@ posttrainarena-train run \
 
 Never commit checkpoints, trajectories, raw provider responses, or secrets.
 See the [operator guide](./docs/training-pipeline.md) for the complete runtime
-and artifact contract.
+and artifact contract. Do not label a change OpenEnv-compatible unless it meets
+the lifecycle acceptance criteria in the
+[architecture/status document](./docs/architecture-status.md).
 
 ## How submission works
 
