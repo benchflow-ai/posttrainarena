@@ -28,8 +28,10 @@ class FakeBenchFlowEnvironment:
         self.last_returncode: int | None = None
         self.finalize_count = 0
         self.closed = False
+        self.last_reset_kwargs: dict[str, Any] = {}
 
     def reset(self, **kwargs: Any) -> str:
+        self.last_reset_kwargs = dict(kwargs)
         self.task_id = str(kwargs["benchflow_task_id"])
         self.rollout_dir = self.root / self.task_id / str(id(self))
         self.rollout_dir.mkdir(parents=True)
@@ -186,3 +188,38 @@ def test_reset_replaces_prior_benchflow_runtime(tmp_path: Path) -> None:
     finally:
         environment._close()
         server.close()
+
+
+def test_server_resolves_task_id_to_server_side_task_path(tmp_path: Path) -> None:
+    environments: list[FakeBenchFlowEnvironment] = []
+
+    def factory() -> FakeBenchFlowEnvironment:
+        environment = FakeBenchFlowEnvironment(tmp_path)
+        environments.append(environment)
+        return environment
+
+    server = LocalOpenEnvServer(factory)
+    server.close()
+    from posttrainarena.benchflow_pipeline.openenv.server import BenchFlowOpenEnv
+    from posttrainarena.benchflow_pipeline.openenv.models import PostTrainAction
+
+    environment = BenchFlowOpenEnv(
+        factory,
+        {
+            "task-a": {
+                "benchflow_task_id": "task-a",
+                "benchflow_task_dir": "/server/tasks/task-a",
+            }
+        },
+    )
+    try:
+        environment.reset(
+            benchflow_task_id="task-a",
+            benchflow_task_dir="/client/path/task-a",
+        )
+        assert environments[-1].last_reset_kwargs["benchflow_task_dir"] == (
+            "/server/tasks/task-a"
+        )
+        environment.step(PostTrainAction(type="finalize"))
+    finally:
+        environment.close()

@@ -6,8 +6,8 @@ or through a real OpenEnv client/server protocol adapter.
 
 The repository-wide architecture and compatibility status is documented in
 [`docs/architecture-status.md`](../../docs/architecture-status.md). In
-particular, this package provides OpenEnv protocol compatibility; HF Jobs
-execution remains outside the current implementation.
+particular, this package provides OpenEnv protocol compatibility and the HF
+Jobs/Hub publishing path.
 
 The interface is intentionally small:
 
@@ -49,6 +49,10 @@ benchflow-task-posttrain/
 ```
 
 Generated runs are written under `runs/` and ignored by Git.
+
+The same package also prepares team submissions, submits HF UV Jobs, publishes
+Hub artifacts, evaluates benchmark matrices, serves OpenEnv, and deploys the
+leaderboard. See [`docs/hf-jobs.md`](../../docs/hf-jobs.md).
 
 ## Quick Start
 

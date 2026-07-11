@@ -24,6 +24,15 @@ def test_example_config_is_valid_and_pinned() -> None:
     assert config.grpo.run_policy == "on_reward"
 
 
+def test_hf_job_smoke_config_forces_one_step_grpo() -> None:
+    config = load_config(ROOT / "configs/qwen3-4b-hf-job-smoke.toml")
+
+    assert config.runtime.integration == "openenv"
+    assert config.sft.max_steps == 1
+    assert config.grpo.run_policy == "always"
+    assert config.grpo.max_steps == 1
+
+
 def test_config_accepts_always_grpo_run_policy(tmp_path: Path) -> None:
     source = ROOT / "configs/qwen3-4b-data-agent-smoke.toml"
     task_lists = tmp_path / "task-lists"

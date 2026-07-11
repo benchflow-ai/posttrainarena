@@ -3,7 +3,8 @@
 Submissions use the PostTrain Arena task-package and team-manifest contract.
 They are validated locally with the self-contained scripts in this repository;
 organizer training uses BenchFlow + TRL after intake. OpenEnv compatibility is
-not required for submissions and is not currently implemented by this repo.
+not required in a team package; the organizer pipeline supplies the implemented
+OpenEnv protocol integration.
 See [`docs/architecture-status.md`](../docs/architecture-status.md).
 
 A competition entry is **one directory here, owned by one team, on one
@@ -57,3 +58,20 @@ validation ladder, and reviewer checklist.
 Entries are graded blind to author identity; the `author_*` frontmatter
 fields are used for credit after scoring, not during it. Teams may
 withdraw an entry until the Phase 2 freeze.
+
+## Organizer handoff
+
+After intake, an organizer can upload an environment entry and emit a pinned
+training recipe:
+
+```bash
+posttrainarena-train prepare-submission \
+  --entry submissions/<team-entry> \
+  --base-config pipelines/benchflow-task-posttrain/configs/qwen3-4b-data-agent-openenv-smoke.toml \
+  --out .local/prepared/<team-entry> \
+  --dataset-repo <namespace>/posttrainarena-<team-entry> \
+  --upload
+```
+
+This managed SFT/GRPO bridge supports `track: environments`. Skill-track
+evaluation remains a separate frozen-agent workflow.

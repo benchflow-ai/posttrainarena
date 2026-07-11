@@ -74,7 +74,11 @@ competition-scale readiness.
 | OpenEnv client/server lifecycle | Implemented | Pinned dependency, served adapter, typed client, real lifecycle tests, finalization, state, and session isolation |
 | OpenEnv/BenchFlow Docker parity | Manually validated | Checked-in security task produced identical output and reward `1.0` through both integrations; CI uses a no-spend fake BenchFlow boundary |
 | Native dataset OpenEnv pipeline | End-to-end smoke validated | One train and one held-out native `task.md` package completed snapshot, teacher collection, SFT, forced GRPO, final eval, and artifact publication; see `docs/native-dataset-openenv-smoke.md` |
-| HF Jobs execution | **Not implemented** | No HF Jobs launcher or deployment workflow exists |
+| Submission-to-recipe bridge | Implemented | Environment entries become pinned Hub datasets and portable recipes |
+| HF Jobs execution | Implemented; scheduler credit blocked | UV job bundle and exact H100 runner validated; HF API allocation currently returns HTTP 402 until Jobs credits are granted |
+| Hub artifact publishing | Implemented | Run reports, checkpoint provenance, logs, and failures publish to Hub datasets/models |
+| Continuous leaderboard | Implemented | Atomic dataset records plus a deployable Gradio Space |
+| Multi-benchmark evaluation | Implemented | One base/final checkpoint pair is evaluated across pinned suites with macro delta |
 | Final Qwen3-8B competition recipe | Draft | Current reproducible reference pins Qwen3-4B |
 | Demonstrated model-quality lift | Not yet | Reproduced smoke measured zero lift |
 
@@ -122,10 +126,18 @@ omitted, the pipeline starts a local server. A general remote deployment still
 requires task-resolution and artifact-transfer contracts. In both current
 cases, BenchFlow remains the task/runtime/eval engine.
 
+`posttrainarena-train openenv-serve` exposes the adapter as a discoverable
+server command and resolves task IDs against server-owned pinned snapshots.
+The managed HF Job uses co-located mode so task and artifact paths stay inside
+one job. A general third-party artifact-transfer protocol remains separate.
+
 The related upstream discussion is
 [huggingface/OpenEnv#898](https://github.com/huggingface/OpenEnv/issues/898).
 That issue proposes validation support inside OpenEnv. This repository's
 compatibility comes from the adapter and lifecycle tests above.
+
+Issue `#898` is therefore not a blocker for the competition runtime. It covers
+authoring-time, spec-agnostic validation in the upstream OpenEnv CLI.
 
 ## Documentation precedence
 
