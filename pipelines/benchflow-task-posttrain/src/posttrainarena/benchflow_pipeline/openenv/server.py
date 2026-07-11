@@ -21,9 +21,14 @@ class BenchFlowOpenEnv(Environment):
 
     SUPPORTS_CONCURRENT_SESSIONS = True
 
-    def __init__(self, environment_factory: Callable[[], Any]) -> None:
+    def __init__(
+        self,
+        environment_factory: Callable[[], Any],
+        task_rows: dict[str, dict[str, Any]] | None = None,
+    ) -> None:
         super().__init__()
         self._environment = environment_factory()
+        self._task_rows = task_rows or {}
         self._episode_id: str | None = None
         self._step_count = 0
         self._done = False
@@ -35,7 +40,10 @@ class BenchFlowOpenEnv(Environment):
         **kwargs: Any,
     ) -> PostTrainObservation:
         del seed
-        output = self._environment.reset(**kwargs) or ""
+        task_id = kwargs.get("benchflow_task_id")
+        resolved = self._task_rows.get(str(task_id)) if task_id is not None else None
+        reset_kwargs = {**kwargs, **resolved} if resolved else kwargs
+        output = self._environment.reset(**reset_kwargs) or ""
         self._episode_id = episode_id
         self._step_count = 0
         self._done = False
@@ -90,9 +98,12 @@ class BenchFlowOpenEnv(Environment):
         )
 
 
-def create_openenv_app(environment_factory: Callable[[], Any]):
+def create_openenv_app(
+    environment_factory: Callable[[], Any],
+    task_rows: dict[str, dict[str, Any]] | None = None,
+):
     return create_app(
-        lambda: BenchFlowOpenEnv(environment_factory),
+        lambda: BenchFlowOpenEnv(environment_factory, task_rows),
         PostTrainAction,
         PostTrainObservation,
         env_name="posttrain-benchflow",

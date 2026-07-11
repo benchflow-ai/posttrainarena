@@ -46,7 +46,9 @@ The checked-in implementation is intentionally smaller than the draft competitio
 | BenchFlow task-list training and evaluation | **Implemented** — pinned snapshots, verified teacher collection, LoRA SFT, reward-gated or forced GRPO, held-out evaluation, and score reports |
 | Public data | **Available** — [2,238 training tasks](https://huggingface.co/datasets/benchflow/data_agent_rl_environment_train) and [366 held-out evaluation tasks](https://huggingface.co/datasets/benchflow/data_agent_rl_environment_eval) in native `task.md` format |
 | OpenEnv protocol path | **Implemented** — served adapter, typed client, lifecycle tests, Docker parity validation, and a native-dataset end-to-end smoke |
-| HF Jobs execution | **Not yet implemented on `main`** |
+| HF Jobs execution | **Implemented** — portable UV job bundles, pinned code refs, named-secret boundaries, status inspection, and Hub publishing; live scheduler allocation currently awaits HF credits |
+| Continuous leaderboard | **Implemented** — atomic Hub dataset records and a deployable Gradio Space |
+| Multi-benchmark evaluation | **Implemented** — one base/final checkpoint pair can be scored across pinned Data Agent and SkillsBench suites |
 | Final Qwen3-8B competition recipe | **Draft** — the reproducible public reference currently pins Qwen3-4B |
 | Demonstrated model-quality lift | **Not yet** — completed smokes validated system mechanics, not learning gains |
 
@@ -89,13 +91,15 @@ scripts/run_local.sh submissions/your-team/envs/your-env-name
 scripts/run_local.sh submissions/your-team/envs/your-env-name --skip-oracle
 ```
 
-See [CONTRIBUTING.md](./CONTRIBUTING.md) for the submission workflow, validation ladder, and reviewer checklist. Organizers and researchers should start with the [training pipeline guide](./docs/training-pipeline.md).
+See [CONTRIBUTING.md](./CONTRIBUTING.md) for the submission workflow, validation ladder, and reviewer checklist. Organizers and researchers should start with the [training pipeline guide](./docs/training-pipeline.md) and [HF Jobs handoff](./docs/hf-jobs.md).
 
 ## Documentation
 
 - [Task authoring specification](https://posttrain.com/docs/spec)
 - [Architecture and implementation status](./docs/architecture-status.md)
 - [Training pipeline operator guide](./docs/training-pipeline.md)
+- [Hugging Face Jobs and leaderboard handoff](./docs/hf-jobs.md)
+- [HF handoff validation report](./docs/hf-jobs-validation.md)
 - [Native-dataset OpenEnv smoke report](https://github.com/benchflow-ai/posttrainarena/blob/main/docs/native-dataset-openenv-smoke.md)
 - [Starting-kit guide](./starting-kit/README.md)
 - [Team submission guide](./submissions/README.md)

@@ -43,7 +43,7 @@ exact evidence and claim boundary.
 OpenEnv is an optional protocol adapter in front of the same BenchFlow engine.
 The adapter exposes a real served `Environment` and typed `EnvClient`; it does
 not duplicate BenchFlow task loading, sandboxes, verifiers, rewards, artifacts,
-or held-out evaluation. HF Jobs launch remains out of scope.
+or held-out evaluation.
 
 `runtime.openenv_url` currently supports only deployments that share the task
 snapshot and BenchFlow artifact filesystem with the pipeline process. A fully
@@ -278,3 +278,21 @@ bash -n pipelines/benchflow-task-posttrain/scripts/bootstrap_gpu.sh
 
 CI installs the package and runs `validate`, `plan`, and `run --dry-run` using
 the checked-in recipe.
+
+## Hugging Face Jobs and benchmark matrices
+
+The same pipeline runs through an HF UV Job without a second trainer
+implementation. The launcher uploads a portable config bundle, passes only
+named secrets to the Job API, and pins the PostTrain Arena Git commit.
+
+Use [`hf-jobs.md`](hf-jobs.md) for the full handoff. The checked-in
+`qwen3-4b-hf-job-smoke.toml` performs one SFT step and one forced GRPO step.
+`multi-benchmark-smoke.toml` evaluates the resulting checkpoint on Data Agent
+and SkillsBench and writes:
+
+```text
+runs/<run-name>/reports/benchmarks/summary.json
+```
+
+The Hub publisher records run artifacts, checkpoint provenance, job state,
+per-benchmark scores, and macro delta in the continuous leaderboard dataset.

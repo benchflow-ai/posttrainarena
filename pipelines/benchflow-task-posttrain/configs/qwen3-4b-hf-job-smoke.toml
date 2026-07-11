@@ -1,0 +1,61 @@
+[model]
+id = "Qwen/Qwen3-4B"
+revision = "1cfa9a7208912126459214e8b04321603b3df60c"
+
+[train_dataset]
+repo_id = "benchflow/data_agent_rl_environment_train"
+revision = "34ff63c91731df6b3670bfcd7e3d44e6790ddc48"
+path = "tasks"
+task_list = "../task-lists/data-agent-train-1.txt"
+
+[eval_dataset]
+repo_id = "benchflow/data_agent_rl_environment_eval"
+revision = "0ea976c79e3248c85737c4f7363484e4d47ce287"
+path = "tasks"
+task_list = "../task-lists/data-agent-eval-1.txt"
+
+[runtime]
+integration = "openenv"
+sandbox = "daytona"
+sandbox_user = "agent"
+bash_timeout_sec = 120
+max_output_chars = 8192
+max_completion_length = 512
+max_tool_calling_iterations = 8
+num_generations = 2
+use_vllm = false
+
+[teacher]
+enabled = true
+model = "glm-5.1"
+api_key_env = "GLM_API_KEY"
+base_url_env = "GLM_BASE_URL"
+max_attempts = 3
+max_tokens = 4096
+min_verified = 1
+temperature = 0.2
+
+[sft]
+enabled = true
+max_steps = 1
+learning_rate = 0.00002
+max_length = 2048
+gradient_accumulation_steps = 1
+lora_r = 16
+lora_alpha = 32
+
+[grpo]
+enabled = true
+run_policy = "always"
+threshold = 0.05
+gate_task_count = 1
+max_steps = 1
+learning_rate = 0.000001
+gradient_accumulation_steps = 1
+
+[tracking]
+report_to = "wandb"
+project = "posttrainarena-hf-jobs"
+
+[output]
+root = "../runs"

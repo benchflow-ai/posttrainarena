@@ -1,0 +1,15 @@
+[[benchmarks]]
+name = "data-agent"
+repo_id = "benchflow/data_agent_rl_environment_eval"
+revision = "0ea976c79e3248c85737c4f7363484e4d47ce287"
+path = "tasks"
+task_list = "../task-lists/data-agent-eval-1.txt"
+weight = 1.0
+
+[[benchmarks]]
+name = "skillsbench"
+repo_id = "benchflow/skillsbench"
+revision = "be2a6ce2cb1f4ff67ce937307cade0c5a0477a13"
+path = ""
+task_list = "../task-lists/skillsbench-eval-1.txt"
+weight = 1.0

@@ -6,6 +6,8 @@ on:
       - "pipelines/benchflow-task-posttrain/**"
       - "docs/training-pipeline.md"
       - "docs/architecture-status.md"
+      - "docs/hf-jobs.md"
+      - "docs/hf-jobs-validation.md"
       - "docs/README.md"
       - "README.md"
       - "CONTRIBUTING.md"
@@ -20,6 +22,8 @@ on:
       - "pipelines/benchflow-task-posttrain/**"
       - "docs/training-pipeline.md"
       - "docs/architecture-status.md"
+      - "docs/hf-jobs.md"
+      - "docs/hf-jobs-validation.md"
       - "docs/README.md"
       - "README.md"
       - "CONTRIBUTING.md"
@@ -49,6 +53,7 @@ jobs:
           python -m py_compile
           pipelines/benchflow-task-posttrain/src/posttrainarena/benchflow_pipeline/*.py
           pipelines/benchflow-task-posttrain/src/posttrainarena/benchflow_pipeline/openenv/*.py
+          pipelines/benchflow-task-posttrain/src/posttrainarena/benchflow_pipeline/jobs/*.py
       - name: Test no-spend contracts
         run: python -m pytest pipelines/benchflow-task-posttrain/tests -q
       - name: Exercise documented CLI
@@ -57,6 +62,8 @@ jobs:
           posttrainarena-train validate --config configs/qwen3-4b-data-agent-smoke.toml
           posttrainarena-train validate \
             --config configs/qwen3-4b-data-agent-openenv-smoke.toml
+          posttrainarena-train validate \
+            --config configs/qwen3-4b-hf-job-smoke.toml
           posttrainarena-train plan \
             --config configs/qwen3-4b-data-agent-openenv-smoke.toml \
             --run-name ci-plan > /tmp/posttrainarena-plan.json
@@ -77,4 +84,28 @@ jobs:
           assert run["grpo_run_policy"] == "always"
           assert run["grpo_planned"] is True
           assert run["grpo_ran"] is False
+          PY
+          posttrainarena-train hf-job-submit \
+            --config configs/qwen3-4b-hf-job-smoke.toml \
+            --benchmarks configs/multi-benchmark-smoke.toml \
+            --bundle-dir /tmp/posttrainarena-job-bundle \
+            --run-id ci-job-plan \
+            --submission-id organizer-smoke \
+            --team-name Organizers \
+            --artifact-repo benchflow/posttrainarena-results \
+            --leaderboard-repo benchflow/posttrainarena-leaderboard \
+            --flavor cpu-basic \
+            --pipeline-dry-run \
+            --launcher-dry-run > /tmp/posttrainarena-job-plan.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          plan = json.loads(Path("/tmp/posttrainarena-job-plan.json").read_text())
+          assert plan["posttrainarena_ref"]
+          assert plan["secret_names"] == ["HF_TOKEN"]
+          assert plan["submitted"] is False
+          bundle = Path(plan["bundle_dir"])
+          assert (bundle / "config.toml").is_file()
+          assert (bundle / "benchmarks.toml").is_file()
           PY

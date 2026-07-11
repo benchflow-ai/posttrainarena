@@ -26,10 +26,16 @@ train = [
   "torch==2.9.1; sys_platform == 'linux'",
   "wandb>=0.25,<0.26",
 ]
+hf = [
+  "huggingface_hub>=0.36,<2",
+  "tomli-w>=1.2,<2",
+]
 test = [
   "benchflow[trl] @ git+https://github.com/benchflow-ai/benchflow.git@0b41232cf02e9c4f22c01e284724dd2a02c3f468",
+  "huggingface_hub>=0.36,<2",
   "openenv @ git+https://github.com/huggingface/OpenEnv.git@6823135a714814e3efb3e39c4a9edff01e1a2a98",
   "pytest>=8.0",
+  "tomli-w>=1.2,<2",
 ]
 
 [project.scripts]
