@@ -70,6 +70,14 @@ class HarnessConfig:
 
 
 @dataclass(frozen=True)
+class EvaluationConfig:
+    base_model_env: str = "BENCHFLOW_BASE_MODEL"
+    student_model_env: str = "BENCHFLOW_ADAPTER_MODEL"
+    base_url_env: str = "BENCHFLOW_PROVIDER_BASE_URL"
+    api_key_env: str = "BENCHFLOW_PROVIDER_API_KEY"
+
+
+@dataclass(frozen=True)
 class TeacherConfig:
     enabled: bool = True
     model: str = "glm/glm-5.1"
@@ -117,6 +125,7 @@ class PipelineConfig:
     eval_dataset: DatasetConfig
     runtime: RuntimeConfig = field(default_factory=RuntimeConfig)
     harness: HarnessConfig = field(default_factory=HarnessConfig)
+    evaluation: EvaluationConfig = field(default_factory=EvaluationConfig)
     teacher: TeacherConfig = field(default_factory=TeacherConfig)
     sft: SftConfig = field(default_factory=SftConfig)
     grpo: GrpoConfig = field(default_factory=GrpoConfig)
@@ -150,6 +159,14 @@ class PipelineConfig:
             or not self.harness.reasoning_effort.strip()
         ):
             errors.append("harness.reasoning_effort must be a non-empty string")
+        for label, value in (
+            ("evaluation.base_model_env", self.evaluation.base_model_env),
+            ("evaluation.student_model_env", self.evaluation.student_model_env),
+            ("evaluation.base_url_env", self.evaluation.base_url_env),
+            ("evaluation.api_key_env", self.evaluation.api_key_env),
+        ):
+            if not isinstance(value, str) or not value.strip():
+                errors.append(f"{label} must be a non-empty string")
         if self.runtime.openenv_url and self.runtime.integration != "openenv":
             errors.append("runtime.openenv_url requires integration = openenv")
         if (
@@ -217,6 +234,7 @@ def load_config(path: str | Path) -> PipelineConfig:
     eval_data = _table(data, "eval_dataset")
     runtime = _table(data, "runtime")
     harness = _table(data, "harness", required=True)
+    evaluation = _table(data, "evaluation", required=True)
     teacher = _table(data, "teacher")
     sft = _table(data, "sft")
     grpo = _table(data, "grpo")
@@ -240,6 +258,7 @@ def load_config(path: str | Path) -> PipelineConfig:
         ),
         runtime=RuntimeConfig(**runtime),
         harness=HarnessConfig(**harness),
+        evaluation=EvaluationConfig(**evaluation),
         teacher=TeacherConfig(**teacher),
         sft=SftConfig(**sft),
         grpo=GrpoConfig(**grpo),

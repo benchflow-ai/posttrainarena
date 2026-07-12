@@ -1,8 +1,7 @@
-"""BenchFlow-backed policy evaluation and GRPO training."""
+"""Legacy TRL environment integration retained only for GRPO training."""
 
 from __future__ import annotations
 
-import math
 from pathlib import Path
 from typing import Any
 
@@ -42,79 +41,6 @@ def _model_init_kwargs(config: PipelineConfig, model: str) -> dict[str, Any]:
     if model == config.model and config.model_revision:
         values["revision"] = config.model_revision
     return values
-
-
-def evaluate(
-    *,
-    config: PipelineConfig,
-    model: str,
-    tasks_dir: Path,
-    task_ids: list[str],
-    jobs_dir: Path,
-    output_dir: Path,
-    metrics_path: Path,
-    run_name: str,
-) -> dict[str, Any]:
-    from trl import GRPOConfig, GRPOTrainer
-
-    integration = build_environment_integration(
-        config=config,
-        tasks_dir=tasks_dir,
-        task_ids=task_ids,
-        jobs_dir=jobs_dir,
-        reset_message=RESET_MESSAGE,
-    )
-    rows = list(integration.train_dataset_rows)
-    try:
-        dataset = integration.train_dataset
-        eval_batch_size = len(rows)
-        generation_batch_size = math.lcm(
-            eval_batch_size, config.runtime.num_generations
-        )
-        values = {
-            **_common(config, output_dir, run_name),
-            "do_eval": True,
-            "per_device_train_batch_size": config.runtime.num_generations,
-            "per_device_eval_batch_size": eval_batch_size,
-            "generation_batch_size": generation_batch_size,
-            "num_generations": config.runtime.num_generations,
-            "num_generations_eval": 1,
-        }
-        values["model_init_kwargs"] = _model_init_kwargs(config, model)
-        trainer = GRPOTrainer(
-            model=model,
-            args=GRPOConfig(**supported_kwargs(GRPOConfig, values)),
-            train_dataset=dataset.select(range(1)),
-            eval_dataset=dataset,
-            environment_factory=integration.environment_factory,
-            reward_funcs=list(integration.reward_funcs),
-        )
-        metrics = trainer.evaluate()
-    finally:
-        integration.close()
-    score = next(
-        (
-            value
-            for key, value in metrics.items()
-            if key.startswith("eval_rewards/") and key.endswith("/mean")
-        ),
-        None,
-    )
-    if not isinstance(score, int | float):
-        score = metrics.get("eval_reward")
-    if not isinstance(score, int | float):
-        raise RuntimeError(f"Evaluation metrics contain no BenchFlow reward: {metrics}")
-    payload = {
-        "mode": "eval",
-        "model": model,
-        "task_ids": [row["benchflow_task_id"] for row in rows],
-        "task_count": len(rows),
-        "score": float(score),
-        "metrics": metrics,
-        "jobs_dir": str(jobs_dir),
-    }
-    write_json(metrics_path, payload)
-    return payload
 
 
 def train_grpo(

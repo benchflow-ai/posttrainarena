@@ -13,21 +13,22 @@ implemented OpenEnv adapter boundary, see
 ```text
 training task list + held-out eval task list + pinned TOML recipe
     -> snapshot task packages from Hugging Face
-    -> evaluate the base model
+    -> evaluate the served base model through OpenCode
     -> collect verifier-approved teacher trajectories through OpenCode
     -> convert and validate tool-aware SFT data
     -> train and merge a LoRA SFT checkpoint
-    -> evaluate a training-task reward gate
+    -> evaluate the served student model on a training-task reward gate
     -> run GRPO according to the configured run policy
-    -> evaluate the final model on held-out tasks
+    -> evaluate the served final model through OpenCode on held-out tasks
     -> write paired lift and score reports
 ```
 
 BenchFlow owns task snapshots, Daytona or Docker sandboxes, verifiers, reward
 extraction, rollout artifacts, and paired evaluation. OpenCode owns the teacher
-agent loop. TRL owns SFT and GRPO optimization. Evaluation and GRPO still use
-the legacy TRL-owned `run_bash` / `submit` loop during this migration stage.
-The pipeline is Harbor-free and does not translate Harbor trajectories.
+and evaluation agent loops. TRL owns SFT and GRPO optimization. GRPO rollout
+generation is the only stage still using the legacy TRL-owned `run_bash` /
+`submit` loop during this migration stage. The pipeline is Harbor-free and
+does not translate Harbor trajectories.
 
 The default recipes pin the public BenchFlow-native conversions:
 
@@ -41,10 +42,11 @@ SFT, forced-GRPO, final-eval, and publication path on these revisions. See
 [`native-dataset-openenv-smoke.md`](native-dataset-openenv-smoke.md) for the
 exact evidence and claim boundary.
 
-OpenEnv is an optional protocol adapter in front of the same BenchFlow engine.
-The adapter exposes a real served `Environment` and typed `EnvClient`; it does
-not duplicate BenchFlow task loading, sandboxes, verifiers, rewards, artifacts,
-or held-out evaluation.
+OpenEnv is an optional protocol adapter for the temporary legacy GRPO path in
+front of the same BenchFlow engine. Teacher collection and evaluation use the
+OpenCode-backed BenchFlow CLI directly. The adapter exposes a real served
+`Environment` and typed `EnvClient`; it does not duplicate BenchFlow task
+loading, sandboxes, verifiers, rewards, artifacts, or held-out evaluation.
 
 `runtime.openenv_url` currently supports only deployments that share the task
 snapshot and BenchFlow artifact filesystem with the pipeline process. A fully
@@ -57,17 +59,19 @@ evaluation, the reward gate, and GRPO rollouts.
 ```mermaid
 flowchart LR
     Input["PostTrain task packages + pinned recipe"] --> Pipeline["PostTrain pipeline"]
+    Pipeline --> OC["OpenCode teacher + evaluation"]
+    OC --> BF["BenchFlow task + verifier"]
     Pipeline --> TRL["TRL SFT + GRPO"]
-    TRL --> Backend{"Environment integration"}
+    TRL --> Backend{"Temporary GRPO environment integration"}
     Backend --> Direct["Direct BenchFlow"]
     Backend --> OE["OpenEnv protocol"]
-    OE --> BF["BenchFlow task + verifier"]
+    OE --> BF
     Direct --> BF
     BF --> Runtime["Docker / Daytona"]
     Runtime --> BF
     BF --> TRL
-    TRL --> Eval["Held-out BenchFlow evaluation"]
-    Eval --> Output["score.json + paired lift artifacts"]
+    BF --> Output["score.json + paired lift artifacts"]
+    TRL --> Pipeline
 ```
 
 ## Public contract
@@ -145,7 +149,8 @@ Dry-run records the full possible path, including conditional GRPO. Therefore
 | `[train_dataset]` | HF task repository, revision, path, and training task-list file |
 | `[eval_dataset]` | Separate HF repository/revision and held-out task-list file |
 | `[runtime]` | Direct/OpenEnv integration, Daytona/Docker sandbox, tool limits, generation counts, and vLLM toggle |
-| `[harness]` | Required OpenCode contract, skill mode, telemetry, concurrency, and setup/idle/wall-clock timeouts; currently applied to teacher collection while evaluation and GRPO migrate in follow-up releases |
+| `[harness]` | Required OpenCode contract, skill mode, telemetry, concurrency, and setup/idle/wall-clock timeouts for teacher collection and evaluation |
+| `[evaluation]` | Environment-variable names for the served base/student model aliases and OpenAI-compatible endpoint credentials |
 | `[teacher]` | Provider-qualified teacher model, adaptive attempts, reward threshold, post-run token/tool acceptance ceilings, and required verified rows |
 | `[sft]` | Enable flag, optimizer settings, sequence length, and LoRA dimensions |
 | `[grpo]` | Enable flag, run policy, training-task gate threshold/count, optimizer settings, and steps |
@@ -166,6 +171,10 @@ The example Daytona recipe expects:
 - `HF_TOKEN` when private or gated snapshots require it
 - `DAYTONA_API_KEY` for sandbox creation
 - `GLM_API_KEY` and `GLM_BASE_URL` for its OpenCode-driven GLM teacher
+- `BENCHFLOW_BASE_MODEL` and `BENCHFLOW_ADAPTER_MODEL` for the OpenCode
+  baseline and current-student model aliases
+- `BENCHFLOW_PROVIDER_BASE_URL` and `BENCHFLOW_PROVIDER_API_KEY` for the
+  OpenAI-compatible model endpoint used by OpenCode evaluation
 - `WANDB_API_KEY` when `tracking.report_to = "wandb"`
 - any task-specific credentials required by selected verifiers
 
@@ -187,6 +196,18 @@ posttrainarena-train run \
 Resume reuses snapshots, evaluation metrics, converted SFT data, and checkpoints
 when their expected marker artifacts exist. Use a new run name when changing a
 recipe or task list.
+
+Before a post-SFT or post-GRPO evaluation, the configured student endpoint must
+serve the checkpoint under `BENCHFLOW_ADAPTER_MODEL`. This evaluation slice
+fails closed on missing endpoint configuration, incomplete token telemetry,
+missing or malformed LLM trajectories, unscored rows, and zero-tool rollouts.
+Automatic endpoint resynchronization is part of the OpenCode GRPO rollout
+refactor.
+
+The evaluator itself has a real SkillsBench + Daytona canary with score `1.0`,
+complete provider telemetry, and healthy `results.jsonl` and
+`llm_trajectory.jsonl` artifacts. See
+[`opencode-evaluation-canary.md`](opencode-evaluation-canary.md).
 
 ## SFT, RL-only, and reward gating
 

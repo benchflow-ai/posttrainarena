@@ -1,8 +1,9 @@
 # BenchFlow Task-List Post-Training Pipeline
 
 This is the public, reproducible training path for running SFT and optional
-GRPO over BenchFlow-compatible task suites. TRL can drive BenchFlow directly
-or through a real OpenEnv client/server protocol adapter.
+GRPO over BenchFlow-compatible task suites. OpenCode drives teacher collection
+and evaluation; the temporary legacy GRPO path lets TRL drive BenchFlow
+directly or through a real OpenEnv client/server protocol adapter.
 
 The repository-wide architecture and compatibility status is documented in
 [`docs/architecture-status.md`](../../docs/architecture-status.md). In
@@ -22,10 +23,10 @@ training task list + held-out eval task list + TOML recipe
 ```
 
 BenchFlow owns task snapshots, sandbox lifecycle, verifiers, rollout artifacts,
-and paired evaluation. OpenCode owns teacher-model interaction. TRL owns SFT
-and GRPO optimization. Evaluation and GRPO remain on the legacy TRL-owned tool
-loop until their follow-up migration changes land. OpenEnv is an optional
-protocol for that legacy path, not a second runtime or eval engine. The default
+and paired evaluation. OpenCode owns teacher and evaluation model interaction.
+TRL owns SFT and GRPO optimization. Only GRPO rollouts remain on the legacy
+TRL-owned tool loop. OpenEnv is an optional protocol for that temporary GRPO
+path, not a second runtime or eval engine. The default
 recipes pin the public BenchFlow-native `task.md` datasets
 `benchflow/data_agent_rl_environment_train` and
 `benchflow/data_agent_rl_environment_eval`. The pipeline does not depend on
@@ -44,8 +45,9 @@ benchflow-task-posttrain/
   src/.../config.py        typed TOML contract and validation
   src/.../pipeline.py      resumable stage orchestration
   src/.../teacher.py       verified OpenCode teacher rollouts
+  src/.../opencode.py      OpenCode baseline/gate/final evaluation
   src/.../sft.py           tool-aware LoRA SFT and weight merge
-  src/.../policy.py        BenchFlow-backed eval and GRPO
+  src/.../policy.py        temporary legacy GRPO rollout integration
   src/.../openenv/         OpenEnv client/server protocol adapter
   tests/                   no-spend contract tests
 ```
@@ -102,6 +104,10 @@ The example recipe requires:
 - `HF_TOKEN` for task snapshots and optional artifact publication
 - `DAYTONA_API_KEY` for `runtime.sandbox = "daytona"`
 - `GLM_API_KEY` and `GLM_BASE_URL` for the example OpenCode teacher model
+- `BENCHFLOW_BASE_MODEL` and `BENCHFLOW_ADAPTER_MODEL` for the served base and
+  current-student model aliases
+- `BENCHFLOW_PROVIDER_BASE_URL` and `BENCHFLOW_PROVIDER_API_KEY` for the
+  OpenAI-compatible endpoint used by OpenCode evaluation
 - `WANDB_API_KEY` when `tracking.report_to = "wandb"`
 - any verifier-specific credentials required by the selected task packages
 
@@ -117,6 +123,10 @@ posttrainarena-train run \
 
 Use `--resume` after interruption. Completed snapshots, evaluations, and
 checkpoints are reused when their expected marker artifacts exist.
+
+The endpoint named by the evaluation environment variables must already serve
+the checkpoint selected for the stage. Automatic student endpoint
+resynchronization is part of the remaining OpenCode GRPO migration.
 
 The final contract is:
 

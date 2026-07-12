@@ -34,15 +34,18 @@ PostTrain task lists and pinned HF snapshots
     -> OpenCode teacher rollouts through BenchFlow
     -> verifier-approved, training-ready teacher trajectories
     -> TRL LoRA SFT and merged checkpoint
-    -> legacy TRL environment_factory reward gate and optional GRPO
-    -> legacy TRL environment_factory held-out evaluation and paired lift report
+    -> OpenCode training-task reward gate through BenchFlow
+    -> legacy TRL environment_factory optional GRPO
+    -> OpenCode held-out evaluation and paired lift report
 ```
 
-Teacher collection now uses OpenCode as its agent harness with required provider
-telemetry and BenchFlow artifact-health gates. Evaluation and GRPO still use the
-older TRL-owned `run_bash` / `submit` loop in this migration stage; follow-up
-changes will move those stages to the same OpenCode harness before the legacy
-environment path is removed.
+Teacher collection and every evaluation stage now use OpenCode as the agent
+harness with required provider telemetry and BenchFlow artifact-health gates.
+Only GRPO rollout generation still uses the older TRL-owned `run_bash` /
+`submit` loop. Evaluation resolves the base and student model aliases plus the
+OpenAI-compatible endpoint from named environment variables. The endpoint must
+already expose the checkpoint selected for that stage; the GRPO migration owns
+automatic policy-to-endpoint resynchronization.
 
 The final machine-readable contract is:
 
@@ -76,11 +79,12 @@ competition-scale readiness.
 | TRL SFT | Implemented | Tool-aware LoRA SFT and merged checkpoint path |
 | TRL GRPO | Implemented | Reward-gated by default; explicit `always` policy supports zero-reward plumbing runs |
 | OpenCode teacher collection | Implemented | Provider-qualified teacher model, required usage tracking, adaptive retries, and one training-ready rollout selected per task |
-| OpenCode evaluation and GRPO | In migration | Teacher collection is migrated; evaluation and GRPO still use the legacy TRL environment loop |
+| OpenCode evaluation | Implemented | Baseline, post-SFT, training gate, final, and multi-benchmark evaluation all use `bench eval run --agent opencode`; the real SkillsBench + Daytona canary passed with complete telemetry and healthy trajectories |
+| OpenCode GRPO | In migration | GRPO rollout generation and policy-to-endpoint resynchronization still use the legacy TRL environment loop |
 | Harbor | Not a dependency | No Harbor adapter or trajectory translation is used |
 | OpenEnv client/server lifecycle | Implemented | Pinned dependency, served adapter, typed client, real lifecycle tests, finalization, state, and session isolation |
 | OpenEnv/BenchFlow Docker parity | Manually validated | Checked-in security task produced identical output and reward `1.0` through both integrations; CI uses a no-spend fake BenchFlow boundary |
-| Native dataset OpenEnv pipeline | End-to-end smoke validated | One train and one held-out native `task.md` package completed snapshot, teacher collection, SFT, forced GRPO, final eval, and artifact publication; see `docs/native-dataset-openenv-smoke.md` |
+| Native dataset OpenEnv pipeline | Prior end-to-end smoke validated | One train and one held-out native `task.md` package completed the earlier OpenEnv/TRL eval path; rerun the current OpenCode-eval path after a student endpoint is configured |
 | Submission-to-recipe bridge | Implemented | Environment entries become pinned Hub datasets and portable recipes |
 | HF Jobs execution | Implemented; scheduler credit blocked | UV job bundle and exact H100 runner validated; HF API allocation currently returns HTTP 402 until Jobs credits are granted |
 | Hub artifact publishing | Implemented | Run reports, checkpoint provenance, logs, and failures publish to Hub datasets/models |
@@ -89,9 +93,16 @@ competition-scale readiness.
 | Final Qwen3-8B competition recipe | Draft | Current reproducible reference pins Qwen3-4B |
 | Demonstrated model-quality lift | Not yet | Reproduced smoke measured zero lift |
 
+The OpenCode evaluation evidence is recorded in
+[`opencode-evaluation-canary.md`](opencode-evaluation-canary.md).
+
 ## OpenEnv integration
 
-The supported path is:
+OpenEnv is currently confined to the temporary legacy GRPO integration.
+Teacher collection and evaluation invoke BenchFlow directly through the
+OpenCode-backed `bench eval run` path.
+
+The supported GRPO path is:
 
 ```text
 TRL

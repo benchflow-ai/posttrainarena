@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from .config import PipelineConfig, load_config
+from .config import load_config
 from .io import CommandRunner, load_json, read_task_ids, write_json
 
 
@@ -75,11 +75,7 @@ def _snapshot_command(suite: BenchmarkSuite, destination: Path) -> list[str]:
     ]
     if suite.path:
         command.extend(["--path", suite.path])
-    command.extend(
-        item
-        for task_id in task_ids
-        for item in ("--include-task", task_id)
-    )
+    command.extend(item for task_id in task_ids for item in ("--include-task", task_id))
     return command
 
 
@@ -99,7 +95,7 @@ def run_benchmark_matrix(
     final_model = str(score.get("final_model") or run_dir / "checkpoints" / "grpo")
     runner = CommandRunner(cwd=config.source.parent, dry_run=dry_run)
     results: list[dict[str, Any]] = []
-    from .policy import evaluate
+    from .opencode import evaluate
 
     for suite in suites:
         task_ids = read_task_ids(suite.task_list)
@@ -112,47 +108,29 @@ def run_benchmark_matrix(
         )
         jobs_root = run_dir / "jobs" / "benchmarks" / suite.name
         results_root = run_dir / "results" / "benchmarks" / suite.name
-        if dry_run:
-            baseline_score = final_score = None
-            runner.commands.extend(
-                [
-                    {
-                        "name": f"baseline_benchmark_{suite.name}",
-                        "call": "policy.evaluate",
-                        "model": config.model,
-                        "task_ids": task_ids,
-                    },
-                    {
-                        "name": f"final_benchmark_{suite.name}",
-                        "call": "policy.evaluate",
-                        "model": final_model,
-                        "task_ids": task_ids,
-                    },
-                ]
-            )
-        else:
-            baseline = evaluate(
-                config=config,
-                model=config.model,
-                tasks_dir=tasks_dir,
-                task_ids=task_ids,
-                jobs_dir=jobs_root / "baseline",
-                output_dir=results_root / "baseline-trainer",
-                metrics_path=results_root / "baseline.json",
-                run_name=f"{run_dir.name}-{suite.name}-baseline",
-            )
-            final = evaluate(
-                config=config,
-                model=final_model,
-                tasks_dir=tasks_dir,
-                task_ids=task_ids,
-                jobs_dir=jobs_root / "final",
-                output_dir=results_root / "final-trainer",
-                metrics_path=results_root / "final.json",
-                run_name=f"{run_dir.name}-{suite.name}-final",
-            )
-            baseline_score = float(baseline["score"])
-            final_score = float(final["score"])
+        baseline = evaluate(
+            config=config,
+            runner=runner,
+            stage=f"baseline_benchmark_{suite.name}",
+            model=config.model,
+            tasks_dir=tasks_dir,
+            task_ids=task_ids,
+            jobs_dir=jobs_root / "baseline",
+            metrics_path=results_root / "baseline.json",
+        )
+        final = evaluate(
+            config=config,
+            runner=runner,
+            stage=f"final_benchmark_{suite.name}",
+            model=final_model,
+            tasks_dir=tasks_dir,
+            task_ids=task_ids,
+            jobs_dir=jobs_root / "final",
+            metrics_path=results_root / "final.json",
+        )
+        baseline_score = None if baseline["score"] is None else float(baseline["score"])
+        final_score = None if final["score"] is None else float(final["score"])
+        if not dry_run:
             runner.run(
                 f"compare_benchmark_{suite.name}",
                 [

@@ -44,6 +44,7 @@ The checked-in implementation is intentionally smaller than the draft competitio
 | --- | --- |
 | Participant task format and local validation | **Implemented** — eight worked examples, structural checks, Docker oracle replay, and empty-trial rejection |
 | BenchFlow task-list training and evaluation | **Implemented** — pinned snapshots, verified teacher collection, LoRA SFT, reward-gated or forced GRPO, held-out evaluation, and score reports |
+| OpenCode harness migration | **Teacher and evaluation implemented** — teacher collection, baseline/gate/final eval, and benchmark matrices use OpenCode; GRPO rollout generation and endpoint resync remain in migration |
 | Public data | **Available** — [2,238 training tasks](https://huggingface.co/datasets/benchflow/data_agent_rl_environment_train) and [366 held-out evaluation tasks](https://huggingface.co/datasets/benchflow/data_agent_rl_environment_eval) in native `task.md` format |
 | OpenEnv protocol path | **Implemented** — served adapter, typed client, lifecycle tests, Docker parity validation, and a native-dataset end-to-end smoke |
 | HF Jobs execution | **Implemented** — portable UV job bundles, pinned code refs, named-secret boundaries, status inspection, and Hub publishing; live scheduler allocation currently awaits HF credits |
@@ -53,7 +54,7 @@ The checked-in implementation is intentionally smaller than the draft competitio
 | Demonstrated model-quality lift | **Not yet** — completed smokes validated system mechanics, not learning gains |
 
 > [!NOTE]
-> On July 10, 2026, a real one-train/one-held-out run completed snapshotting, baseline evaluation, verifier-approved teacher collection, LoRA SFT, a forced GRPO step, final evaluation, and artifact publication through the OpenEnv path. Scores remained `0.0 → 0.0`, so this is evidence of end-to-end operability—not quality improvement. See the [native-dataset OpenEnv smoke report](https://github.com/benchflow-ai/posttrainarena/blob/main/docs/native-dataset-openenv-smoke.md).
+> On July 10, 2026, a real one-train/one-held-out run completed snapshotting, baseline evaluation, verifier-approved teacher collection, LoRA SFT, a forced GRPO step, final evaluation, and artifact publication through the earlier OpenEnv/TRL evaluation path. Scores remained `0.0 → 0.0`, so this is evidence of end-to-end operability—not quality improvement and not validation of the newer OpenCode evaluation path. See the [native-dataset OpenEnv smoke report](https://github.com/benchflow-ai/posttrainarena/blob/main/docs/native-dataset-openenv-smoke.md).
 
 For compatibility details and evidence boundaries, use [Architecture and implementation status](./docs/architecture-status.md) as the source of truth.
 
