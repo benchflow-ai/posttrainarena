@@ -61,14 +61,14 @@ jobs:
         run: |
           posttrainarena-train validate --config configs/qwen3-4b-data-agent-smoke.toml
           posttrainarena-train validate \
-            --config configs/qwen3-4b-data-agent-openenv-smoke.toml
+            --config configs/qwen3-4b-data-agent-forced-grpo-smoke.toml
           posttrainarena-train validate \
             --config configs/qwen3-4b-hf-job-smoke.toml
           posttrainarena-train plan \
-            --config configs/qwen3-4b-data-agent-openenv-smoke.toml \
+            --config configs/qwen3-4b-data-agent-forced-grpo-smoke.toml \
             --run-name ci-plan > /tmp/posttrainarena-plan.json
           posttrainarena-train run \
-            --config configs/qwen3-4b-data-agent-openenv-smoke.toml \
+            --config configs/qwen3-4b-data-agent-forced-grpo-smoke.toml \
             --run-name ci-dry-run \
             --dry-run > /tmp/posttrainarena-run.json
           python - <<'PY'
@@ -79,7 +79,12 @@ jobs:
           run = json.loads(Path("/tmp/posttrainarena-run.json").read_text())
           assert plan["train_task_count"] == 15
           assert plan["eval_task_count"] == 2
-          assert plan["runtime"]["integration"] == "openenv"
+          assert plan["harness_migration"]["applied_stages"] == [
+              "teacher",
+              "evaluation",
+              "grpo",
+          ]
+          assert plan["harness_migration"]["pending_stages"] == []
           assert plan["grpo"]["run_policy"] == "always"
           assert run["grpo_run_policy"] == "always"
           assert run["grpo_planned"] is True
