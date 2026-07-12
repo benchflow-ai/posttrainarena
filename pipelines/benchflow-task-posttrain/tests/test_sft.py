@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import sys
+from importlib.machinery import ModuleSpec
 from pathlib import Path
-from types import SimpleNamespace
+from types import ModuleType, SimpleNamespace
 from typing import Any
 
 import pytest
@@ -39,9 +41,7 @@ def test_train_sft_uses_native_trl_rows_and_masked_loss(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     import datasets
-    import peft
     import transformers
-    import trl
     import posttrainarena.benchflow_pipeline.sft as sft_module
 
     source = tmp_path / "train.jsonl"
@@ -88,6 +88,16 @@ def test_train_sft_uses_native_trl_rows_and_masked_loss(
         def save_model(self, path):
             captured["adapter_save"] = path
 
+    fake_peft = ModuleType("peft")
+    fake_peft.__spec__ = ModuleSpec("peft", loader=None)
+    fake_peft.PeftModel = FakePeftModel  # type: ignore[attr-defined]
+    fake_peft.LoraConfig = FakeConfig  # type: ignore[attr-defined]
+    fake_trl = ModuleType("trl")
+    fake_trl.__spec__ = ModuleSpec("trl", loader=None)
+    fake_trl.SFTConfig = FakeConfig  # type: ignore[attr-defined]
+    fake_trl.SFTTrainer = FakeTrainer  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "peft", fake_peft)
+    monkeypatch.setitem(sys.modules, "trl", fake_trl)
     monkeypatch.setattr(
         datasets.Dataset,
         "from_list",
@@ -103,10 +113,6 @@ def test_train_sft_uses_native_trl_rows_and_masked_loss(
         "from_pretrained",
         lambda *args, **kwargs: FakeModel(),
     )
-    monkeypatch.setattr(peft, "PeftModel", FakePeftModel)
-    monkeypatch.setattr(peft, "LoraConfig", FakeConfig)
-    monkeypatch.setattr(trl, "SFTConfig", FakeConfig)
-    monkeypatch.setattr(trl, "SFTTrainer", FakeTrainer)
     monkeypatch.setattr(
         sft_module,
         "supported_kwargs",
