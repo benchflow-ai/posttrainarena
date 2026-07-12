@@ -30,9 +30,15 @@ def test_plan_exposes_public_stage_contract(tmp_path: Path) -> None:
         "agent_timeout_sec": 900,
         "reasoning_effort": None,
     }
+    assert plan["evaluation"] == {
+        "base_model_env": "BENCHFLOW_BASE_MODEL",
+        "student_model_env": "BENCHFLOW_ADAPTER_MODEL",
+        "base_url_env": "BENCHFLOW_PROVIDER_BASE_URL",
+        "api_key_env": "BENCHFLOW_PROVIDER_API_KEY",
+    }
     assert plan["harness_migration"] == {
-        "applied_stages": ["teacher"],
-        "pending_stages": ["evaluation", "grpo"],
+        "applied_stages": ["teacher", "evaluation"],
+        "pending_stages": ["grpo"],
     }
     assert plan["stages"][0] == "snapshot_train_tasks"
     assert plan["stages"][-1] == "write_score_report"
@@ -51,7 +57,10 @@ def test_dry_run_writes_score_schema_without_heavy_dependencies(tmp_path: Path) 
     assert saved["grpo_planned"] is True
     assert saved["grpo_ran"] is False
     assert saved["harness"]["agent"] == "opencode"
-    assert saved["harness_migration"]["applied_stages"] == ["teacher"]
+    assert saved["harness_migration"]["applied_stages"] == [
+        "teacher",
+        "evaluation",
+    ]
     convert = next(
         item
         for item in saved["commands"]
@@ -68,6 +77,15 @@ def test_dry_run_writes_score_schema_without_heavy_dependencies(tmp_path: Path) 
         "grpo_gate_eval",
         "compare_eval_lift",
     }
+    evaluation_commands = [
+        item
+        for item in saved["commands"]
+        if item["name"] in {"baseline_eval", "sft_eval", "grpo_gate_eval"}
+    ]
+    assert all(
+        item["command"][item["command"].index("--agent") + 1] == "opencode"
+        for item in evaluation_commands
+    )
 
 
 def test_pipeline_rejects_train_eval_overlap(tmp_path: Path) -> None:
@@ -95,10 +113,15 @@ def test_rl_only_dry_run_uses_base_model(tmp_path: Path) -> None:
     result = Pipeline(config, run_name="rl-only", dry_run=True).run()
     grpo = next(item for item in result["commands"] if item["name"] == "train_grpo")
     gate = next(item for item in result["commands"] if item["name"] == "grpo_gate_eval")
+    gate_task_ids = [
+        gate["command"][index + 1]
+        for index, value in enumerate(gate["command"])
+        if value == "--include"
+    ]
 
     assert grpo["model"] == config.model
     assert (
-        gate["task_ids"]
+        gate_task_ids
         == Pipeline(config, run_name="task-list", dry_run=True).train_task_ids[
             : config.grpo.gate_task_count
         ]

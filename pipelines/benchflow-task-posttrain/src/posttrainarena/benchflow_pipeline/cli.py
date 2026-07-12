@@ -162,7 +162,10 @@ def main(argv: list[str] | None = None) -> int:
                 "DAYTONA_API_KEY",
                 "GLM_API_KEY",
                 "GLM_BASE_URL",
-                "OPENAI_API_KEY",
+                "BENCHFLOW_BASE_MODEL",
+                "BENCHFLOW_ADAPTER_MODEL",
+                "BENCHFLOW_PROVIDER_BASE_URL",
+                "BENCHFLOW_PROVIDER_API_KEY",
                 "WANDB_API_KEY",
             ]
         )

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import os
 from pathlib import Path
 from typing import Any
@@ -16,7 +15,10 @@ SECRET_ENV_NAMES = (
     "DAYTONA_API_KEY",
     "GLM_API_KEY",
     "GLM_BASE_URL",
-    "OPENAI_API_KEY",
+    "BENCHFLOW_BASE_MODEL",
+    "BENCHFLOW_ADAPTER_MODEL",
+    "BENCHFLOW_PROVIDER_BASE_URL",
+    "BENCHFLOW_PROVIDER_API_KEY",
     "WANDB_API_KEY",
 )
 
@@ -45,9 +47,7 @@ def build_run_record(
     score_path = run_dir / "reports" / "score.json"
     score = load_json(score_path) if score_path.is_file() else {}
     benchmark_path = run_dir / "reports" / "benchmarks" / "summary.json"
-    benchmark_summary = (
-        load_json(benchmark_path) if benchmark_path.is_file() else None
-    )
+    benchmark_summary = load_json(benchmark_path) if benchmark_path.is_file() else None
     return {
         "schema_version": 1,
         "run_id": run_id,
@@ -62,9 +62,7 @@ def build_run_record(
         "score_after_posttrain": score.get("score_after_posttrain"),
         "delta_score": score.get("delta_score"),
         "macro_benchmark_delta": (
-            benchmark_summary.get("macro_delta_score")
-            if benchmark_summary
-            else None
+            benchmark_summary.get("macro_delta_score") if benchmark_summary else None
         ),
         "benchmark_scores": (
             benchmark_summary.get("benchmarks") if benchmark_summary else []

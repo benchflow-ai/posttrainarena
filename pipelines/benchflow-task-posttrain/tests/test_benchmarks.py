@@ -44,6 +44,10 @@ def test_benchmark_manifest_and_dry_run_matrix(tmp_path: Path) -> None:
     assert result["macro_delta_score"] is None
     assert result["benchmarks"][0]["task_ids"] == ["0000_369_369503_qa_1"]
     assert len(result["commands"]) == 3
+    for command in result["commands"][1:]:
+        assert command["command"][command["command"].index("--agent") + 1] == (
+            "opencode"
+        )
 
 
 def test_checked_in_multi_benchmark_manifest_is_cross_domain() -> None:

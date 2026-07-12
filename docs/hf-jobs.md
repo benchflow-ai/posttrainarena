@@ -100,8 +100,9 @@ posttrainarena-train hf-job-submit \
 ```
 
 Default full-run secrets are `HF_TOKEN`, `DAYTONA_API_KEY`, `GLM_API_KEY`,
-`GLM_BASE_URL`, `OPENAI_API_KEY`, and `WANDB_API_KEY`. Override the list with
-repeated `--secret-env NAME`.
+`GLM_BASE_URL`, `BENCHFLOW_BASE_MODEL`, `BENCHFLOW_ADAPTER_MODEL`,
+`BENCHFLOW_PROVIDER_BASE_URL`, `BENCHFLOW_PROVIDER_API_KEY`, and
+`WANDB_API_KEY`. Override the list with repeated `--secret-env NAME`.
 
 ## 4. Inspect a job
 

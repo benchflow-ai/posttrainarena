@@ -3,6 +3,10 @@
 On July 10, 2026, PostTrain Arena completed a real one-train/one-held-out
 end-to-end run against the public BenchFlow-native data-agent datasets.
 
+This historical run used the earlier TRL/OpenEnv evaluation loop. It does not
+validate the newer OpenCode baseline/gate/final evaluator or the still-pending
+OpenCode GRPO endpoint-resynchronization path.
+
 ## Pinned inputs
 
 - PostTrain Arena: `fbdd7c2`
@@ -52,4 +56,3 @@ confirmed terminated.
 
 The run emitted the known non-fatal asynchronous Daytona cleanup warning after
 score artifacts were written. No run sandbox remained active.
-

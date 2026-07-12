@@ -21,6 +21,10 @@ def test_example_config_is_valid_and_pinned() -> None:
     assert len(config.eval_dataset.revision) == 40
     assert config.harness.agent == "opencode"
     assert config.harness.usage_tracking == "required"
+    assert config.evaluation.base_model_env == "BENCHFLOW_BASE_MODEL"
+    assert config.evaluation.student_model_env == "BENCHFLOW_ADAPTER_MODEL"
+    assert config.evaluation.base_url_env == "BENCHFLOW_PROVIDER_BASE_URL"
+    assert config.evaluation.api_key_env == "BENCHFLOW_PROVIDER_API_KEY"
     assert config.teacher.model == "glm/glm-5.1"
     assert config.teacher.min_reward == 1.0
     assert config.teacher.min_verified == 15
@@ -71,6 +75,30 @@ def test_config_rejects_non_opencode_harness() -> None:
     config = replace(config, harness=replace(config.harness, agent="openhands"))
 
     with pytest.raises(ValueError, match="harness.agent must be opencode"):
+        config.validate()
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "message"),
+    [
+        ("base_model_env", "", "evaluation.base_model_env"),
+        ("student_model_env", "", "evaluation.student_model_env"),
+        ("base_url_env", "", "evaluation.base_url_env"),
+        ("api_key_env", "", "evaluation.api_key_env"),
+    ],
+)
+def test_config_rejects_invalid_evaluation_values(
+    field: str,
+    value: object,
+    message: str,
+) -> None:
+    config = load_config(ROOT / "configs/qwen3-4b-data-agent-smoke.toml")
+    config = replace(
+        config,
+        evaluation=replace(config.evaluation, **{field: value}),  # type: ignore[arg-type]
+    )
+
+    with pytest.raises(ValueError, match=message):
         config.validate()
 
 
@@ -195,6 +223,24 @@ def test_config_rejects_non_table_harness(tmp_path: Path) -> None:
         load_config(config_path)
 
 
+def test_config_requires_evaluation_table(tmp_path: Path) -> None:
+    source = ROOT / "configs/qwen3-4b-data-agent-smoke.toml"
+    text = source.read_text()
+    evaluation_start = text.index("[evaluation]")
+    teacher_start = text.index("[teacher]")
+    task_lists = tmp_path / "task-lists"
+    task_lists.mkdir()
+    for name in ("data-agent-train-15.txt", "data-agent-eval-2.txt"):
+        (task_lists / name).write_text((ROOT / "task-lists" / name).read_text())
+    configs = tmp_path / "configs"
+    configs.mkdir()
+    config_path = configs / "missing-evaluation.toml"
+    config_path.write_text(text[:evaluation_start] + text[teacher_start:])
+
+    with pytest.raises(ValueError, match=r"Missing required \[evaluation\] table"):
+        load_config(config_path)
+
+
 def test_config_accepts_non_default_opencode_harness_values() -> None:
     config = load_config(ROOT / "configs/qwen3-4b-data-agent-smoke.toml")
     config = replace(
@@ -250,6 +296,7 @@ revision = "def"
 task_list = "missing-eval.txt"
 [harness]
 agent = "opencode"
+[evaluation]
 """
     )
 

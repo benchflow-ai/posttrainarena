@@ -37,6 +37,12 @@ sandbox_setup_timeout_sec = 300
 agent_idle_timeout_sec = 300
 agent_timeout_sec = 900
 
+[evaluation]
+base_model_env = "BENCHFLOW_BASE_MODEL"
+student_model_env = "BENCHFLOW_ADAPTER_MODEL"
+base_url_env = "BENCHFLOW_PROVIDER_BASE_URL"
+api_key_env = "BENCHFLOW_PROVIDER_API_KEY"
+
 [teacher]
 enabled = true
 model = "glm/glm-5.1"

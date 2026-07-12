@@ -63,9 +63,10 @@ class Pipeline:
             "eval_task_count": len(self.eval_task_ids),
             "runtime": asdict(self.config.runtime),
             "harness": asdict(self.config.harness),
+            "evaluation": asdict(self.config.evaluation),
             "harness_migration": {
-                "applied_stages": ["teacher"],
-                "pending_stages": ["evaluation", "grpo"],
+                "applied_stages": ["teacher", "evaluation"],
+                "pending_stages": ["grpo"],
             },
             "teacher": asdict(self.config.teacher),
             "sft": asdict(self.config.sft),
@@ -239,31 +240,20 @@ class Pipeline:
     ) -> float | None:
         if self.resume and metrics_path.is_file():
             return load_score(metrics_path)
-        if self.dry_run:
-            self.runner.commands.append(
-                {
-                    "name": stage,
-                    "call": "policy.evaluate",
-                    "model": model,
-                    "task_ids": task_ids,
-                    "jobs_dir": str(jobs_dir),
-                    "metrics_path": str(metrics_path),
-                }
-            )
-            return None
-        from .policy import evaluate
+        from .opencode import evaluate
 
         payload = evaluate(
             config=self.config,
+            runner=self.runner,
+            stage=stage,
             model=model,
             tasks_dir=tasks_dir,
             task_ids=task_ids,
             jobs_dir=jobs_dir,
-            output_dir=self.layout.results / f"{stage}_trainer",
             metrics_path=metrics_path,
-            run_name=f"{self.run_name}-{stage}",
         )
-        return float(payload["score"])
+        score = payload["score"]
+        return None if score is None else float(score)
 
     def _collect_and_convert_teacher_data(self) -> None:
         manifest_path = self.layout.reports / "teacher_manifest.json"
@@ -408,9 +398,10 @@ class Pipeline:
             "grpo_planned": grpo_planned,
             "grpo_ran": grpo_ran,
             "harness": asdict(self.config.harness),
+            "evaluation": asdict(self.config.evaluation),
             "harness_migration": {
-                "applied_stages": ["teacher"],
-                "pending_stages": ["evaluation", "grpo"],
+                "applied_stages": ["teacher", "evaluation"],
+                "pending_stages": ["grpo"],
             },
             "benchflow_commit": BENCHFLOW_COMMIT,
             "train_dataset": asdict(self.config.train_dataset),

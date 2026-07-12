@@ -6,6 +6,12 @@ The PostTrain Arena Hugging Face handoff is implemented and its exact UV runner
 has completed the full pipeline on an H100. Allocation through the HF Jobs
 scheduler is currently blocked by account credits, not code.
 
+This July 11 evidence predates the OpenCode evaluation migration. It validates
+the HF bundle, trainer, publishing, and earlier TRL evaluation path. The current
+OpenCode evaluator has separate real SkillsBench + Daytona canary evidence, but
+the full HF H100 flow must be rerun after a student endpoint and automatic
+checkpoint resynchronization are available.
+
 ## Validated flow
 
 Run: `hf-wrapper-h100-fixed-20260711T010948Z`
