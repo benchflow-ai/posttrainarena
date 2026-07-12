@@ -32,6 +32,7 @@ def test_example_config_is_valid_and_pinned() -> None:
     assert config.grpo.run_policy == "on_reward"
     assert config.grpo.rollout_attempts == 2
     assert config.grpo.vllm_server_base_url_env == "TRL_VLLM_SERVER_BASE_URL"
+    assert config.sft.max_length == 40960
 
 
 def test_forced_grpo_smoke_config_bypasses_reward_gate() -> None:

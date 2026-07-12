@@ -68,6 +68,16 @@ def test_dry_run_writes_score_schema_without_heavy_dependencies(tmp_path: Path) 
         if item["name"] == "convert_verified_sft_data"
     )
     assert convert["command"][convert["command"].index("--min-reward") + 1] == "1.0"
+    assert convert["command"][convert["command"].index("--format") + 1] == "trl-sft"
+    assert convert["command"][convert["command"].index("--row-mode") + 1] == (
+        "exchange"
+    )
+    assert convert["command"][convert["command"].index("--tokenizer") + 1] == (
+        config.model
+    )
+    assert convert["command"][convert["command"].index("--max-length") + 1] == (
+        str(config.sft.max_length)
+    )
     assert len(saved["train_task_ids"]) == 15
     assert {item["name"] for item in saved["commands"]} >= {
         "snapshot_train_tasks",

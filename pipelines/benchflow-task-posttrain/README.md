@@ -16,7 +16,7 @@ The interface is intentionally small:
 training task list + held-out eval task list + TOML recipe
     -> baseline eval
     -> verifier-approved teacher trajectories
-    -> tool-aware SFT
+    -> native TRL prompt/completion/tools SFT
     -> post-SFT reward gate
     -> optional GRPO
     -> held-out score and paired lift report
@@ -42,7 +42,7 @@ benchflow-task-posttrain/
   src/.../teacher.py       verified OpenCode teacher rollouts
   src/.../opencode.py      OpenCode baseline/gate/final evaluation
   src/.../grpo.py          OpenCode custom rollouts for TRL GRPO
-  src/.../sft.py           tool-aware LoRA SFT and weight merge
+  src/.../sft.py           TRL completion-only/assistant-only LoRA SFT
   src/.../openenv/         OpenEnv client/server protocol adapter
   tests/                   no-spend contract tests
 ```

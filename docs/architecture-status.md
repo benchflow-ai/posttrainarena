@@ -78,7 +78,7 @@ competition-scale readiness.
 | BenchFlow task-list training/eval | Implemented | Public pipeline, tests, CLI dry-run, and completed H100 smoke |
 | Docker runtime | Implemented | Local author harness and BenchFlow runtime option |
 | Daytona runtime | Implemented in pipeline | BenchFlow runtime option; credentials required for real execution |
-| TRL SFT | Implemented | Tool-aware LoRA SFT and merged checkpoint path |
+| TRL SFT | Implemented | BenchFlow `trl-sft` prompt/completion/tools conversion, tokenizer-aware message windows, completion-only and assistant-only LoRA loss, and merged checkpoint path |
 | TRL GRPO | Implemented | Reward-gated by default; custom OpenCode rollout function returns token IDs, sampled logprobs, action mask, and BenchFlow verifier reward |
 | OpenCode teacher collection | Implemented | Provider-qualified teacher model, required usage tracking, adaptive retries, and one training-ready rollout selected per task |
 | OpenCode evaluation | Implemented | Baseline, post-SFT, training gate, final, and multi-benchmark evaluation all use `bench eval run --agent opencode`; the real SkillsBench + Daytona canary passed with complete telemetry and healthy trajectories |

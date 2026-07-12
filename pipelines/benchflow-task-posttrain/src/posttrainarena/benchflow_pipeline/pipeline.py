@@ -296,14 +296,30 @@ class Pipeline:
                     "train",
                     "convert",
                     str(self.layout.jobs / "teacher"),
+                    "--format",
+                    "trl-sft",
                     "--out",
                     str(self.layout.sft_jsonl),
                     "--min-reward",
                     str(self.config.teacher.min_reward),
                     "--row-mode",
-                    "rollout",
+                    "exchange",
                     "--canonical-selection",
                     str(self.layout.teacher_selection),
+                    "--context-policy",
+                    "message-window",
+                    "--tokenizer",
+                    self.config.model,
+                    *(
+                        [
+                            "--tokenizer-revision",
+                            self.config.model_revision,
+                        ]
+                        if self.config.model_revision
+                        else []
+                    ),
+                    "--max-length",
+                    str(self.config.sft.max_length),
                     "--manifest",
                     str(conversion_manifest),
                 ],
@@ -315,12 +331,26 @@ class Pipeline:
                 "train",
                 "validate",
                 str(self.layout.sft_jsonl),
+                "--format",
+                "trl-sft",
                 "--source-jobs",
                 str(self.layout.jobs / "teacher"),
                 "--source-canonical-selection",
                 str(self.layout.teacher_selection),
                 "--require-llm-trajectory",
                 "--require-tool-calls",
+                "--tokenizer",
+                self.config.model,
+                *(
+                    [
+                        "--tokenizer-revision",
+                        self.config.model_revision,
+                    ]
+                    if self.config.model_revision
+                    else []
+                ),
+                "--max-length",
+                str(self.config.sft.max_length),
             ],
         )
 

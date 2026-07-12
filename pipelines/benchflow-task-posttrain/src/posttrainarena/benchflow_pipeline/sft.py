@@ -11,26 +11,31 @@ from .config import PipelineConfig
 from .io import supported_kwargs, write_json
 
 
-def render_rows(path: Path, tokenizer: Any) -> list[dict[str, str]]:
-    rows: list[dict[str, str]] = []
+def load_trl_rows(path: Path) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
     for line_num, line in enumerate(path.read_text().splitlines(), start=1):
         if not line.strip():
             continue
         row = json.loads(line)
-        messages = row.get("messages")
-        tools = row.get("tool_defs", row.get("tools"))
-        if not isinstance(messages, list) or not messages:
-            raise ValueError(f"row {line_num}: missing messages")
-        rows.append(
-            {
-                "text": tokenizer.apply_chat_template(
-                    messages,
-                    tools=tools,
-                    tokenize=False,
-                    add_generation_prompt=False,
-                )
-            }
-        )
+        prompt = row.get("prompt")
+        completion = row.get("completion")
+        tools = row.get("tools")
+        if not isinstance(prompt, list) or not prompt:
+            raise ValueError(f"row {line_num}: missing prompt messages")
+        if (
+            not isinstance(completion, list)
+            or len(completion) != 1
+            or not isinstance(completion[0], dict)
+            or completion[0].get("role") != "assistant"
+        ):
+            raise ValueError(
+                f"row {line_num}: completion must contain one assistant message"
+            )
+        if not isinstance(tools, list):
+            raise ValueError(f"row {line_num}: missing tools")
+        if "tool_defs" in row:
+            raise ValueError(f"row {line_num}: TRL rows must use tools")
+        rows.append(dict(row))
     if not rows:
         raise ValueError(f"No SFT rows in {path}")
     return rows
@@ -55,7 +60,7 @@ def train_sft(
     tokenizer = AutoTokenizer.from_pretrained(config.model, **model_kwargs)
     if tokenizer is None:
         raise RuntimeError(f"Tokenizer failed to load for {config.model}")
-    dataset = Dataset.from_list(render_rows(train_jsonl, tokenizer))
+    dataset = Dataset.from_list(load_trl_rows(train_jsonl))
     model = AutoModelForCausalLM.from_pretrained(
         config.model, dtype="bfloat16", **model_kwargs
     )
@@ -72,9 +77,10 @@ def train_sft(
         if config.tracking.report_to != "none"
         else "none",
         "run_name": f"{run_name}-sft",
-        "dataset_text_field": "text",
         "max_length": config.sft.max_length,
         "packing": False,
+        "completion_only_loss": True,
+        "assistant_only_loss": True,
     }
     trainer = SFTTrainer(
         model=model,

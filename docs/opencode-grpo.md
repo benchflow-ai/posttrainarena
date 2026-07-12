@@ -39,8 +39,9 @@ The BenchFlow LiteLLM proxy is invoked with
 the chat-completions endpoint and preserves them in
 `trajectory/llm_trajectory.jsonl`.
 
-The minimum pinned BenchFlow revision for this contract is
-`c441b2abc07f48c03fd6638c5b9bcf7d837b6f38`.
+The executable pipeline pins BenchFlow
+`93e58a2bd730a8ff3ca5aff5247aec845a370d1c`, which includes both sampled-token
+logprob capture and the native TRL SFT converter.
 
 The rollout parser reconstructs one causal sequence across all model turns.
 Model-generated tokens receive action mask `1`; tool results, environment

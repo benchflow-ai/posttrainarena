@@ -15,7 +15,7 @@ training task list + held-out eval task list + pinned TOML recipe
     -> snapshot task packages from Hugging Face
     -> evaluate the served base model through OpenCode
     -> collect verifier-approved teacher trajectories through OpenCode
-    -> convert and validate tool-aware SFT data
+    -> convert and validate native TRL prompt/completion/tools SFT data
     -> train and merge a LoRA SFT checkpoint
     -> synchronize SFT weights to the student vLLM endpoint
     -> evaluate the served student model on a training-task reward gate
@@ -48,7 +48,8 @@ but it is not used by the current training pipeline. The adapter exposes a real
 served `Environment` and typed `EnvClient`; it does not duplicate BenchFlow task
 loading, sandboxes, verifiers, rewards, or artifacts.
 
-SFT optimization consumes verified tool-aware rows and does not call the
+SFT optimization consumes BenchFlow's native `trl-sft` prompt/completion/tools
+rows with completion-only and assistant-only loss. It does not call the
 environment. Environment interaction occurs during teacher collection,
 evaluation, the reward gate, and GRPO rollouts.
 
@@ -145,7 +146,7 @@ Dry-run records the full possible path, including conditional GRPO. Therefore
 | `[harness]` | Required OpenCode contract, skill mode, telemetry, concurrency, and setup/idle/wall-clock timeouts for teacher collection and evaluation |
 | `[evaluation]` | Environment-variable names for the served base/student model aliases and OpenAI-compatible endpoint credentials |
 | `[teacher]` | Provider-qualified teacher model, adaptive attempts, reward threshold, post-run token/tool acceptance ceilings, and required verified rows |
-| `[sft]` | Enable flag, optimizer settings, sequence length, and LoRA dimensions |
+| `[sft]` | Enable flag, optimizer settings, tokenizer-aware message-window length, and LoRA dimensions |
 | `[grpo]` | Enable flag, run policy, gate threshold/count, optimizer settings, rollout retries, and trainer-side vLLM URL environment variable |
 | `[tracking]` | W&B or disabled reporting |
 | `[output]` | Run root relative to the recipe |
