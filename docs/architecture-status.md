@@ -31,13 +31,18 @@ The supported executable reference is the Qwen3-4B pipeline under
 PostTrain task lists and pinned HF snapshots
     -> direct BenchFlow or OpenEnv protocol integration
     -> BenchFlow task loading and sandbox lifecycle
-    -> BenchFlow run_bash / submit agent harness
-    -> verifier-approved teacher trajectories
+    -> OpenCode teacher rollouts through BenchFlow
+    -> verifier-approved, training-ready teacher trajectories
     -> TRL LoRA SFT and merged checkpoint
-    -> BenchFlow reward gate on training tasks
-    -> optional TRL GRPO
-    -> held-out BenchFlow evaluation and paired lift report
+    -> legacy TRL environment_factory reward gate and optional GRPO
+    -> legacy TRL environment_factory held-out evaluation and paired lift report
 ```
+
+Teacher collection now uses OpenCode as its agent harness with required provider
+telemetry and BenchFlow artifact-health gates. Evaluation and GRPO still use the
+older TRL-owned `run_bash` / `submit` loop in this migration stage; follow-up
+changes will move those stages to the same OpenCode harness before the legacy
+environment path is removed.
 
 The final machine-readable contract is:
 
@@ -70,6 +75,8 @@ competition-scale readiness.
 | Daytona runtime | Implemented in pipeline | BenchFlow runtime option; credentials required for real execution |
 | TRL SFT | Implemented | Tool-aware LoRA SFT and merged checkpoint path |
 | TRL GRPO | Implemented | Reward-gated by default; explicit `always` policy supports zero-reward plumbing runs |
+| OpenCode teacher collection | Implemented | Provider-qualified teacher model, required usage tracking, adaptive retries, and one training-ready rollout selected per task |
+| OpenCode evaluation and GRPO | In migration | Teacher collection is migrated; evaluation and GRPO still use the legacy TRL environment loop |
 | Harbor | Not a dependency | No Harbor adapter or trajectory translation is used |
 | OpenEnv client/server lifecycle | Implemented | Pinned dependency, served adapter, typed client, real lifecycle tests, finalization, state, and session isolation |
 | OpenEnv/BenchFlow Docker parity | Manually validated | Checked-in security task produced identical output and reward `1.0` through both integrations; CI uses a no-spend fake BenchFlow boundary |

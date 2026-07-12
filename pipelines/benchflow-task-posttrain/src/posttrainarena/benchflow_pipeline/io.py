@@ -52,7 +52,7 @@ class CommandRunner:
         self.dry_run = dry_run
         self.commands: list[dict[str, Any]] = []
 
-    def run(self, name: str, command: list[str]) -> None:
+    def run(self, name: str, command: list[str], *, check: bool = True) -> int:
         record = {
             "name": name,
             "cwd": str(self.cwd),
@@ -65,5 +65,11 @@ class CommandRunner:
             file=sys.stderr,
             flush=True,
         )
-        if not self.dry_run:
-            subprocess.run(command, cwd=self.cwd, check=True)
+        if self.dry_run:
+            record["returncode"] = 0
+            return 0
+        result = subprocess.run(command, cwd=self.cwd, check=False)
+        record["returncode"] = result.returncode
+        if check and result.returncode:
+            raise subprocess.CalledProcessError(result.returncode, command)
+        return result.returncode

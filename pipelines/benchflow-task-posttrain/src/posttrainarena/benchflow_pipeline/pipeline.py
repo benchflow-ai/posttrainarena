@@ -62,6 +62,11 @@ class Pipeline:
             "train_task_count": len(self.train_task_ids),
             "eval_task_count": len(self.eval_task_ids),
             "runtime": asdict(self.config.runtime),
+            "harness": asdict(self.config.harness),
+            "harness_migration": {
+                "applied_stages": ["teacher"],
+                "pending_stages": ["evaluation", "grpo"],
+            },
             "teacher": asdict(self.config.teacher),
             "sft": asdict(self.config.sft),
             "grpo": asdict(self.config.grpo),
@@ -262,26 +267,22 @@ class Pipeline:
 
     def _collect_and_convert_teacher_data(self) -> None:
         manifest_path = self.layout.reports / "teacher_manifest.json"
-        if not (self.resume and manifest_path.is_file()):
-            if self.dry_run:
-                self.runner.commands.append(
-                    {
-                        "name": "collect_verified_teacher_rollouts",
-                        "call": "teacher.collect_verified_teacher_rollouts",
-                        "task_ids": self.train_task_ids,
-                        "jobs_dir": str(self.layout.jobs / "teacher"),
-                    }
-                )
-            else:
-                from .teacher import collect_verified_teacher_rollouts
+        if not (
+            self.resume
+            and manifest_path.is_file()
+            and self.layout.teacher_selection.is_file()
+        ):
+            from .teacher import collect_verified_teacher_rollouts
 
-                collect_verified_teacher_rollouts(
-                    config=self.config,
-                    tasks_dir=self.layout.train_tasks,
-                    task_ids=self.train_task_ids,
-                    jobs_dir=self.layout.jobs / "teacher",
-                    manifest_path=manifest_path,
-                )
+            collect_verified_teacher_rollouts(
+                config=self.config,
+                runner=self.runner,
+                tasks_dir=self.layout.train_tasks,
+                task_ids=self.train_task_ids,
+                jobs_dir=self.layout.jobs / "teacher",
+                manifest_path=manifest_path,
+                selection_path=self.layout.teacher_selection,
+            )
         conversion_manifest = self.layout.reports / "sft_conversion.json"
         if not (
             self.resume
@@ -298,9 +299,11 @@ class Pipeline:
                     "--out",
                     str(self.layout.sft_jsonl),
                     "--min-reward",
-                    "1.0",
+                    str(self.config.teacher.min_reward),
                     "--row-mode",
                     "rollout",
+                    "--canonical-selection",
+                    str(self.layout.teacher_selection),
                     "--manifest",
                     str(conversion_manifest),
                 ],
@@ -314,6 +317,8 @@ class Pipeline:
                 str(self.layout.sft_jsonl),
                 "--source-jobs",
                 str(self.layout.jobs / "teacher"),
+                "--source-canonical-selection",
+                str(self.layout.teacher_selection),
                 "--require-llm-trajectory",
                 "--require-tool-calls",
             ],
@@ -402,6 +407,11 @@ class Pipeline:
             "grpo_run_policy": self.config.grpo.run_policy,
             "grpo_planned": grpo_planned,
             "grpo_ran": grpo_ran,
+            "harness": asdict(self.config.harness),
+            "harness_migration": {
+                "applied_stages": ["teacher"],
+                "pending_stages": ["evaluation", "grpo"],
+            },
             "benchflow_commit": BENCHFLOW_COMMIT,
             "train_dataset": asdict(self.config.train_dataset),
             "eval_dataset": asdict(self.config.eval_dataset),

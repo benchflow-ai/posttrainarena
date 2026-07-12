@@ -10,9 +10,15 @@ from typing import Any, Literal
 
 BENCHFLOW_COMMIT = "6eaa14344bd835a3c2c5c31a31470ef994b24a80"
 GrpoRunPolicy = Literal["on_reward", "always"]
+HarnessSkillMode = Literal["no-skill", "with-skill"]
+UsageTrackingPolicy = Literal["required"]
 
 
-def _table(data: dict[str, Any], name: str) -> dict[str, Any]:
+def _table(
+    data: dict[str, Any], name: str, *, required: bool = False
+) -> dict[str, Any]:
+    if required and name not in data:
+        raise ValueError(f"Missing required [{name}] table")
     value = data.get(name, {})
     if not isinstance(value, dict):
         raise ValueError(f"[{name}] must be a TOML table")
@@ -22,6 +28,10 @@ def _table(data: dict[str, Any], name: str) -> dict[str, Any]:
 def _resolve(base: Path, value: str | Path) -> Path:
     path = Path(value).expanduser()
     return path if path.is_absolute() else (base / path).resolve()
+
+
+def _is_positive_int(value: object) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool) and value >= 1
 
 
 @dataclass(frozen=True)
@@ -48,15 +58,26 @@ class RuntimeConfig:
 
 
 @dataclass(frozen=True)
+class HarnessConfig:
+    agent: str = "opencode"
+    skill_mode: HarnessSkillMode = "no-skill"
+    usage_tracking: UsageTrackingPolicy = "required"
+    concurrency: int = 1
+    sandbox_setup_timeout_sec: int = 300
+    agent_idle_timeout_sec: int = 300
+    agent_timeout_sec: int = 900
+    reasoning_effort: str | None = None
+
+
+@dataclass(frozen=True)
 class TeacherConfig:
     enabled: bool = True
-    model: str = "glm-5.1"
-    api_key_env: str = "GLM_API_KEY"
-    base_url_env: str = "GLM_BASE_URL"
+    model: str = "glm/glm-5.1"
     max_attempts: int = 3
-    max_tokens: int = 4096
     min_verified: int = 1
-    temperature: float = 0.2
+    min_reward: float = 1.0
+    max_accepted_total_tokens: int = 200000
+    max_accepted_tool_calls: int = 50
 
 
 @dataclass(frozen=True)
@@ -95,6 +116,7 @@ class PipelineConfig:
     train_dataset: DatasetConfig
     eval_dataset: DatasetConfig
     runtime: RuntimeConfig = field(default_factory=RuntimeConfig)
+    harness: HarnessConfig = field(default_factory=HarnessConfig)
     teacher: TeacherConfig = field(default_factory=TeacherConfig)
     sft: SftConfig = field(default_factory=SftConfig)
     grpo: GrpoConfig = field(default_factory=GrpoConfig)
@@ -109,6 +131,25 @@ class PipelineConfig:
         errors: list[str] = []
         if self.runtime.integration not in {"benchflow", "openenv"}:
             errors.append("runtime.integration must be benchflow or openenv")
+        if self.harness.agent != "opencode":
+            errors.append("harness.agent must be opencode")
+        if self.harness.skill_mode not in {"no-skill", "with-skill"}:
+            errors.append("harness.skill_mode must be no-skill or with-skill")
+        if self.harness.usage_tracking != "required":
+            errors.append("harness.usage_tracking must be required")
+        if not _is_positive_int(self.harness.concurrency):
+            errors.append("harness.concurrency must be positive")
+        if not _is_positive_int(self.harness.sandbox_setup_timeout_sec):
+            errors.append("harness.sandbox_setup_timeout_sec must be positive")
+        if not _is_positive_int(self.harness.agent_idle_timeout_sec):
+            errors.append("harness.agent_idle_timeout_sec must be positive")
+        if not _is_positive_int(self.harness.agent_timeout_sec):
+            errors.append("harness.agent_timeout_sec must be positive")
+        if self.harness.reasoning_effort is not None and (
+            not isinstance(self.harness.reasoning_effort, str)
+            or not self.harness.reasoning_effort.strip()
+        ):
+            errors.append("harness.reasoning_effort must be a non-empty string")
         if self.runtime.openenv_url and self.runtime.integration != "openenv":
             errors.append("runtime.openenv_url requires integration = openenv")
         if (
@@ -133,8 +174,26 @@ class PipelineConfig:
             errors.append("grpo.gate_task_count must be positive")
         if self.grpo.max_steps < 1:
             errors.append("grpo.max_steps must be positive")
-        if self.teacher.max_attempts < 1 or self.teacher.min_verified < 1:
+        if not _is_positive_int(self.teacher.max_attempts) or not _is_positive_int(
+            self.teacher.min_verified
+        ):
             errors.append("teacher max_attempts and min_verified must be positive")
+        if (
+            not isinstance(self.teacher.model, str)
+            or not self.teacher.model.strip()
+            or "/" not in self.teacher.model
+        ):
+            errors.append("teacher.model must use provider/model format")
+        if (
+            not isinstance(self.teacher.min_reward, int | float)
+            or isinstance(self.teacher.min_reward, bool)
+            or not 0 <= float(self.teacher.min_reward) <= 1
+        ):
+            errors.append("teacher.min_reward must be between 0 and 1")
+        if not _is_positive_int(self.teacher.max_accepted_total_tokens):
+            errors.append("teacher.max_accepted_total_tokens must be positive")
+        if not _is_positive_int(self.teacher.max_accepted_tool_calls):
+            errors.append("teacher.max_accepted_tool_calls must be positive")
         if self.sft.max_steps < 1:
             errors.append("sft.max_steps must be positive")
         for label, path in (
@@ -157,6 +216,7 @@ def load_config(path: str | Path) -> PipelineConfig:
     train = _table(data, "train_dataset")
     eval_data = _table(data, "eval_dataset")
     runtime = _table(data, "runtime")
+    harness = _table(data, "harness", required=True)
     teacher = _table(data, "teacher")
     sft = _table(data, "sft")
     grpo = _table(data, "grpo")
@@ -179,6 +239,7 @@ def load_config(path: str | Path) -> PipelineConfig:
             path=str(eval_data.get("path", "tasks")),
         ),
         runtime=RuntimeConfig(**runtime),
+        harness=HarnessConfig(**harness),
         teacher=TeacherConfig(**teacher),
         sft=SftConfig(**sft),
         grpo=GrpoConfig(**grpo),

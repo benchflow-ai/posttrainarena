@@ -14,7 +14,7 @@ implemented OpenEnv adapter boundary, see
 training task list + held-out eval task list + pinned TOML recipe
     -> snapshot task packages from Hugging Face
     -> evaluate the base model
-    -> collect verifier-approved teacher trajectories
+    -> collect verifier-approved teacher trajectories through OpenCode
     -> convert and validate tool-aware SFT data
     -> train and merge a LoRA SFT checkpoint
     -> evaluate a training-task reward gate
@@ -23,10 +23,11 @@ training task list + held-out eval task list + pinned TOML recipe
     -> write paired lift and score reports
 ```
 
-BenchFlow owns task snapshots, Daytona or Docker sandboxes, the `run_bash` and
-`submit` tools, verifiers, reward extraction, rollout artifacts, and paired
-evaluation. TRL owns SFT and GRPO optimization. The pipeline is Harbor-free and
-does not translate Harbor trajectories.
+BenchFlow owns task snapshots, Daytona or Docker sandboxes, verifiers, reward
+extraction, rollout artifacts, and paired evaluation. OpenCode owns the teacher
+agent loop. TRL owns SFT and GRPO optimization. Evaluation and GRPO still use
+the legacy TRL-owned `run_bash` / `submit` loop during this migration stage.
+The pipeline is Harbor-free and does not translate Harbor trajectories.
 
 The default recipes pin the public BenchFlow-native conversions:
 
@@ -144,7 +145,8 @@ Dry-run records the full possible path, including conditional GRPO. Therefore
 | `[train_dataset]` | HF task repository, revision, path, and training task-list file |
 | `[eval_dataset]` | Separate HF repository/revision and held-out task-list file |
 | `[runtime]` | Direct/OpenEnv integration, Daytona/Docker sandbox, tool limits, generation counts, and vLLM toggle |
-| `[teacher]` | Teacher model, credential variable names, attempts, and required verified rows |
+| `[harness]` | Required OpenCode contract, skill mode, telemetry, concurrency, and setup/idle/wall-clock timeouts; currently applied to teacher collection while evaluation and GRPO migrate in follow-up releases |
+| `[teacher]` | Provider-qualified teacher model, adaptive attempts, reward threshold, post-run token/tool acceptance ceilings, and required verified rows |
 | `[sft]` | Enable flag, optimizer settings, sequence length, and LoRA dimensions |
 | `[grpo]` | Enable flag, run policy, training-task gate threshold/count, optimizer settings, and steps |
 | `[tracking]` | W&B or disabled reporting |
@@ -163,12 +165,11 @@ The example Daytona recipe expects:
 
 - `HF_TOKEN` when private or gated snapshots require it
 - `DAYTONA_API_KEY` for sandbox creation
-- `GLM_API_KEY` and `GLM_BASE_URL` for its OpenAI-compatible teacher
+- `GLM_API_KEY` and `GLM_BASE_URL` for its OpenCode-driven GLM teacher
 - `WANDB_API_KEY` when `tracking.report_to = "wandb"`
 - any task-specific credentials required by selected verifiers
 
-Teacher credential variable names are configurable. Their values are not
-written to the run plan or score report.
+Provider credential values are not written to the run plan or score report.
 
 ## Execute and resume
 

@@ -23,6 +23,10 @@ class RunLayout:
         return self.root / "data" / "verified_teacher_sft.jsonl"
 
     @property
+    def teacher_selection(self) -> Path:
+        return self.root / "reports" / "teacher_selection.json"
+
+    @property
     def jobs(self) -> Path:
         return self.root / "jobs"
 
