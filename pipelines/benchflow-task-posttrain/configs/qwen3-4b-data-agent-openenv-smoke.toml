@@ -28,15 +28,23 @@ max_tool_calling_iterations = 25
 num_generations = 2
 use_vllm = false
 
+[harness]
+agent = "opencode"
+skill_mode = "no-skill"
+usage_tracking = "required"
+concurrency = 1
+sandbox_setup_timeout_sec = 300
+agent_idle_timeout_sec = 300
+agent_timeout_sec = 900
+
 [teacher]
 enabled = true
-model = "glm-5.1"
-api_key_env = "GLM_API_KEY"
-base_url_env = "GLM_BASE_URL"
+model = "glm/glm-5.1"
 max_attempts = 3
-max_tokens = 4096
 min_verified = 15
-temperature = 0.2
+min_reward = 1.0
+max_accepted_total_tokens = 200000
+max_accepted_tool_calls = 50
 
 [sft]
 enabled = true

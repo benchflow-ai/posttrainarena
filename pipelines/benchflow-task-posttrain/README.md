@@ -21,10 +21,12 @@ training task list + held-out eval task list + TOML recipe
     -> held-out score and paired lift report
 ```
 
-BenchFlow owns task snapshots, sandbox lifecycle, tools, verifiers, rollout
-artifacts, and paired evaluation. TRL owns SFT and GRPO optimization. The
-OpenEnv is an optional protocol between them, not a second runtime or eval
-engine. The default recipes pin the public BenchFlow-native `task.md` datasets
+BenchFlow owns task snapshots, sandbox lifecycle, verifiers, rollout artifacts,
+and paired evaluation. OpenCode owns teacher-model interaction. TRL owns SFT
+and GRPO optimization. Evaluation and GRPO remain on the legacy TRL-owned tool
+loop until their follow-up migration changes land. OpenEnv is an optional
+protocol for that legacy path, not a second runtime or eval engine. The default
+recipes pin the public BenchFlow-native `task.md` datasets
 `benchflow/data_agent_rl_environment_train` and
 `benchflow/data_agent_rl_environment_eval`. The pipeline does not depend on
 Harbor or translate Harbor trajectories.
@@ -41,7 +43,7 @@ benchflow-task-posttrain/
   scripts/bootstrap_gpu.sh GPU-host bootstrap
   src/.../config.py        typed TOML contract and validation
   src/.../pipeline.py      resumable stage orchestration
-  src/.../teacher.py       verified run_bash/submit demonstrations
+  src/.../teacher.py       verified OpenCode teacher rollouts
   src/.../sft.py           tool-aware LoRA SFT and weight merge
   src/.../policy.py        BenchFlow-backed eval and GRPO
   src/.../openenv/         OpenEnv client/server protocol adapter
@@ -99,12 +101,11 @@ The example recipe requires:
 
 - `HF_TOKEN` for task snapshots and optional artifact publication
 - `DAYTONA_API_KEY` for `runtime.sandbox = "daytona"`
-- `GLM_API_KEY` and `GLM_BASE_URL` for the example teacher
+- `GLM_API_KEY` and `GLM_BASE_URL` for the example OpenCode teacher model
 - `WANDB_API_KEY` when `tracking.report_to = "wandb"`
 - any verifier-specific credentials required by the selected task packages
 
-Teacher credential variable names are configurable; values are never written
-to the run plan or score report.
+Provider credential values are never written to the run plan or score report.
 
 ## Run
 

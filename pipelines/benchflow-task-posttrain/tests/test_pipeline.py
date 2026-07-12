@@ -20,6 +20,20 @@ def test_plan_exposes_public_stage_contract(tmp_path: Path) -> None:
 
     assert plan["train_task_count"] == 15
     assert plan["eval_task_count"] == 2
+    assert plan["harness"] == {
+        "agent": "opencode",
+        "skill_mode": "no-skill",
+        "usage_tracking": "required",
+        "concurrency": 1,
+        "sandbox_setup_timeout_sec": 300,
+        "agent_idle_timeout_sec": 300,
+        "agent_timeout_sec": 900,
+        "reasoning_effort": None,
+    }
+    assert plan["harness_migration"] == {
+        "applied_stages": ["teacher"],
+        "pending_stages": ["evaluation", "grpo"],
+    }
     assert plan["stages"][0] == "snapshot_train_tasks"
     assert plan["stages"][-1] == "write_score_report"
 
@@ -36,6 +50,14 @@ def test_dry_run_writes_score_schema_without_heavy_dependencies(tmp_path: Path) 
     assert saved["schema_version"] == 1
     assert saved["grpo_planned"] is True
     assert saved["grpo_ran"] is False
+    assert saved["harness"]["agent"] == "opencode"
+    assert saved["harness_migration"]["applied_stages"] == ["teacher"]
+    convert = next(
+        item
+        for item in saved["commands"]
+        if item["name"] == "convert_verified_sft_data"
+    )
+    assert convert["command"][convert["command"].index("--min-reward") + 1] == "1.0"
     assert len(saved["train_task_ids"]) == 15
     assert {item["name"] for item in saved["commands"]} >= {
         "snapshot_train_tasks",
