@@ -5,13 +5,10 @@ from typing import Any
 
 from transformers.utils import get_json_schema
 
-from posttrainarena.benchflow_pipeline.config import load_config
-from posttrainarena.benchflow_pipeline.integrations import (
-    build_environment_integration,
-)
 from posttrainarena.benchflow_pipeline.openenv.server import LocalOpenEnvServer
 from posttrainarena.benchflow_pipeline.openenv.tool_env import (
     OpenEnvToolEnvironment,
+    build_openenv_integration,
     openenv_environment_reward,
 )
 
@@ -73,20 +70,21 @@ def test_public_tools_have_transformers_json_schemas(tmp_path: Path) -> None:
 
 
 def test_real_benchflow_spec_builds_openenv_tool_factory(tmp_path: Path) -> None:
-    config = load_config(
-        ROOT
-        / "pipelines/benchflow-task-posttrain/configs/qwen3-4b-data-agent-openenv-smoke.toml"
-    )
-    integration = build_environment_integration(
-        config=config,
+    from benchflow.integrations.trl import BashHarnessConfig, BenchFlowSpec
+
+    spec = BenchFlowSpec(
         tasks_dir=ROOT / "starting-kit/examples",
-        task_ids=["seclog-bruteforce-triage"],
-        jobs_dir=tmp_path,
-        reset_message="solve",
+        include_tasks=["seclog-bruteforce-triage"],
+        bash_harness=BashHarnessConfig(
+            environment="docker",
+            jobs_dir=tmp_path,
+            reset_message="solve",
+        ),
     )
+    integration = build_openenv_integration(spec, None)
     environment = integration.environment_factory()
     try:
-        assert integration.train_dataset_rows[0]["benchflow_task_id"] == (
+        assert integration.task_rows[0]["benchflow_task_id"] == (
             "seclog-bruteforce-triage"
         )
         assert get_json_schema(environment.run_bash)["function"]["name"] == "run_bash"

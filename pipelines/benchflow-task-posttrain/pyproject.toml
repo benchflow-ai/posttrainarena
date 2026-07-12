@@ -19,11 +19,13 @@ Documentation = "https://github.com/benchflow-ai/posttrainarena/blob/main/docs/t
 
 [project.optional-dependencies]
 train = [
-  "benchflow[trl,sandbox-daytona] @ git+https://github.com/benchflow-ai/benchflow.git@6eaa14344bd835a3c2c5c31a31470ef994b24a80",
+  "benchflow[trl,sandbox-daytona] @ git+https://github.com/benchflow-ai/benchflow.git@c441b2abc07f48c03fd6638c5b9bcf7d837b6f38",
   "openenv @ git+https://github.com/huggingface/OpenEnv.git@6823135a714814e3efb3e39c4a9edff01e1a2a98",
   "openai>=2.0",
   "peft>=0.18,<0.19",
   "torch==2.9.1; sys_platform == 'linux'",
+  "trl==1.8.0",
+  "vllm>=0.16.0,<=0.23.0; sys_platform == 'linux'",
   "wandb>=0.25,<0.26",
 ]
 hf = [
@@ -31,11 +33,12 @@ hf = [
   "tomli-w>=1.2,<2",
 ]
 test = [
-  "benchflow[trl] @ git+https://github.com/benchflow-ai/benchflow.git@6eaa14344bd835a3c2c5c31a31470ef994b24a80",
+  "benchflow[trl] @ git+https://github.com/benchflow-ai/benchflow.git@c441b2abc07f48c03fd6638c5b9bcf7d837b6f38",
   "huggingface_hub>=0.36,<2",
   "openenv @ git+https://github.com/huggingface/OpenEnv.git@6823135a714814e3efb3e39c4a9edff01e1a2a98",
   "pytest>=8.0",
   "tomli-w>=1.2,<2",
+  "trl==1.8.0",
 ]
 
 [project.scripts]

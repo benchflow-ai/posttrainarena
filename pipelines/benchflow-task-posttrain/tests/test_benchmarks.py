@@ -33,7 +33,7 @@ def test_benchmark_manifest_and_dry_run_matrix(tmp_path: Path) -> None:
 
     suites = load_benchmark_manifest(manifest)
     result = run_benchmark_matrix(
-        config_path=ROOT / "configs/qwen3-4b-data-agent-openenv-smoke.toml",
+        config_path=ROOT / "configs/qwen3-4b-data-agent-forced-grpo-smoke.toml",
         run_dir=run_dir,
         manifest_path=manifest,
         dry_run=True,

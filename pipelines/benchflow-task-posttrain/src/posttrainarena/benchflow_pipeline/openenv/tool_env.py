@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from ..integrations import EnvironmentIntegration
 from .client import PostTrainEnvClient
 from .models import PostTrainAction, PostTrainObservation
 from .server import LocalOpenEnvServer
@@ -80,6 +80,18 @@ class OpenEnvToolEnvironment:
         self.last_returncode = observation.last_returncode
 
 
+@dataclass(frozen=True)
+class OpenEnvIntegration:
+    """Protocol-test helper; the training pipeline uses OpenCode directly."""
+
+    task_rows: tuple[dict[str, Any], ...]
+    environment_factory: Callable[[], OpenEnvToolEnvironment]
+    _close: Callable[[], None]
+
+    def close(self) -> None:
+        self._close()
+
+
 def openenv_environment_reward(
     completions: Sequence[Any],
     *,
@@ -102,12 +114,16 @@ def openenv_environment_reward(
     return rewards
 
 
-def build_openenv_integration(spec: Any, base_url: str | None) -> EnvironmentIntegration:
+def build_openenv_integration(spec: Any, base_url: str | None) -> OpenEnvIntegration:
     local_server = None if base_url else LocalOpenEnvServer(spec.environment_factory)
     environments: list[OpenEnvToolEnvironment] = []
 
     def environment_factory() -> OpenEnvToolEnvironment:
-        resolved_url = base_url or local_server.base_url
+        if base_url:
+            resolved_url = base_url
+        else:
+            assert local_server is not None
+            resolved_url = local_server.base_url
         environment = OpenEnvToolEnvironment(resolved_url)
         environments.append(environment)
         return environment
@@ -119,10 +135,8 @@ def build_openenv_integration(spec: Any, base_url: str | None) -> EnvironmentInt
         if local_server:
             local_server.close()
 
-    return EnvironmentIntegration(
-        train_dataset_rows=spec.train_dataset_rows,
+    return OpenEnvIntegration(
+        task_rows=spec.train_dataset_rows,
         environment_factory=environment_factory,
-        reward_funcs=(openenv_environment_reward,),
-        _train_dataset_factory=lambda: spec.train_dataset,
         _close=close,
     )

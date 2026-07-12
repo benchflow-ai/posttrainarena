@@ -166,6 +166,7 @@ def main(argv: list[str] | None = None) -> int:
                 "BENCHFLOW_ADAPTER_MODEL",
                 "BENCHFLOW_PROVIDER_BASE_URL",
                 "BENCHFLOW_PROVIDER_API_KEY",
+                "TRL_VLLM_SERVER_BASE_URL",
                 "WANDB_API_KEY",
             ]
         )

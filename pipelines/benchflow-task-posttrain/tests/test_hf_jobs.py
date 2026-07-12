@@ -27,7 +27,7 @@ def test_job_bundle_is_portable_and_contains_no_secrets(tmp_path: Path) -> None:
         'task_list = "benchmark.txt"\n'
     )
     bundle = create_job_bundle(
-        config_path=ROOT / "configs/qwen3-4b-data-agent-openenv-smoke.toml",
+        config_path=ROOT / "configs/qwen3-4b-data-agent-forced-grpo-smoke.toml",
         output_dir=tmp_path / "bundle",
         run_id="run-1",
         submission_id="team-alpha",
@@ -41,23 +41,15 @@ def test_job_bundle_is_portable_and_contains_no_secrets(tmp_path: Path) -> None:
     config = tomllib.loads(bundle.config_path.read_text())
     manifest = json.loads(bundle.manifest_path.read_text())
     text = "\n".join(
-        path.read_text()
-        for path in bundle.root.rglob("*")
-        if path.is_file()
+        path.read_text() for path in bundle.root.rglob("*") if path.is_file()
     )
 
     assert config["output"]["root"] == "runs"
-    assert config["train_dataset"]["task_list"] == (
-        "task-lists/train_dataset.txt"
-    )
-    assert config["eval_dataset"]["task_list"] == (
-        "task-lists/eval_dataset.txt"
-    )
+    assert config["train_dataset"]["task_list"] == ("task-lists/train_dataset.txt")
+    assert config["eval_dataset"]["task_list"] == ("task-lists/eval_dataset.txt")
     assert manifest["run_id"] == "run-1"
     assert manifest["benchmark_manifest"] == "benchmarks.toml"
-    portable_benchmarks = tomllib.loads(
-        (bundle.root / "benchmarks.toml").read_text()
-    )
+    portable_benchmarks = tomllib.loads((bundle.root / "benchmarks.toml").read_text())
     assert portable_benchmarks["benchmarks"][0]["task_list"] == (
         "benchmark-task-lists/data-agent.txt"
     )
@@ -71,7 +63,7 @@ def test_submit_hf_job_passes_secrets_only_to_job_api(
     import huggingface_hub
 
     bundle = create_job_bundle(
-        config_path=ROOT / "configs/qwen3-4b-data-agent-openenv-smoke.toml",
+        config_path=ROOT / "configs/qwen3-4b-data-agent-forced-grpo-smoke.toml",
         output_dir=tmp_path / "bundle",
         run_id="run-1",
         submission_id="team-alpha",

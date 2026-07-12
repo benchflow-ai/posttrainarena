@@ -67,7 +67,7 @@ training recipe:
 ```bash
 posttrainarena-train prepare-submission \
   --entry submissions/<team-entry> \
-  --base-config pipelines/benchflow-task-posttrain/configs/qwen3-4b-data-agent-openenv-smoke.toml \
+  --base-config pipelines/benchflow-task-posttrain/configs/qwen3-4b-data-agent-forced-grpo-smoke.toml \
   --out .local/prepared/<team-entry> \
   --dataset-repo <namespace>/posttrainarena-<team-entry> \
   --upload

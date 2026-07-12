@@ -15,15 +15,10 @@ path = "tasks"
 task_list = "../task-lists/data-agent-eval-1.txt"
 
 [runtime]
-integration = "openenv"
 sandbox = "daytona"
 sandbox_user = "agent"
-bash_timeout_sec = 120
-max_output_chars = 8192
-max_completion_length = 512
-max_tool_calling_iterations = 8
+max_completion_length = 16384
 num_generations = 2
-use_vllm = false
 
 [harness]
 agent = "opencode"
@@ -66,6 +61,8 @@ gate_task_count = 1
 max_steps = 1
 learning_rate = 0.000001
 gradient_accumulation_steps = 1
+rollout_attempts = 2
+vllm_server_base_url_env = "TRL_VLLM_SERVER_BASE_URL"
 
 [tracking]
 report_to = "wandb"

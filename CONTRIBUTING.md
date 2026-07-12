@@ -28,7 +28,8 @@ boundaries:
 - `pipeline.py`: stage order, resume behavior, and score schema
 - `teacher.py`: provider tool loop using BenchFlow `run_bash` and `submit`
 - `sft.py`: tool-aware supervised fine-tuning and merged checkpoints
-- `policy.py`: BenchFlow-backed evaluation and GRPO
+- `opencode.py`: OpenCode-backed evaluation
+- `grpo.py`: OpenCode rollout collection and TRL GRPO
 
 New recipes must pin dataset and model revisions, add explicit task lists,
 document expected compute, and keep tests no-spend. Before opening a PR:

@@ -17,18 +17,19 @@ training task list + held-out eval task list + pinned TOML recipe
     -> collect verifier-approved teacher trajectories through OpenCode
     -> convert and validate tool-aware SFT data
     -> train and merge a LoRA SFT checkpoint
+    -> synchronize SFT weights to the student vLLM endpoint
     -> evaluate the served student model on a training-task reward gate
-    -> run GRPO according to the configured run policy
+    -> run OpenCode rollouts through TRL GRPOTrainer.rollout_func
+    -> update the policy and resynchronize the student endpoint
     -> evaluate the served final model through OpenCode on held-out tasks
     -> write paired lift and score reports
 ```
 
 BenchFlow owns task snapshots, Daytona or Docker sandboxes, verifiers, reward
 extraction, rollout artifacts, and paired evaluation. OpenCode owns the teacher
-and evaluation agent loops. TRL owns SFT and GRPO optimization. GRPO rollout
-generation is the only stage still using the legacy TRL-owned `run_bash` /
-`submit` loop during this migration stage. The pipeline is Harbor-free and
-does not translate Harbor trajectories.
+evaluation, and GRPO agent loops. TRL owns SFT and GRPO optimization plus vLLM
+weight synchronization. The pipeline is Harbor-free and does not translate
+Harbor trajectories.
 
 The default recipes pin the public BenchFlow-native conversions:
 
@@ -42,15 +43,10 @@ SFT, forced-GRPO, final-eval, and publication path on these revisions. See
 [`native-dataset-openenv-smoke.md`](native-dataset-openenv-smoke.md) for the
 exact evidence and claim boundary.
 
-OpenEnv is an optional protocol adapter for the temporary legacy GRPO path in
-front of the same BenchFlow engine. Teacher collection and evaluation use the
-OpenCode-backed BenchFlow CLI directly. The adapter exposes a real served
-`Environment` and typed `EnvClient`; it does not duplicate BenchFlow task
-loading, sandboxes, verifiers, rewards, artifacts, or held-out evaluation.
-
-`runtime.openenv_url` currently supports only deployments that share the task
-snapshot and BenchFlow artifact filesystem with the pipeline process. A fully
-remote deployment needs a future task-resolution and artifact-transfer protocol.
+OpenEnv remains a standalone protocol adapter around the same BenchFlow engine,
+but it is not used by the current training pipeline. The adapter exposes a real
+served `Environment` and typed `EnvClient`; it does not duplicate BenchFlow task
+loading, sandboxes, verifiers, rewards, or artifacts.
 
 SFT optimization consumes verified tool-aware rows and does not call the
 environment. Environment interaction occurs during teacher collection,
@@ -59,14 +55,11 @@ evaluation, the reward gate, and GRPO rollouts.
 ```mermaid
 flowchart LR
     Input["PostTrain task packages + pinned recipe"] --> Pipeline["PostTrain pipeline"]
-    Pipeline --> OC["OpenCode teacher + evaluation"]
+    Pipeline --> OC["OpenCode teacher + evaluation + GRPO rollouts"]
     OC --> BF["BenchFlow task + verifier"]
     Pipeline --> TRL["TRL SFT + GRPO"]
-    TRL --> Backend{"Temporary GRPO environment integration"}
-    Backend --> Direct["Direct BenchFlow"]
-    Backend --> OE["OpenEnv protocol"]
-    OE --> BF
-    Direct --> BF
+    TRL --> VLLM["Current student vLLM endpoint"]
+    VLLM --> OC
     BF --> Runtime["Docker / Daytona"]
     Runtime --> BF
     BF --> TRL
@@ -148,12 +141,12 @@ Dry-run records the full possible path, including conditional GRPO. Therefore
 | `[model]` | Base model ID and immutable model revision |
 | `[train_dataset]` | HF task repository, revision, path, and training task-list file |
 | `[eval_dataset]` | Separate HF repository/revision and held-out task-list file |
-| `[runtime]` | Direct/OpenEnv integration, Daytona/Docker sandbox, tool limits, generation counts, and vLLM toggle |
+| `[runtime]` | Daytona/Docker sandbox, GRPO completion-token budget, and generation count |
 | `[harness]` | Required OpenCode contract, skill mode, telemetry, concurrency, and setup/idle/wall-clock timeouts for teacher collection and evaluation |
 | `[evaluation]` | Environment-variable names for the served base/student model aliases and OpenAI-compatible endpoint credentials |
 | `[teacher]` | Provider-qualified teacher model, adaptive attempts, reward threshold, post-run token/tool acceptance ceilings, and required verified rows |
 | `[sft]` | Enable flag, optimizer settings, sequence length, and LoRA dimensions |
-| `[grpo]` | Enable flag, run policy, training-task gate threshold/count, optimizer settings, and steps |
+| `[grpo]` | Enable flag, run policy, gate threshold/count, optimizer settings, rollout retries, and trainer-side vLLM URL environment variable |
 | `[tracking]` | W&B or disabled reporting |
 | `[output]` | Run root relative to the recipe |
 
@@ -175,6 +168,8 @@ The example Daytona recipe expects:
   baseline and current-student model aliases
 - `BENCHFLOW_PROVIDER_BASE_URL` and `BENCHFLOW_PROVIDER_API_KEY` for the
   OpenAI-compatible model endpoint used by OpenCode evaluation
+- `TRL_VLLM_SERVER_BASE_URL` for TRL's local/control connection to the same
+  vLLM server used by OpenCode through the public provider URL
 - `WANDB_API_KEY` when `tracking.report_to = "wandb"`
 - any task-specific credentials required by selected verifiers
 
@@ -197,17 +192,20 @@ Resume reuses snapshots, evaluation metrics, converted SFT data, and checkpoints
 when their expected marker artifacts exist. Use a new run name when changing a
 recipe or task list.
 
-Before a post-SFT or post-GRPO evaluation, the configured student endpoint must
-serve the checkpoint under `BENCHFLOW_ADAPTER_MODEL`. This evaluation slice
-fails closed on missing endpoint configuration, incomplete token telemetry,
-missing or malformed LLM trajectories, unscored rows, and zero-tool rollouts.
-Automatic endpoint resynchronization is part of the OpenCode GRPO rollout
-refactor.
+The configured student endpoint must expose `BENCHFLOW_ADAPTER_MODEL`.
+Post-SFT and post-GRPO weights are synchronized through
+`TRL_VLLM_SERVER_BASE_URL`; OpenCode reaches the same server through
+`BENCHFLOW_PROVIDER_BASE_URL`. Evaluation and GRPO fail closed on missing
+endpoint configuration, incomplete token telemetry, missing or malformed LLM
+trajectories, unscored rows, zero-tool rollouts, missing sampled logprobs,
+tokenizer drift, or action-token budget overflow.
 
 The evaluator itself has a real SkillsBench + Daytona canary with score `1.0`,
 complete provider telemetry, and healthy `results.jsonl` and
 `llm_trajectory.jsonl` artifacts. See
 [`opencode-evaluation-canary.md`](opencode-evaluation-canary.md).
+The GRPO rollout format and endpoint topology are documented in
+[`opencode-grpo.md`](opencode-grpo.md).
 
 ## SFT, RL-only, and reward gating
 

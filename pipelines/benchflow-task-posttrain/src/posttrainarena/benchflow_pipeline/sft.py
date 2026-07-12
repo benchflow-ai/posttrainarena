@@ -53,6 +53,8 @@ def train_sft(
     if config.model_revision:
         model_kwargs["revision"] = config.model_revision
     tokenizer = AutoTokenizer.from_pretrained(config.model, **model_kwargs)
+    if tokenizer is None:
+        raise RuntimeError(f"Tokenizer failed to load for {config.model}")
     dataset = Dataset.from_list(render_rows(train_jsonl, tokenizer))
     model = AutoModelForCausalLM.from_pretrained(
         config.model, dtype="bfloat16", **model_kwargs

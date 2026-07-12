@@ -65,8 +65,8 @@ class Pipeline:
             "harness": asdict(self.config.harness),
             "evaluation": asdict(self.config.evaluation),
             "harness_migration": {
-                "applied_stages": ["teacher", "evaluation"],
-                "pending_stages": ["grpo"],
+                "applied_stages": ["teacher", "evaluation", "grpo"],
+                "pending_stages": [],
             },
             "teacher": asdict(self.config.teacher),
             "sft": asdict(self.config.sft),
@@ -79,9 +79,11 @@ class Pipeline:
                 "collect_verified_teacher_rollouts",
                 "convert_and_validate_sft_data",
                 "train_sft",
+                "sync_sft_endpoint",
                 "sft_eval",
                 "grpo_gate_eval",
                 "conditional_grpo",
+                "sync_grpo_endpoint",
                 "final_eval",
                 "compare_eval_lift",
                 "write_score_report",
@@ -128,6 +130,10 @@ class Pipeline:
             self._collect_and_convert_teacher_data()
             final_model = str(self.layout.checkpoints / "sft-merged")
             self._train_sft(final_model)
+            self._sync_student_endpoint(
+                checkpoint=Path(final_model),
+                stage="sft",
+            )
             sft_path = self.layout.results / "sft_eval.json"
             final_jobs = self.layout.jobs / "sft"
             sft_score = self._evaluate(
@@ -155,6 +161,10 @@ class Pipeline:
             grpo_input_model = final_model
             grpo_model = str(self.layout.checkpoints / "grpo")
             self._train_grpo(input_model=grpo_input_model, output_model=grpo_model)
+            self._sync_student_endpoint(
+                checkpoint=Path(grpo_model),
+                stage="grpo",
+            )
             final_model = grpo_model
             final_jobs = self.layout.jobs / "posttrain"
             final_score = self._evaluate(
@@ -346,13 +356,13 @@ class Pipeline:
             self.runner.commands.append(
                 {
                     "name": "train_grpo",
-                    "call": "policy.train_grpo",
+                    "call": "grpo.train_grpo",
                     "model": input_model,
                     "output_dir": output_model,
                 }
             )
             return
-        from .policy import train_grpo
+        from .grpo import train_grpo
 
         train_grpo(
             config=self.config,
@@ -363,6 +373,28 @@ class Pipeline:
             output_dir=Path(output_model),
             run_name=f"{self.run_name}-grpo",
         )
+
+    def _sync_student_endpoint(self, *, checkpoint: Path, stage: str) -> None:
+        report_path = self.layout.results / f"{stage}_endpoint_sync.json"
+        if self.dry_run:
+            self.runner.commands.append(
+                {
+                    "name": f"sync_{stage}_endpoint",
+                    "call": "grpo.sync_checkpoint_to_vllm",
+                    "checkpoint": str(checkpoint),
+                    "vllm_server_base_url_env": (
+                        self.config.grpo.vllm_server_base_url_env
+                    ),
+                }
+            )
+            return
+        from .grpo import sync_checkpoint_to_vllm
+
+        payload = sync_checkpoint_to_vllm(
+            config=self.config,
+            checkpoint=checkpoint,
+        )
+        write_json(report_path, payload)
 
     def _write_score(
         self,
@@ -400,8 +432,8 @@ class Pipeline:
             "harness": asdict(self.config.harness),
             "evaluation": asdict(self.config.evaluation),
             "harness_migration": {
-                "applied_stages": ["teacher", "evaluation"],
-                "pending_stages": ["grpo"],
+                "applied_stages": ["teacher", "evaluation", "grpo"],
+                "pending_stages": [],
             },
             "benchflow_commit": BENCHFLOW_COMMIT,
             "train_dataset": asdict(self.config.train_dataset),

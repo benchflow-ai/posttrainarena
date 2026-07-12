@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 
-BENCHFLOW_COMMIT = "6eaa14344bd835a3c2c5c31a31470ef994b24a80"
+BENCHFLOW_COMMIT = "c441b2abc07f48c03fd6638c5b9bcf7d837b6f38"
 GrpoRunPolicy = Literal["on_reward", "always"]
 HarnessSkillMode = Literal["no-skill", "with-skill"]
 UsageTrackingPolicy = Literal["required"]
@@ -44,17 +44,10 @@ class DatasetConfig:
 
 @dataclass(frozen=True)
 class RuntimeConfig:
-    integration: str = "benchflow"
-    environment: str | None = None
     sandbox: str | None = None
-    openenv_url: str | None = None
     sandbox_user: str | None = "agent"
-    bash_timeout_sec: int = 120
-    max_output_chars: int = 8192
     max_completion_length: int = 2048
-    max_tool_calling_iterations: int = 25
     num_generations: int = 2
-    use_vllm: bool = False
 
 
 @dataclass(frozen=True)
@@ -108,6 +101,8 @@ class GrpoConfig:
     max_steps: int = 5
     learning_rate: float = 1e-6
     gradient_accumulation_steps: int = 8
+    rollout_attempts: int = 2
+    vllm_server_base_url_env: str = "TRL_VLLM_SERVER_BASE_URL"
 
 
 @dataclass(frozen=True)
@@ -134,12 +129,10 @@ class PipelineConfig:
 
     @property
     def sandbox(self) -> str:
-        return self.runtime.sandbox or self.runtime.environment or "daytona"
+        return self.runtime.sandbox or "daytona"
 
     def validate(self) -> None:
         errors: list[str] = []
-        if self.runtime.integration not in {"benchflow", "openenv"}:
-            errors.append("runtime.integration must be benchflow or openenv")
         if self.harness.agent != "opencode":
             errors.append("harness.agent must be opencode")
         if self.harness.skill_mode not in {"no-skill", "with-skill"}:
@@ -167,22 +160,12 @@ class PipelineConfig:
         ):
             if not isinstance(value, str) or not value.strip():
                 errors.append(f"{label} must be a non-empty string")
-        if self.runtime.openenv_url and self.runtime.integration != "openenv":
-            errors.append("runtime.openenv_url requires integration = openenv")
-        if (
-            self.runtime.sandbox is not None
-            and self.runtime.environment is not None
-            and self.runtime.sandbox != self.runtime.environment
-        ):
-            errors.append("runtime.sandbox conflicts with legacy runtime.environment")
         if self.sandbox not in {"docker", "daytona"}:
             errors.append("runtime.sandbox must be docker or daytona")
         if self.runtime.num_generations < 2:
             errors.append("runtime.num_generations must be at least 2 for GRPO")
         if self.runtime.max_completion_length < 1:
             errors.append("runtime.max_completion_length must be positive")
-        if self.runtime.max_tool_calling_iterations < 1:
-            errors.append("runtime.max_tool_calling_iterations must be positive")
         if not 0 <= self.grpo.threshold <= 1:
             errors.append("grpo.threshold must be between 0 and 1")
         if self.grpo.run_policy not in {"on_reward", "always"}:
@@ -191,6 +174,13 @@ class PipelineConfig:
             errors.append("grpo.gate_task_count must be positive")
         if self.grpo.max_steps < 1:
             errors.append("grpo.max_steps must be positive")
+        if not _is_positive_int(self.grpo.rollout_attempts):
+            errors.append("grpo.rollout_attempts must be positive")
+        if (
+            not isinstance(self.grpo.vllm_server_base_url_env, str)
+            or not self.grpo.vllm_server_base_url_env.strip()
+        ):
+            errors.append("grpo.vllm_server_base_url_env must be a non-empty string")
         if not _is_positive_int(self.teacher.max_attempts) or not _is_positive_int(
             self.teacher.min_verified
         ):

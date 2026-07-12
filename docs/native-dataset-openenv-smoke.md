@@ -4,8 +4,8 @@ On July 10, 2026, PostTrain Arena completed a real one-train/one-held-out
 end-to-end run against the public BenchFlow-native data-agent datasets.
 
 This historical run used the earlier TRL/OpenEnv evaluation loop. It does not
-validate the newer OpenCode baseline/gate/final evaluator or the still-pending
-OpenCode GRPO endpoint-resynchronization path.
+validate the newer OpenCode baseline/gate/final evaluator or the OpenCode
+custom-rollout GRPO and vLLM resynchronization path.
 
 ## Pinned inputs
 
