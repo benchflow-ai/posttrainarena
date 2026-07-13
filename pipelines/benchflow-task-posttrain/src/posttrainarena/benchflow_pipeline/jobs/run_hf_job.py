@@ -56,23 +56,39 @@ def install_pipeline(ref: str, *, train: bool) -> None:
         f"@{ref}#subdirectory=pipelines/benchflow-task-posttrain"
     )
     subprocess.run(
-        ["uv", "pip", "install", "--python", sys.executable, package],
+        [
+            "uv",
+            "pip",
+            "install",
+            "--python",
+            sys.executable,
+            "--torch-backend",
+            "auto",
+            package,
+        ],
         check=True,
     )
-    if train and Path("/dev/nvidia0").exists():
-        subprocess.run(
-            [
-                "uv",
-                "pip",
-                "install",
-                "--python",
-                sys.executable,
-                "--index",
-                "https://download.pytorch.org/whl/cu128",
-                "torch==2.9.1+cu128",
-            ],
-            check=True,
+
+
+def restore_run_state(bundle: Path, manifest: dict[str, object]) -> bool:
+    run_id = str(manifest["run_id"])
+    run_dir = bundle / "runs" / run_id
+    try:
+        snapshot_download(
+            str(manifest["artifact_repo"]),
+            repo_type="dataset",
+            allow_patterns=[f"runs/{run_id}/**"],
+            local_dir=bundle,
+            token=os.environ.get("HF_TOKEN"),
         )
+    except Exception as exc:
+        print(
+            f"[posttrainarena] no resumable state restored: "
+            f"{type(exc).__name__}: {exc}",
+            flush=True,
+        )
+        return False
+    return run_dir.is_dir() and any(path.is_file() for path in run_dir.rglob("*"))
 
 
 def main() -> int:
@@ -90,6 +106,7 @@ def main() -> int:
     manifest = json.loads((bundle / "job.json").read_text())
     run_id = str(manifest["run_id"])
     run_dir = bundle / "runs" / run_id
+    resume = restore_run_state(bundle, manifest)
     log_path = bundle / "job.log"
     install_pipeline(args.posttrainarena_ref, train=not args.pipeline_dry_run)
     executable = Path(sys.executable).parent / "posttrainarena-train"
@@ -128,6 +145,8 @@ def main() -> int:
     ]
     if args.pipeline_dry_run:
         command.append("--dry-run")
+    elif resume:
+        command.append("--resume")
     try:
         run_logged(command, log_path)
         if manifest.get("benchmark_manifest"):
@@ -164,6 +183,13 @@ def main() -> int:
         ]
         if manifest.get("model_repo") and not args.pipeline_dry_run:
             publish.extend(["--model-repo", str(manifest["model_repo"])])
+            if manifest.get("private_model") is False:
+                publish.append("--public-model")
+        publish.append(
+            "--public-artifacts"
+            if manifest.get("private_artifacts") is False
+            else "--private-artifacts"
+        )
         run_logged(publish, log_path)
     except Exception as exc:
         (run_dir / "reports").mkdir(parents=True, exist_ok=True)
@@ -187,6 +213,11 @@ def main() -> int:
             "--error",
             f"{type(exc).__name__}: {exc}",
         ]
+        failure.append(
+            "--public-artifacts"
+            if manifest.get("private_artifacts") is False
+            else "--private-artifacts"
+        )
         subprocess.run(failure, check=False)
         raise
     finally:

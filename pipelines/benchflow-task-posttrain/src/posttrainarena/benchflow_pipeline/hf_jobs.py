@@ -39,6 +39,8 @@ def create_job_bundle(
     artifact_repo: str,
     leaderboard_repo: str,
     model_repo: str | None,
+    private_model: bool = True,
+    private_artifacts: bool = True,
     benchmark_manifest: Path | None = None,
 ) -> JobBundle:
     import tomli_w
@@ -84,6 +86,8 @@ def create_job_bundle(
         "artifact_repo": artifact_repo,
         "leaderboard_repo": leaderboard_repo,
         "model_repo": model_repo,
+        "private_model": private_model,
+        "private_artifacts": private_artifacts,
         "benchmark_manifest": portable_benchmarks,
     }
     manifest_path = output_dir / "job.json"
@@ -102,7 +106,7 @@ def submit_hf_job(
     secret_names: list[str],
     token: str | None = None,
     pipeline_dry_run: bool = False,
-    private_artifacts: bool = False,
+    private_artifacts: bool = True,
 ) -> dict[str, Any]:
     from huggingface_hub import HfApi, run_uv_job
 
@@ -112,6 +116,11 @@ def submit_hf_job(
         repo_type="dataset",
         private=private_artifacts,
         exist_ok=True,
+    )
+    api.update_repo_settings(
+        artifact_repo,
+        repo_type="dataset",
+        private=private_artifacts,
     )
     bundle_path = f"job-inputs/{bundle.run_id}"
     upload = api.upload_folder(

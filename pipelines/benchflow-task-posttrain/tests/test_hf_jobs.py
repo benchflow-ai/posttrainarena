@@ -10,9 +10,51 @@ from posttrainarena.benchflow_pipeline.hf_jobs import (
     create_job_bundle,
     submit_hf_job,
 )
+from posttrainarena.benchflow_pipeline.jobs.run_hf_job import (
+    install_pipeline,
+    restore_run_state,
+)
 
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+def test_hf_job_install_uses_automatic_torch_backend(monkeypatch) -> None:
+    calls: list[list[str]] = []
+    monkeypatch.setattr(
+        "subprocess.run",
+        lambda command, **_kwargs: calls.append(command),
+    )
+
+    install_pipeline("a" * 40, train=True)
+
+    assert len(calls) == 1
+    assert "--torch-backend" in calls[0]
+    assert calls[0][calls[0].index("--torch-backend") + 1] == "auto"
+    assert "[train,hf]" in calls[0][-1]
+
+
+def test_hf_job_restores_published_run_state(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    bundle = tmp_path / "bundle"
+    bundle.mkdir()
+
+    def fake_snapshot_download(*_args, **kwargs):
+        restored = Path(kwargs["local_dir"]) / "runs" / "run-1" / "reports"
+        restored.mkdir(parents=True)
+        (restored / "plan.json").write_text("{}")
+
+    monkeypatch.setattr(
+        "posttrainarena.benchflow_pipeline.jobs.run_hf_job.snapshot_download",
+        fake_snapshot_download,
+    )
+
+    assert restore_run_state(
+        bundle,
+        {"run_id": "run-1", "artifact_repo": "org/artifacts"},
+    )
 
 
 def test_job_bundle_is_portable_and_contains_no_secrets(tmp_path: Path) -> None:
@@ -48,6 +90,8 @@ def test_job_bundle_is_portable_and_contains_no_secrets(tmp_path: Path) -> None:
     assert config["train_dataset"]["task_list"] == ("task-lists/train_dataset.txt")
     assert config["eval_dataset"]["task_list"] == ("task-lists/eval_dataset.txt")
     assert manifest["run_id"] == "run-1"
+    assert manifest["private_model"] is True
+    assert manifest["private_artifacts"] is True
     assert manifest["benchmark_manifest"] == "benchmarks.toml"
     portable_benchmarks = tomllib.loads((bundle.root / "benchmarks.toml").read_text())
     assert portable_benchmarks["benchmarks"][0]["task_list"] == (
@@ -80,6 +124,9 @@ def test_submit_hf_job_passes_secrets_only_to_job_api(
 
         def create_repo(self, *args, **kwargs):
             calls["create_repo"] = (args, kwargs)
+
+        def update_repo_settings(self, *args, **kwargs):
+            calls["settings"] = (args, kwargs)
 
         def upload_folder(self, **kwargs):
             calls["upload"] = kwargs
