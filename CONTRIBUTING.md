@@ -14,8 +14,9 @@ links to the right places.
 
 Before changing runtime or compatibility claims, read
 [`docs/architecture-status.md`](./docs/architecture-status.md). The current
-training implementation uses BenchFlow + TRL. OpenEnv compatibility and HF Jobs
-execution are roadmap items, not current repository features.
+training implementation uses BenchFlow + TRL with OpenCode as the sole agent
+harness. OpenEnv compatibility and HF Jobs execution are implemented,
+standalone surfaces; neither replaces OpenCode in the training pipeline.
 
 ## Contributing to the organizer training pipeline
 
@@ -26,10 +27,11 @@ boundaries:
 
 - `config.py`: validated TOML recipe contract
 - `pipeline.py`: stage order, resume behavior, and score schema
-- `teacher.py`: provider tool loop using BenchFlow `run_bash` and `submit`
-- `sft.py`: tool-aware supervised fine-tuning and merged checkpoints
-- `opencode.py`: OpenCode-backed evaluation
-- `grpo.py`: OpenCode rollout collection and TRL GRPO
+- `teacher.py`: verified OpenCode teacher rollout collection through BenchFlow
+- `sft.py`: native TRL prompt/completion/tools SFT and merged checkpoints
+- `opencode.py`: shared OpenCode baseline, gate, and final evaluation path
+- `grpo.py`: OpenCode rollout collection, token/action reconstruction, and TRL
+  GRPO
 
 New recipes must pin dataset and model revisions, add explicit task lists,
 document expected compute, and keep tests no-spend. Before opening a PR:
