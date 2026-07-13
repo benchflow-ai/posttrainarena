@@ -72,7 +72,7 @@ jobs:
           text = Path("/tmp/posttrainarena-train-linux.txt").read_text()
 
           def version(name):
-              match = re.search(rf"^{re.escape(name)}==([^\\s]+)", text, re.MULTILINE)
+              match = re.search(rf"^{re.escape(name)}==([^\s]+)", text, re.MULTILINE)
               assert match, name
               return Version(match.group(1))
 
