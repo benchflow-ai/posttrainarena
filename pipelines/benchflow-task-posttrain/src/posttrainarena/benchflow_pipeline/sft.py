@@ -66,10 +66,10 @@ def train_sft(
     )
     values = {
         "output_dir": str(adapter_dir),
-        "max_steps": config.sft.max_steps,
         "learning_rate": config.sft.learning_rate,
         "per_device_train_batch_size": 1,
         "gradient_accumulation_steps": config.sft.gradient_accumulation_steps,
+        "gradient_checkpointing": config.sft.gradient_checkpointing,
         "bf16": True,
         "logging_steps": 1,
         "save_strategy": "no",
@@ -82,6 +82,10 @@ def train_sft(
         "completion_only_loss": True,
         "assistant_only_loss": True,
     }
+    if config.sft.max_steps is None:
+        values["num_train_epochs"] = config.sft.num_train_epochs
+    else:
+        values["max_steps"] = config.sft.max_steps
     trainer = SFTTrainer(
         model=model,
         args=SFTConfig(**supported_kwargs(SFTConfig, values)),
@@ -90,7 +94,7 @@ def train_sft(
         peft_config=LoraConfig(
             r=config.sft.lora_r,
             lora_alpha=config.sft.lora_alpha,
-            lora_dropout=0.05,
+            lora_dropout=config.sft.lora_dropout,
             bias="none",
             task_type="CAUSAL_LM",
             target_modules="all-linear",
@@ -100,6 +104,15 @@ def train_sft(
     adapter_dir.mkdir(parents=True, exist_ok=True)
     trainer.save_model(str(adapter_dir))
     tokenizer.save_pretrained(str(adapter_dir))
+    write_json(
+        adapter_dir / "adapter_dependency.json",
+        {
+            "schema_version": 1,
+            "stage": "sft",
+            "base_model": config.model,
+            "base_revision": config.model_revision,
+        },
+    )
     del trainer, model
     gc.collect()
     try:
@@ -120,6 +133,11 @@ def train_sft(
         "base_model": config.model,
         "model_revision": config.model_revision,
         "row_count": len(dataset),
+        "num_train_epochs": (
+            config.sft.num_train_epochs if config.sft.max_steps is None else None
+        ),
+        "max_steps": config.sft.max_steps,
+        "quantization": None,
         "metrics": result.metrics,
         "adapter_dir": str(adapter_dir),
         "merged_model_dir": str(output_dir),

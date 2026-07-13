@@ -28,10 +28,10 @@ boundaries:
 - `config.py`: validated TOML recipe contract
 - `pipeline.py`: stage order, resume behavior, and score schema
 - `teacher.py`: verified OpenCode teacher rollout collection through BenchFlow
-- `sft.py`: native TRL prompt/completion/tools SFT and merged checkpoints
+- `sft.py`: native TRL prompt/completion/tools LoRA SFT, adapter, and merged checkpoint
 - `opencode.py`: shared OpenCode baseline, gate, and final evaluation path
 - `grpo.py`: OpenCode rollout collection, token/action reconstruction, and TRL
-  GRPO
+  LoRA GRPO with adapter and merged checkpoint export
 
 New recipes must pin dataset and model revisions, add explicit task lists,
 document expected compute, and keep tests no-spend. Before opening a PR:
@@ -43,9 +43,9 @@ python3 -m py_compile \
   pipelines/benchflow-task-posttrain/src/posttrainarena/benchflow_pipeline/*.py
 cd pipelines/benchflow-task-posttrain
 posttrainarena-train validate \
-  --config configs/qwen3-4b-data-agent-smoke.toml
+  --config configs/qwen3.5-9b-data-agent-canary.toml
 posttrainarena-train run \
-  --config configs/qwen3-4b-data-agent-smoke.toml \
+  --config configs/qwen3.5-9b-data-agent-canary.toml \
   --run-name contribution-check \
   --dry-run
 ```
@@ -70,18 +70,19 @@ Teams may enter both tracks as separate entries. One entry is one
 directory under [`submissions/`](./submissions) with a
 `submission.yaml` manifest — see that README for the layout.
 
-**Scoring (Track 2, headline).** The managed pipeline regenerates
-teacher trajectories, runs SFT and GRPO on Qwen3-8B over your
-environments, and evaluates the checkpoint on BenchFlow Signals — a
+**Scoring (Track 2, headline).** The managed pipeline uses OpenCode to collect
+a verified Qwen3.5-397B-A17B trajectory for every submitted task, runs
+one-epoch LoRA SFT and LoRA GRPO on Qwen3.5-9B over your environments, and
+evaluates the checkpoint on BenchFlow Signals — a
 private 100-task held-out suite (a 20-task public sample is released
 for sanity checks). Your score is the delta over a fixed reference
 baseline trained with the identical recipe, with paired bootstrap
 confidence intervals. Track 1 packages are evaluated by pass@1 of a
 frozen reference agent — no training, no internet.
 
-Qwen3-8B is the current **draft competition recipe**, not the model used by the
-checked-in reference smoke. The public implementation currently pins Qwen3-4B
-to validate the operator contract at smaller scale. See
+Qwen3.5-9B is the checked-in organizer recipe. The historical live smoke used
+Qwen3-4B; the Qwen3.5 canary and full recipe are the current validation target
+while the final competition compute budget is frozen. See
 [`docs/training-pipeline.md`](./docs/training-pipeline.md) for exact executable
 behavior and evidence boundaries.
 

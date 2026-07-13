@@ -4,7 +4,7 @@ This is the canonical operator guide for the public organizer-side training
 implementation under
 [`pipelines/benchflow-task-posttrain/`](../pipelines/benchflow-task-posttrain).
 It accepts explicit training and held-out evaluation task lists and produces a
-versioned score report after SFT and optional GRPO.
+versioned score report after SFT and GRPO.
 
 For the broader system boundaries and compatibility matrix, including the
 implemented OpenEnv adapter boundary, see
@@ -14,13 +14,13 @@ implemented OpenEnv adapter boundary, see
 training task list + held-out eval task list + pinned TOML recipe
     -> snapshot task packages from Hugging Face
     -> evaluate the served base model through OpenCode
-    -> collect verifier-approved teacher trajectories through OpenCode
+    -> collect one verifier-approved teacher trajectory per training task through OpenCode
     -> convert and validate native TRL prompt/completion/tools SFT data
-    -> train and merge a LoRA SFT checkpoint
+    -> train one LoRA SFT epoch and save adapter + merged checkpoint
     -> synchronize SFT weights to the student vLLM endpoint
     -> evaluate the served student model on a training-task reward gate
     -> run OpenCode rollouts through TRL GRPOTrainer.rollout_func
-    -> update the policy and resynchronize the student endpoint
+    -> train LoRA GRPO over all training tasks and save adapter + merged checkpoint
     -> evaluate the served final model through OpenCode on held-out tasks
     -> write paired lift and score reports
 ```
@@ -31,7 +31,7 @@ evaluation, and GRPO agent loops. TRL owns SFT and GRPO optimization plus vLLM
 weight synchronization. The pipeline is Harbor-free and does not translate
 Harbor trajectories.
 
-The default recipes pin the public BenchFlow-native conversions:
+The organizer recipe pins the public BenchFlow-native conversions:
 
 - `benchflow/data_agent_rl_environment_train` (`2,238` training tasks)
 - `benchflow/data_agent_rl_environment_eval` (`366` held-out tasks)
@@ -109,25 +109,40 @@ source "$HOME/posttrainarena/activate-posttrain.sh"
 
 Set `REPO_REF` to a tag or commit SHA when reproducing a specific revision.
 
+## Qwen3.5 organizer recipe
+
+[`configs/qwen3.5-9b-data-agent-full.toml`](../pipelines/benchflow-task-posttrain/configs/qwen3.5-9b-data-agent-full.toml)
+pins `Qwen/Qwen3.5-9B`, records the declared
+`Qwen/Qwen3.5-397B-A17B` teacher source, all 2,238 training tasks, and all 366
+held-out tasks. It requires complete
+teacher coverage, runs one SFT epoch, and always runs one GRPO epoch. Both
+optimization stages use bf16 LoRA without quantization. Completion logging is
+disabled and the full recipe does not export participant prompts to W&B. The
+canonical task runtime is Docker on a native Linux GPU host; Daytona remains an
+optional compatibility path.
+
+The matching 1x1 validation recipe is
+[`configs/qwen3.5-9b-data-agent-canary.toml`](../pipelines/benchflow-task-posttrain/configs/qwen3.5-9b-data-agent-canary.toml).
+The current teacher/provider and TRL conversion evidence is recorded in
+[`qwen35-opencode-teacher-canary.md`](qwen35-opencode-teacher-canary.md).
+
 ## No-spend validation
 
-The checked-in smoke recipe is
-[`configs/qwen3-4b-data-agent-smoke.toml`](../pipelines/benchflow-task-posttrain/configs/qwen3-4b-data-agent-smoke.toml).
-Validate it and inspect the complete possible stage path without downloading
-model weights, calling a provider, starting Daytona, or using a GPU:
+Validate the Qwen3.5 canary and inspect the complete possible stage path without
+downloading model weights, calling a provider, starting Daytona, or using a GPU:
 
 ```bash
 cd pipelines/benchflow-task-posttrain
 
 posttrainarena-train validate \
-  --config configs/qwen3-4b-data-agent-smoke.toml
+  --config configs/qwen3.5-9b-data-agent-canary.toml
 
 posttrainarena-train plan \
-  --config configs/qwen3-4b-data-agent-smoke.toml \
+  --config configs/qwen3.5-9b-data-agent-canary.toml \
   --run-name local-review
 
 posttrainarena-train run \
-  --config configs/qwen3-4b-data-agent-smoke.toml \
+  --config configs/qwen3.5-9b-data-agent-canary.toml \
   --run-name local-review \
   --dry-run
 ```
@@ -145,9 +160,9 @@ Dry-run records the full possible path, including conditional GRPO. Therefore
 | `[runtime]` | Daytona/Docker sandbox, GRPO completion-token budget, and generation count |
 | `[harness]` | Required OpenCode contract, skill mode, telemetry, concurrency, and setup/idle/wall-clock timeouts for teacher collection and evaluation |
 | `[evaluation]` | Environment-variable names for the served base/student model aliases and OpenAI-compatible endpoint credentials |
-| `[teacher]` | Provider-qualified teacher model, adaptive attempts, reward threshold, post-run token/tool acceptance ceilings, and required verified rows |
-| `[sft]` | Enable flag, optimizer settings, tokenizer-aware message-window length, and LoRA dimensions |
-| `[grpo]` | Enable flag, run policy, gate threshold/count, optimizer settings, rollout retries, and trainer-side vLLM URL environment variable |
+| `[teacher]` | Provider-qualified teacher route, declared source identity/revision, adaptive attempts, reward threshold, post-run token/tool acceptance ceilings, and all-task coverage policy |
+| `[sft]` | Enable flag, epoch or smoke-step schedule, optimizer settings, tokenizer-aware message-window length, and LoRA dimensions |
+| `[grpo]` | Enable flag, epoch or smoke-step schedule, run policy, gate threshold/count, LoRA settings, rollout/generation batching, retries, and trainer-side vLLM URL environment variable |
 | `[tracking]` | W&B or disabled reporting |
 | `[output]` | Run root relative to the recipe |
 
@@ -164,7 +179,7 @@ The example Daytona recipe expects:
 
 - `HF_TOKEN` when private or gated snapshots require it
 - `DAYTONA_API_KEY` for sandbox creation
-- `GLM_API_KEY` and `GLM_BASE_URL` for its OpenCode-driven GLM teacher
+- `OPENROUTER_API_KEY` for the OpenCode-driven Qwen3.5-397B-A17B teacher
 - `BENCHFLOW_BASE_MODEL` and `BENCHFLOW_ADAPTER_MODEL` for the OpenCode
   baseline and current-student model aliases
 - `BENCHFLOW_PROVIDER_BASE_URL` and `BENCHFLOW_PROVIDER_API_KEY` for the
@@ -182,17 +197,20 @@ server with `CUDA_VISIBLE_DEVICES=1` and the pipeline with
 `CUDA_VISIBLE_DEVICES=0`. The public bridge can remain CPU-only.
 
 Provider credential values are not written to the run plan or score report.
+BenchFlow removes upstream provider keys from the OpenCode environment and
+replaces them with a per-run LiteLLM proxy token. Do not pass raw provider keys
+through `--agent-env`; participant tasks must only see the scoped proxy route.
 
 ## Execute and resume
 
 ```bash
 posttrainarena-train run \
-  --config configs/qwen3-4b-data-agent-smoke.toml \
-  --run-name qwen3-4b-data-agent
+  --config configs/qwen3.5-9b-data-agent-full.toml \
+  --run-name qwen35-9b-data-agent
 
 posttrainarena-train run \
-  --config configs/qwen3-4b-data-agent-smoke.toml \
-  --run-name qwen3-4b-data-agent \
+  --config configs/qwen3.5-9b-data-agent-full.toml \
+  --run-name qwen35-9b-data-agent \
   --resume
 ```
 
@@ -219,8 +237,14 @@ The real OpenCode-only SFT-to-GRPO validation is documented in
 
 ## SFT, RL-only, and reward gating
 
-The default path collects verified teacher rollouts, trains SFT, evaluates the
-SFT model, then evaluates the GRPO gate on training tasks.
+The organizer path collects one verified teacher rollout for every training
+task, trains one SFT epoch, records the SFT held-out score, then runs one LoRA
+GRPO epoch over the full training set.
+
+Teacher retries inspect only the newly completed attempt and retain selection
+state incrementally. GRPO runs the generations in each trainer batch
+concurrently up to `[harness].concurrency`, while preserving prompt order in the
+TRL rollout contract.
 
 For RL-only experiments, disable both SFT and the teacher:
 
@@ -236,12 +260,10 @@ GRPO then starts from the pinned base model. It still gates on training tasks;
 the held-out eval set is never used to decide whether to train. Set
 `[grpo].enabled = false` for SFT-only runs.
 
-By default, GRPO runs only when reward on the first `[grpo].gate_task_count`
-training tasks is at least `[grpo].threshold`. `run_policy = "always"` forces
-the stage even at zero reward to validate plumbing; it is not a learning
-recommendation. A skipped GRPO stage is a valid result. Larger
-experiments should use separate training, development/gate, and final held-out
-lists.
+The Qwen3.5 organizer recipe uses `run_policy = "always"` so every submission
+receives the same SFT→GRPO procedure. `run_policy = "on_reward"` remains
+available for low-cost experiments. The held-out eval set is never used to
+decide whether to train.
 
 ## Run artifacts
 
@@ -253,7 +275,7 @@ runs/<run-name>/
   eval_task_ids.txt
   data/                       pinned tasks and verified SFT JSONL
   jobs/                       BenchFlow rollout/eval artifacts
-  checkpoints/               SFT adapter, merged SFT, and optional GRPO
+  checkpoints/               SFT adapter/merged model and GRPO adapter/merged model
   results/                    baseline, SFT, gate, and final metrics
   reports/
     plan.json
@@ -266,21 +288,24 @@ runs/<run-name>/
 
 Conditional artifacts may be absent. Generated runs, checkpoints, trajectories,
 and raw provider responses are ignored by Git and must not be committed.
+When a model repository is configured, publishing uploads the final merged
+model, the SFT and GRPO adapters, and the SFT merge that the GRPO adapter uses
+as its immutable base. Each adapter contains `adapter_dependency.json`; the
+GRPO manifest points to the published sibling `../sft-merged`.
 
 ## Compute expectations
 
-The checked-in Qwen3-4B recipe is intended for a single modern datacenter GPU.
-An H100 80 GB is the validated reference class for the completed smoke. Exact
-memory and runtime depend on completion length, generation count, sandbox
-latency, and whether vLLM is enabled. Run `plan` and a small smoke before
-scaling task counts or GRPO steps.
+The Qwen3.5 recipe requires separate physical devices for the trainer and TRL
+vLLM worker. Two H100 80 GB GPUs are the initial canary topology. Exact memory
+and runtime depend on completion length, generation count, sandbox latency,
+and task trajectory length. Run the 1x1 canary before the full 2,238-task run.
 
 Use W&B for spendful runs to track training loss and GPU utilization. Terminate
 GPU hosts after artifacts and checkpoints are backed up.
 
-## Validated evidence and limits
+## Historical validation evidence and limits
 
-The checked-in recipe mirrors a completed H100 smoke with:
+The retained Qwen3-4B recipe mirrors a completed H100 smoke with:
 
 - 15 training tasks and two held-out eval tasks
 - 15/15 verifier-approved, tool-bearing teacher trajectories

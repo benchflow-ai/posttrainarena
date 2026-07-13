@@ -13,6 +13,41 @@ from .config import load_config
 from .pipeline import Pipeline
 
 
+TEACHER_PROVIDER_SECRETS = {
+    "glm": ("GLM_API_KEY", "GLM_BASE_URL"),
+    "openrouter": ("OPENROUTER_API_KEY",),
+    "qwen-dashscope": ("QWEN_API_KEY", "QWEN_BASE_URL"),
+}
+
+
+def default_hf_job_secrets(config_path: Path) -> list[str]:
+    config = load_config(config_path)
+    names = ["HF_TOKEN"]
+    if config.sandbox == "daytona":
+        names.append("DAYTONA_API_KEY")
+    if config.teacher.enabled:
+        provider = config.teacher.model.split("/", 1)[0]
+        provider_secrets = TEACHER_PROVIDER_SECRETS.get(provider)
+        if provider_secrets is None:
+            raise ValueError(
+                "No default HF Job secret mapping for teacher provider "
+                f"{provider!r}; pass --secret-env explicitly"
+            )
+        names.extend(provider_secrets)
+    names.extend(
+        [
+            "BENCHFLOW_BASE_MODEL",
+            "BENCHFLOW_ADAPTER_MODEL",
+            "BENCHFLOW_PROVIDER_BASE_URL",
+            "BENCHFLOW_PROVIDER_API_KEY",
+            "TRL_VLLM_SERVER_BASE_URL",
+        ]
+    )
+    if config.tracking.report_to != "none":
+        names.append("WANDB_API_KEY")
+    return names
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="posttrainarena-train")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -31,7 +66,10 @@ def build_parser() -> argparse.ArgumentParser:
     prepare.add_argument("--dataset-repo", required=True)
     prepare.add_argument("--dataset-revision")
     prepare.add_argument("--upload", action="store_true")
-    prepare.add_argument("--private", action="store_true")
+    visibility = prepare.add_mutually_exclusive_group()
+    visibility.add_argument("--private", dest="private", action="store_true")
+    visibility.add_argument("--public", dest="private", action="store_false")
+    prepare.set_defaults(private=True)
 
     submit = subparsers.add_parser("hf-job-submit")
     submit.add_argument("--config", type=Path, required=True)
@@ -42,15 +80,27 @@ def build_parser() -> argparse.ArgumentParser:
     submit.add_argument("--artifact-repo", required=True)
     submit.add_argument("--leaderboard-repo", required=True)
     submit.add_argument("--model-repo")
+    submit.add_argument("--public-model", action="store_true")
     submit.add_argument("--benchmarks", type=Path)
     submit.add_argument("--posttrainarena-ref")
     submit.add_argument("--flavor", default="h100")
     submit.add_argument("--namespace")
-    submit.add_argument("--timeout", default="2h")
+    submit.add_argument("--timeout", default="6h")
     submit.add_argument("--secret-env", action="append")
     submit.add_argument("--pipeline-dry-run", action="store_true")
     submit.add_argument("--launcher-dry-run", action="store_true")
-    submit.add_argument("--private-artifacts", action="store_true")
+    artifact_visibility = submit.add_mutually_exclusive_group()
+    artifact_visibility.add_argument(
+        "--private-artifacts",
+        dest="private_artifacts",
+        action="store_true",
+    )
+    artifact_visibility.add_argument(
+        "--public-artifacts",
+        dest="private_artifacts",
+        action="store_false",
+    )
+    submit.set_defaults(private_artifacts=True)
     submit.add_argument("--wait", action="store_true")
 
     status = subparsers.add_parser("hf-job-status")
@@ -60,12 +110,36 @@ def build_parser() -> argparse.ArgumentParser:
     publish = subparsers.add_parser("publish-run")
     _add_publish_args(publish)
     publish.add_argument("--model-repo")
+    publish.add_argument("--public-model", action="store_true")
     publish.add_argument("--model-create-pr", action="store_true")
-    publish.add_argument("--private-artifacts", action="store_true")
+    publish_visibility = publish.add_mutually_exclusive_group()
+    publish_visibility.add_argument(
+        "--private-artifacts",
+        dest="private_artifacts",
+        action="store_true",
+    )
+    publish_visibility.add_argument(
+        "--public-artifacts",
+        dest="private_artifacts",
+        action="store_false",
+    )
+    publish.set_defaults(private_artifacts=True)
 
     failure = subparsers.add_parser("publish-failure")
     _add_publish_args(failure)
     failure.add_argument("--error", required=True)
+    failure_visibility = failure.add_mutually_exclusive_group()
+    failure_visibility.add_argument(
+        "--private-artifacts",
+        dest="private_artifacts",
+        action="store_true",
+    )
+    failure_visibility.add_argument(
+        "--public-artifacts",
+        dest="private_artifacts",
+        action="store_false",
+    )
+    failure.set_defaults(private_artifacts=True)
 
     publish_status = subparsers.add_parser("publish-status")
     publish_status.add_argument("--run-dir", type=Path, required=True)
@@ -161,23 +235,14 @@ def main(argv: list[str] | None = None) -> int:
             artifact_repo=args.artifact_repo,
             leaderboard_repo=args.leaderboard_repo,
             model_repo=args.model_repo,
+            private_model=not args.public_model,
+            private_artifacts=args.private_artifacts,
             benchmark_manifest=args.benchmarks,
         )
         secret_names = args.secret_env or (
             ["HF_TOKEN"]
             if args.pipeline_dry_run
-            else [
-                "HF_TOKEN",
-                "DAYTONA_API_KEY",
-                "GLM_API_KEY",
-                "GLM_BASE_URL",
-                "BENCHFLOW_BASE_MODEL",
-                "BENCHFLOW_ADAPTER_MODEL",
-                "BENCHFLOW_PROVIDER_BASE_URL",
-                "BENCHFLOW_PROVIDER_API_KEY",
-                "TRL_VLLM_SERVER_BASE_URL",
-                "WANDB_API_KEY",
-            ]
+            else default_hf_job_secrets(args.config)
         )
         resolved_ref = args.posttrainarena_ref or _git_ref()
         if args.launcher_dry_run:
@@ -248,6 +313,7 @@ def main(argv: list[str] | None = None) -> int:
             job_id=args.job_id,
             token=token,
             private_artifacts=args.private_artifacts,
+            private_model=not args.public_model,
             model_create_pr=args.model_create_pr,
         )
         print(json.dumps(result, indent=2, sort_keys=True))
@@ -265,6 +331,7 @@ def main(argv: list[str] | None = None) -> int:
             error=args.error,
             job_id=args.job_id,
             token=token,
+            private_artifacts=args.private_artifacts,
         )
         print(json.dumps(result, indent=2, sort_keys=True))
         return 0

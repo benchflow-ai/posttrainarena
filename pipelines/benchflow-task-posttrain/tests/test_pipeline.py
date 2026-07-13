@@ -24,6 +24,8 @@ def test_plan_exposes_public_stage_contract(tmp_path: Path) -> None:
         "agent": "opencode",
         "skill_mode": "no-skill",
         "usage_tracking": "required",
+        "external_directory_allow": ("/home/user/input/**",),
+        "deny_bash_patterns": ("*<<*",),
         "concurrency": 1,
         "sandbox_setup_timeout_sec": 300,
         "agent_idle_timeout_sec": 300,
@@ -58,6 +60,9 @@ def test_dry_run_writes_score_schema_without_heavy_dependencies(tmp_path: Path) 
     assert saved["grpo_planned"] is True
     assert saved["grpo_ran"] is False
     assert saved["harness"]["agent"] == "opencode"
+    assert saved["teacher"]["require_all_tasks"] is True
+    assert saved["sft"]["lora_r"] == config.sft.lora_r
+    assert saved["grpo"]["lora_r"] == config.grpo.lora_r
     assert saved["harness_migration"]["applied_stages"] == [
         "teacher",
         "evaluation",
@@ -138,7 +143,7 @@ def test_rl_only_dry_run_uses_base_model(tmp_path: Path) -> None:
     sync = next(
         item for item in result["commands"] if item["name"] == "sync_grpo_endpoint"
     )
-    assert sync["checkpoint"].endswith("/checkpoints/grpo")
+    assert sync["checkpoint"].endswith("/checkpoints/grpo-merged")
     assert (
         gate_task_ids
         == Pipeline(config, run_name="task-list", dry_run=True).train_task_ids[
@@ -147,6 +152,8 @@ def test_rl_only_dry_run_uses_base_model(tmp_path: Path) -> None:
     )
     assert result["grpo_planned"] is True
     assert result["grpo_ran"] is False
+    assert result["checkpoints"]["grpo_adapter"].endswith("/checkpoints/grpo-adapter")
+    assert result["checkpoints"]["grpo_merged"].endswith("/checkpoints/grpo-merged")
 
 
 def test_grpo_run_policy_can_force_zero_reward_training(tmp_path: Path) -> None:
@@ -166,3 +173,35 @@ def test_grpo_run_policy_can_force_zero_reward_training(tmp_path: Path) -> None:
 
     assert gated._should_run_grpo(0.0) is False
     assert forced._should_run_grpo(0.0) is True
+
+
+def test_resumed_grpo_restarts_stage_instead_of_reusing_rollouts(
+    tmp_path: Path,
+) -> None:
+    config = load_config(ROOT / "configs/qwen3-4b-data-agent-smoke.toml")
+    config = replace(config, output_root=tmp_path)
+    pipeline = Pipeline(
+        config,
+        run_name="resume-grpo",
+        dry_run=True,
+        resume=True,
+    )
+    stale = pipeline.layout.jobs / "grpo-train" / "stale.json"
+    stale.parent.mkdir(parents=True)
+    stale.write_text("{}")
+    stale_adapter = pipeline.layout.grpo_adapter / "stale.json"
+    stale_adapter.parent.mkdir(parents=True)
+    stale_adapter.write_text("{}")
+    stale_merged = pipeline.layout.grpo_merged / "stale.json"
+    stale_merged.parent.mkdir(parents=True)
+    stale_merged.write_text("{}")
+
+    pipeline._train_grpo(
+        input_model=config.model,
+        output_model=str(pipeline.layout.grpo_merged),
+    )
+
+    assert not stale.exists()
+    assert not stale_adapter.exists()
+    assert not stale_merged.exists()
+    assert pipeline.runner.commands[-1]["resume_policy"] == "restart-stage"

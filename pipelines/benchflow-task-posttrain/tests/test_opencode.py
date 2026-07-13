@@ -14,6 +14,7 @@ from posttrainarena.benchflow_pipeline.opencode import (
     evaluate,
     evaluation_env,
     load_summary,
+    opencode_config_env,
     served_model,
 )
 
@@ -142,6 +143,12 @@ def test_build_evaluation_command_uses_opencode_contract(tmp_path: Path) -> None
     assert command[command.index("--usage-tracking") + 1] == "required"
     assert command[command.index("--expected-tasks") + 1] == "2"
     assert command.count("--include") == 2
+    assert opencode_config_env(config) in command
+    inline = json.loads(opencode_config_env(config).split("=", 1)[1])
+    assert inline["permission"]["external_directory"] == {
+        "/home/user/input/**": "allow"
+    }
+    assert inline["permission"]["bash"] == {"*<<*": "deny"}
 
 
 def test_build_evaluation_command_can_capture_sampled_token_logprobs(
@@ -160,8 +167,13 @@ def test_build_evaluation_command_can_capture_sampled_token_logprobs(
         capture_token_logprobs=True,
     )
 
-    index = command.index("--agent-env")
-    assert command[index + 1] == "BENCHFLOW_CAPTURE_TOKEN_LOGPROBS=1"
+    values = [
+        command[index + 1]
+        for index, value in enumerate(command)
+        if value == "--agent-env"
+    ]
+    assert opencode_config_env(_config()) in values
+    assert "BENCHFLOW_CAPTURE_TOKEN_LOGPROBS=1" in values
     assert command[command.index("--model") + 1] == "vllm/student"
 
 

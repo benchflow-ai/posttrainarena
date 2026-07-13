@@ -71,6 +71,23 @@ def evaluation_env(
     }
 
 
+def opencode_config_env(config: PipelineConfig) -> str:
+    content = {
+        "permission": {
+            "external_directory": {
+                path: "allow" for path in config.harness.external_directory_allow
+            },
+            "bash": {
+                **{pattern: "deny" for pattern in config.harness.deny_bash_patterns},
+            },
+        }
+    }
+    return "OPENCODE_CONFIG_CONTENT=" + json.dumps(
+        content,
+        separators=(",", ":"),
+    )
+
+
 def build_evaluation_command(
     *,
     config: PipelineConfig,
@@ -129,6 +146,8 @@ def build_evaluation_command(
         str(run_config_path),
         "--jobs-dir",
         str(jobs_dir),
+        "--agent-env",
+        opencode_config_env(config),
     ]
     if config.runtime.sandbox_user is not None:
         command.extend(["--sandbox-user", config.runtime.sandbox_user])

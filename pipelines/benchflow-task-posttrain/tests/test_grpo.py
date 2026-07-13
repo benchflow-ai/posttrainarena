@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import threading
+from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -9,10 +11,13 @@ import pytest
 
 from posttrainarena.benchflow_pipeline.config import load_config
 from posttrainarena.benchflow_pipeline.grpo import (
+    CollectedRollout,
     OpenCodeRolloutCollector,
+    RolloutTokens,
     build_grpo_rows,
     sync_checkpoint_to_vllm,
     sync_model_to_vllm,
+    sync_reference_to_vllm,
     task_handle,
     task_id_from_prompt,
     train_grpo,
@@ -102,7 +107,7 @@ def _exchange(
                         },
                     }
                 ]
-            }
+            },
         },
     }
 
@@ -384,7 +389,61 @@ def test_collector_runs_one_opencode_rollout_per_prompt(
     assert len(collector.records) == 2
 
 
-def test_collector_resumes_verified_rollout_artifacts(
+def test_collector_parallelizes_rollouts_up_to_harness_concurrency(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config = load_config(ROOT / "configs/qwen3-4b-data-agent-smoke.toml")
+    config = replace(
+        config,
+        harness=replace(config.harness, concurrency=2),
+    )
+    tasks_dir = tmp_path / "tasks"
+    (tasks_dir / "task-a").mkdir(parents=True)
+    collector = OpenCodeRolloutCollector(
+        config=config,
+        model="/tmp/student",
+        tasks_dir=tasks_dir,
+        jobs_dir=tmp_path / "jobs",
+    )
+    barrier = threading.Barrier(2)
+    indexes: list[int] = []
+
+    def fake_collect_one(
+        *,
+        rollout_index: int,
+        task_id: str,
+        tokenizer: Any,
+        trainer: Any,
+    ) -> CollectedRollout:
+        del tokenizer, trainer
+        indexes.append(rollout_index)
+        barrier.wait(timeout=2)
+        return CollectedRollout(
+            task_id=task_id,
+            reward=1.0,
+            rollout_dir=tmp_path / f"rollout-{rollout_index}",
+            tokens=RolloutTokens(
+                prompt_ids=[1],
+                completion_ids=[2],
+                logprobs=[-0.1],
+                env_mask=[1],
+            ),
+        )
+
+    monkeypatch.setattr(collector, "_collect_one", fake_collect_one)
+    trainer = SimpleNamespace(processing_class=object())
+
+    output = collector(
+        [task_handle("task-a"), task_handle("task-a")],
+        trainer,
+    )
+
+    assert sorted(indexes) == [0, 1]
+    assert output["benchflow_task_id"] == ["task-a", "task-a"]
+
+
+def test_collector_recollects_instead_of_reusing_stale_rollout_artifacts(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -392,9 +451,7 @@ def test_collector_resumes_verified_rollout_artifacts(
     tasks_dir = tmp_path / "tasks"
     (tasks_dir / "task-a").mkdir(parents=True)
     jobs_dir = tmp_path / "jobs"
-    attempt_root = (
-        jobs_dir / "step-000002/rank-00/rollout-000000/attempt-01"
-    )
+    attempt_root = jobs_dir / "step-000002/rank-00/rollout-000000/attempt-01"
     rollout_dir = attempt_root / "jobs/job/task-a"
     _write_trajectory(rollout_dir / "trajectory/llm_trajectory.jsonl")
     write_json(
@@ -412,19 +469,31 @@ def test_collector_resumes_verified_rollout_artifacts(
     )
     write_json(attempt_root / "rollout_error.json", {"error": "stale"})
 
-    def unexpected_evaluate(**_: Any) -> None:
-        raise AssertionError("cached rollout should not be re-evaluated")
+    calls = 0
+
+    def fresh_evaluate(**_: Any) -> dict[str, Any]:
+        nonlocal calls
+        calls += 1
+        return {
+            "health": {
+                "rows": [
+                    {
+                        "reward": 1.0,
+                        "rollout_dir": str(rollout_dir),
+                    }
+                ]
+            }
+        }
 
     monkeypatch.setattr(
         "posttrainarena.benchflow_pipeline.grpo.evaluate",
-        unexpected_evaluate,
+        fresh_evaluate,
     )
     collector = OpenCodeRolloutCollector(
         config=config,
         model="/tmp/student",
         tasks_dir=tasks_dir,
         jobs_dir=jobs_dir,
-        resume=True,
     )
     trainer = SimpleNamespace(
         processing_class=FakeTokenizer(),
@@ -434,7 +503,8 @@ def test_collector_resumes_verified_rollout_artifacts(
 
     output = collector([task_handle("task-a")], trainer)
 
-    assert output["rollout_reward"] == [0.75]
+    assert calls == 1
+    assert output["rollout_reward"] == [1.0]
     assert (attempt_root / "grpo_tokens.json").is_file()
     assert not (attempt_root / "rollout_error.json").exists()
 
@@ -484,12 +554,8 @@ def test_collector_uses_local_bridge_control_url(
     payload = collector._resolve_bridge_logprobs("chatcmpl-1")
 
     assert payload["content"]
-    assert captured["url"] == (
-        "http://127.0.0.1:8002/v1/benchflow/logprobs/chatcmpl-1"
-    )
-    assert captured["kwargs"]["headers"] == {
-        "Authorization": "Bearer secret"
-    }
+    assert captured["url"] == ("http://127.0.0.1:8002/v1/benchflow/logprobs/chatcmpl-1")
+    assert captured["kwargs"]["headers"] == {"Authorization": "Bearer secret"}
 
 
 def test_collector_retries_failed_opencode_rollout(
@@ -546,6 +612,8 @@ def test_train_grpo_wires_custom_rollout_and_vllm_sync(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    import peft
+    import transformers
     import trl
     import posttrainarena.benchflow_pipeline.grpo as grpo_module
 
@@ -559,12 +627,24 @@ def test_train_grpo_wires_custom_rollout_and_vllm_sync(
             self.values = kwargs
 
     class FakeModel:
-        def to(self, **kwargs):
-            captured["model_to"] = kwargs
+        pass
+
+    class FakeMerged:
+        def save_pretrained(self, path, **kwargs):
+            captured["merged_save"] = (path, kwargs)
+
+    class FakePeftModel:
+        @classmethod
+        def from_pretrained(cls, model, path):
+            captured["adapter_load"] = (model, path)
+            return cls()
+
+        def merge_and_unload(self):
+            return FakeMerged()
 
     class FakeProcessor:
         def save_pretrained(self, path):
-            captured["processor_path"] = path
+            captured.setdefault("processor_paths", []).append(path)
 
     class FakeVllmClient:
         def close_communicator(self):
@@ -575,9 +655,7 @@ def test_train_grpo_wires_custom_rollout_and_vllm_sync(
             captured["trainer_kwargs"] = kwargs
             self.model = FakeModel()
             self.processing_class = FakeProcessor()
-            self.vllm_generation = SimpleNamespace(
-                vllm_client=FakeVllmClient()
-            )
+            self.vllm_generation = SimpleNamespace(vllm_client=FakeVllmClient())
 
         def train(self):
             return SimpleNamespace(metrics={"loss": 0.5})
@@ -587,6 +665,15 @@ def test_train_grpo_wires_custom_rollout_and_vllm_sync(
 
     monkeypatch.setattr(trl, "GRPOConfig", FakeConfig)
     monkeypatch.setattr(trl, "GRPOTrainer", FakeTrainer)
+    monkeypatch.setattr(peft, "LoraConfig", FakeConfig)
+    monkeypatch.setattr(peft, "PeftModel", FakePeftModel)
+    monkeypatch.setattr(
+        transformers.AutoModelForCausalLM,
+        "from_pretrained",
+        lambda *args, **kwargs: (
+            captured.update(base_load=(args, kwargs)) or FakeModel()
+        ),
+    )
     monkeypatch.setattr(
         grpo_module,
         "supported_kwargs",
@@ -599,6 +686,7 @@ def test_train_grpo_wires_custom_rollout_and_vllm_sync(
         lambda config, model: tokenizer,
     )
     monkeypatch.setenv("TRL_VLLM_SERVER_BASE_URL", "http://127.0.0.1:8000")
+    adapter_dir = tmp_path / "adapter"
     output_dir = tmp_path / "checkpoint"
 
     payload = train_grpo(
@@ -607,6 +695,7 @@ def test_train_grpo_wires_custom_rollout_and_vllm_sync(
         tasks_dir=tasks_dir,
         task_ids=["task-a"],
         jobs_dir=tmp_path / "jobs",
+        adapter_dir=adapter_dir,
         output_dir=output_dir,
         run_name="test-run",
     )
@@ -619,13 +708,58 @@ def test_train_grpo_wires_custom_rollout_and_vllm_sync(
     )
     assert trainer_kwargs["reward_funcs"] == [verifier_reward]
     assert trainer_kwargs["processing_class"] is tokenizer
+    assert trainer_kwargs["peft_config"].values == {
+        "r": config.grpo.lora_r,
+        "lora_alpha": config.grpo.lora_alpha,
+        "lora_dropout": config.grpo.lora_dropout,
+        "bias": "none",
+        "task_type": "CAUSAL_LM",
+        "target_modules": "all-linear",
+    }
     assert "environment_factory" not in trainer_kwargs
     assert args["use_vllm"] is True
     assert args["vllm_mode"] == "server"
     assert args["vllm_server_base_url"] == "http://127.0.0.1:8000"
     assert args["vllm_importance_sampling_correction"] is True
+    assert args["log_completions"] is False
+    assert args["generation_batch_size"] == 2
+    assert args["max_steps"] == config.grpo.max_steps
+    assert "num_train_epochs" not in args
+    assert args["gradient_checkpointing"] is True
     assert captured["trainer_communicator_closed"] is True
+    assert captured["model_path"] == str(adapter_dir)
+    assert captured["adapter_load"][1] == str(adapter_dir)
+    assert captured["merged_save"] == (
+        str(output_dir),
+        {"safe_serialization": True},
+    )
+    assert payload["adapter_dir"] == str(adapter_dir)
+    assert payload["merged_model_dir"] == str(output_dir)
+    assert payload["quantization"] is None
+    dependency = json.loads((adapter_dir / "adapter_dependency.json").read_text())
+    assert dependency["base_checkpoint"] == config.model
+    assert dependency["published_base_sibling"] == "../sft-merged"
     assert payload["rollout_contract"]["endpoint_sync"] == ("trl-vllm-sync-weights")
+
+    full_config = load_config(ROOT / "configs/qwen3.5-9b-data-agent-full.toml")
+    full_payload = train_grpo(
+        config=full_config,
+        model=full_config.model,
+        tasks_dir=tasks_dir,
+        task_ids=["task-a"],
+        jobs_dir=tmp_path / "full-jobs",
+        adapter_dir=tmp_path / "full-adapter",
+        output_dir=tmp_path / "full-checkpoint",
+        run_name="full-run",
+    )
+    full_args = captured["trainer_kwargs"]["args"].values
+
+    assert full_args["num_train_epochs"] == 1.0
+    assert "max_steps" not in full_args
+    assert full_args["generation_batch_size"] == 16
+    assert full_payload["num_train_epochs"] == 1.0
+    assert full_payload["max_steps"] is None
+    assert full_payload["generation_batch_size"] == 16
 
 
 def test_sync_model_to_vllm_closes_weight_communicator(
@@ -707,7 +841,9 @@ def test_sync_checkpoint_loads_saved_policy_before_endpoint_update(
     monkeypatch.setattr(
         transformers.AutoModelForCausalLM,
         "from_pretrained",
-        lambda *args, **kwargs: FakeModel(),
+        lambda *args, **kwargs: (
+            captured.update(model_args=args, model_kwargs=kwargs) or FakeModel()
+        ),
     )
     monkeypatch.setattr(
         grpo_module,
@@ -729,3 +865,11 @@ def test_sync_checkpoint_loads_saved_policy_before_endpoint_update(
     }
     assert captured["sync_kwargs"]["config"] is config
     assert payload["synced"] is True
+
+    sync_reference_to_vllm(
+        config=config,
+        reference=config.model,
+    )
+
+    assert captured["model_args"] == (config.model,)
+    assert captured["model_kwargs"]["revision"] == config.model_revision

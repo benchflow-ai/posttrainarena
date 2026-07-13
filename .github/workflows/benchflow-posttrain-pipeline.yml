@@ -10,6 +10,7 @@ on:
       - "docs/hf-jobs-validation.md"
       - "docs/opencode-grpo.md"
       - "docs/opencode-grpo-smoke.md"
+      - "docs/qwen35-opencode-teacher-canary.md"
       - "docs/README.md"
       - "README.md"
       - "CONTRIBUTING.md"
@@ -28,6 +29,7 @@ on:
       - "docs/hf-jobs-validation.md"
       - "docs/opencode-grpo.md"
       - "docs/opencode-grpo-smoke.md"
+      - "docs/qwen35-opencode-teacher-canary.md"
       - "docs/README.md"
       - "README.md"
       - "CONTRIBUTING.md"
@@ -52,6 +54,34 @@ jobs:
           python-version: "3.12"
       - name: Install package and test dependencies
         run: pip install -e 'pipelines/benchflow-task-posttrain[test]'
+      - name: Resolve Linux GPU training stack
+        run: |
+          python -m pip install uv
+          uv pip compile pipelines/benchflow-task-posttrain/pyproject.toml \
+            --extra train \
+            --python-version 3.12 \
+            --python-platform x86_64-manylinux_2_28 \
+            --quiet \
+            --output-file /tmp/posttrainarena-train-linux.txt
+          python - <<'PY'
+          import re
+          from pathlib import Path
+
+          from packaging.version import Version
+
+          text = Path("/tmp/posttrainarena-train-linux.txt").read_text()
+
+          def version(name):
+              match = re.search(rf"^{re.escape(name)}==([^\s]+)", text, re.MULTILINE)
+              assert match, name
+              return Version(match.group(1))
+
+          assert version("torch") == Version("2.11.0")
+          assert Version("5.6") <= version("transformers") < Version("5.14")
+          assert version("trl") == Version("1.8.0")
+          assert Version("0.20") <= version("vllm") <= Version("0.23")
+          assert Version("0.19") <= version("peft") < Version("0.20")
+          PY
       - name: Compile
         run: >-
           python -m py_compile
@@ -70,6 +100,13 @@ jobs:
             --config configs/qwen3-4b-hf-job-smoke.toml
           posttrainarena-train validate \
             --config configs/qwen3-4b-skillsbench-e2e-smoke.toml
+          posttrainarena-train validate \
+            --config configs/qwen3.5-9b-data-agent-canary.toml
+          posttrainarena-train validate \
+            --config configs/qwen3.5-9b-data-agent-full.toml
+          posttrainarena-train plan \
+            --config configs/qwen3.5-9b-data-agent-full.toml \
+            --run-name qwen35-full-plan > /tmp/qwen35-full-plan.json
           posttrainarena-train plan \
             --config configs/qwen3-4b-data-agent-forced-grpo-smoke.toml \
             --run-name ci-plan > /tmp/posttrainarena-plan.json
@@ -83,6 +120,17 @@ jobs:
 
           plan = json.loads(Path("/tmp/posttrainarena-plan.json").read_text())
           run = json.loads(Path("/tmp/posttrainarena-run.json").read_text())
+          qwen35 = json.loads(Path("/tmp/qwen35-full-plan.json").read_text())
+          assert qwen35["model"] == "Qwen/Qwen3.5-9B"
+          assert qwen35["train_task_count"] == 2238
+          assert qwen35["eval_task_count"] == 366
+          assert qwen35["teacher"]["model"] == "openrouter/qwen/qwen3.5-397b-a17b"
+          assert qwen35["teacher"]["require_all_tasks"] is True
+          assert qwen35["sft"]["num_train_epochs"] == 1.0
+          assert qwen35["sft"]["max_steps"] is None
+          assert qwen35["grpo"]["num_train_epochs"] == 1.0
+          assert qwen35["grpo"]["max_steps"] is None
+          assert qwen35["grpo"]["run_policy"] == "always"
           assert plan["train_task_count"] == 15
           assert plan["eval_task_count"] == 2
           assert plan["harness_migration"]["applied_stages"] == [

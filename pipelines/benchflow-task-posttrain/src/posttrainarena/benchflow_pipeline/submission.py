@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import re
 import shutil
 import tomllib
@@ -10,7 +9,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from .io import read_task_ids, write_json
+from .io import write_json
 
 
 REQUIRED_FIELDS = ("team_name", "contact_email", "track")
@@ -91,8 +90,7 @@ def _load_entry(entry_dir: Path) -> tuple[dict[str, str], list[Path]]:
             issues[task.name] = task_issues
     if issues:
         rendered = "; ".join(
-            f"{task}: {', '.join(task_issues)}"
-            for task, task_issues in issues.items()
+            f"{task}: {', '.join(task_issues)}" for task, task_issues in issues.items()
         )
         raise ValueError(f"invalid task packages: {rendered}")
     return manifest, tasks
@@ -148,10 +146,9 @@ def _portable_recipe(
         }
     )
     data["eval_dataset"]["task_list"] = "task-lists/eval.txt"
-    data.setdefault("teacher", {})["min_verified"] = min(
-        int(data.get("teacher", {}).get("min_verified", 1)),
-        len(train_task_ids),
-    )
+    teacher = data.setdefault("teacher", {})
+    teacher["min_verified"] = len(train_task_ids)
+    teacher["require_all_tasks"] = True
     data.setdefault("output", {})["root"] = "runs"
     output_path.write_text(tomli_w.dumps(data))
 
@@ -164,7 +161,7 @@ def prepare_submission(
     dataset_repo: str,
     dataset_revision: str | None = None,
     upload: bool = False,
-    private: bool = False,
+    private: bool = True,
     token: str | None = None,
 ) -> PreparedSubmission:
     manifest, tasks = _load_entry(entry_dir)
@@ -193,6 +190,11 @@ def prepare_submission(
             repo_type="dataset",
             private=private,
             exist_ok=True,
+        )
+        api.update_repo_settings(
+            dataset_repo,
+            repo_type="dataset",
+            private=private,
         )
         commit = api.upload_folder(
             repo_id=dataset_repo,

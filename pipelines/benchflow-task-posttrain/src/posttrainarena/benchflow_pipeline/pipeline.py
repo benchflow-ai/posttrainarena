@@ -128,7 +128,7 @@ class Pipeline:
         grpo_ran = False
         if self.config.sft.enabled:
             self._collect_and_convert_teacher_data()
-            final_model = str(self.layout.checkpoints / "sft-merged")
+            final_model = str(self.layout.sft_merged)
             self._train_sft(final_model)
             self._sync_student_endpoint(
                 checkpoint=Path(final_model),
@@ -159,7 +159,7 @@ class Pipeline:
             grpo_planned = True
             grpo_ran = not self.dry_run
             grpo_input_model = final_model
-            grpo_model = str(self.layout.checkpoints / "grpo")
+            grpo_model = str(self.layout.grpo_merged)
             self._train_grpo(input_model=grpo_input_model, output_model=grpo_model)
             self._sync_student_endpoint(
                 checkpoint=Path(grpo_model),
@@ -358,6 +358,10 @@ class Pipeline:
         metrics = Path(output_model) / "train_metrics.json"
         if self.resume and metrics.is_file():
             return
+        if self.resume:
+            for path in (self.layout.sft_adapter, Path(output_model)):
+                if path.exists():
+                    shutil.rmtree(path)
         if self.dry_run:
             self.runner.commands.append(
                 {
@@ -373,7 +377,7 @@ class Pipeline:
         train_sft(
             config=self.config,
             train_jsonl=self.layout.sft_jsonl,
-            adapter_dir=self.layout.checkpoints / "sft-adapter",
+            adapter_dir=self.layout.sft_adapter,
             output_dir=Path(output_model),
             run_name=self.run_name,
         )
@@ -382,6 +386,11 @@ class Pipeline:
         metrics = Path(output_model) / "train_metrics.json"
         if self.resume and metrics.is_file():
             return
+        jobs_dir = self.layout.jobs / "grpo-train"
+        if self.resume:
+            for path in (jobs_dir, self.layout.grpo_adapter, Path(output_model)):
+                if path.exists():
+                    shutil.rmtree(path)
         if self.dry_run:
             self.runner.commands.append(
                 {
@@ -389,6 +398,7 @@ class Pipeline:
                     "call": "grpo.train_grpo",
                     "model": input_model,
                     "output_dir": output_model,
+                    "resume_policy": "restart-stage",
                 }
             )
             return
@@ -399,10 +409,10 @@ class Pipeline:
             model=input_model,
             tasks_dir=self.layout.train_tasks,
             task_ids=self.train_task_ids,
-            jobs_dir=self.layout.jobs / "grpo-train",
+            jobs_dir=jobs_dir,
+            adapter_dir=self.layout.grpo_adapter,
             output_dir=Path(output_model),
             run_name=f"{self.run_name}-grpo",
-            resume=self.resume,
         )
 
     def _sync_student_endpoint(self, *, checkpoint: Path, stage: str) -> None:
@@ -460,8 +470,24 @@ class Pipeline:
             "grpo_run_policy": self.config.grpo.run_policy,
             "grpo_planned": grpo_planned,
             "grpo_ran": grpo_ran,
+            "checkpoints": {
+                "sft_adapter": (
+                    str(self.layout.sft_adapter) if self.config.sft.enabled else None
+                ),
+                "sft_merged": (
+                    str(self.layout.sft_merged) if self.config.sft.enabled else None
+                ),
+                "grpo_adapter": (
+                    str(self.layout.grpo_adapter) if grpo_planned else None
+                ),
+                "grpo_merged": (str(self.layout.grpo_merged) if grpo_planned else None),
+            },
             "harness": asdict(self.config.harness),
             "evaluation": asdict(self.config.evaluation),
+            "teacher": asdict(self.config.teacher),
+            "sft": asdict(self.config.sft),
+            "grpo": asdict(self.config.grpo),
+            "tracking": asdict(self.config.tracking),
             "harness_migration": {
                 "applied_stages": ["teacher", "evaluation", "grpo"],
                 "pending_stages": [],

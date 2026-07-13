@@ -15,9 +15,13 @@ SECRET_ENV_NAMES = (
     "DAYTONA_API_KEY",
     "GLM_API_KEY",
     "GLM_BASE_URL",
+    "QWEN_API_KEY",
+    "QWEN_BASE_URL",
+    "OPENROUTER_API_KEY",
     "BENCHFLOW_BASE_MODEL",
     "BENCHFLOW_ADAPTER_MODEL",
     "BENCHFLOW_PROVIDER_BASE_URL",
+    "BENCHFLOW_MODEL_BRIDGE_CONTROL_URL",
     "BENCHFLOW_PROVIDER_API_KEY",
     "TRL_VLLM_SERVER_BASE_URL",
     "WANDB_API_KEY",
@@ -89,7 +93,8 @@ def publish_run(
     model_repo: str | None = None,
     job_id: str | None = None,
     token: str | None = None,
-    private_artifacts: bool = False,
+    private_artifacts: bool = True,
+    private_model: bool = True,
     model_create_pr: bool = False,
 ) -> dict[str, Any]:
     from huggingface_hub import HfApi
@@ -98,27 +103,83 @@ def publish_run(
     api = HfApi(token=token)
     model_info: dict[str, Any] | None = None
     final_model = Path(str(score.get("final_model", ""))).expanduser()
-    if model_repo and final_model.is_dir():
-        api.create_repo(model_repo, repo_type="model", exist_ok=True)
-        commit = api.upload_folder(
-            repo_id=model_repo,
+    if model_repo:
+        if not final_model.is_dir():
+            raise FileNotFoundError(f"Final model checkpoint not found: {final_model}")
+        checkpoint_root = (run_dir / "checkpoints").resolve()
+        checkpoint_paths = score.get("checkpoints")
+        candidates = [("final-merged", final_model)]
+        if isinstance(checkpoint_paths, dict):
+            for label in ("sft_adapter", "sft_merged", "grpo_adapter"):
+                value = checkpoint_paths.get(label)
+                if value:
+                    candidates.append((label.replace("_", "-"), Path(str(value))))
+        safe_candidates: list[tuple[str, Path]] = []
+        seen: set[Path] = set()
+        for label, folder in candidates:
+            resolved = folder.expanduser().resolve()
+            if not resolved.is_relative_to(checkpoint_root):
+                raise RuntimeError(
+                    f"Refusing to publish checkpoint outside {checkpoint_root}: "
+                    f"{resolved}"
+                )
+            if not resolved.is_dir():
+                raise FileNotFoundError(f"Declared checkpoint not found: {resolved}")
+            if resolved in seen:
+                continue
+            seen.add(resolved)
+            safe_candidates.append((label, resolved))
+        if not safe_candidates:
+            raise RuntimeError("No model checkpoints were available to publish")
+        api.create_repo(
+            model_repo,
             repo_type="model",
-            folder_path=final_model,
-            path_in_repo=f"runs/{run_id}/checkpoint",
-            ignore_patterns=["checkpoint-*", "optimizer.pt", "completions/**"],
-            commit_message=f"Publish PostTrain Arena checkpoint {run_id}",
-            create_pr=model_create_pr,
+            private=private_model,
+            exist_ok=True,
+        )
+        api.update_repo_settings(
+            model_repo,
+            repo_type="model",
+            private=private_model,
+        )
+        uploads: dict[str, dict[str, str | None]] = {}
+        for label, resolved in safe_candidates:
+            commit = api.upload_folder(
+                repo_id=model_repo,
+                repo_type="model",
+                folder_path=resolved,
+                path_in_repo=f"runs/{run_id}/{label}",
+                ignore_patterns=["checkpoint-*", "optimizer.pt", "completions/**"],
+                commit_message=f"Publish PostTrain Arena {label} {run_id}",
+                create_pr=model_create_pr,
+            )
+            uploads[label] = {
+                "commit": commit.oid,
+                "url": getattr(commit, "pr_url", None)
+                or getattr(commit, "commit_url", None),
+            }
+        final_upload = uploads["final-merged"]
+        model_url = (
+            final_upload["url"]
+            if model_create_pr and final_upload["url"]
+            else f"https://huggingface.co/{model_repo}/tree/main/runs/{run_id}"
         )
         model_info = {
             "repo_id": model_repo,
-            "commit": commit.oid,
-            "url": commit.pr_url or commit.commit_url,
+            "commit": final_upload["commit"],
+            "url": model_url,
+            "artifacts": uploads,
         }
     api.create_repo(
         artifact_repo,
         repo_type="dataset",
         private=private_artifacts,
         exist_ok=True,
+    )
+    api.update_repo_settings(
+        artifact_repo,
+        repo_type="dataset",
+        private=private_artifacts,
     )
     expected_artifact_url = (
         f"https://huggingface.co/datasets/{artifact_repo}/tree/main/runs/{run_id}"
@@ -177,6 +238,7 @@ def publish_failure(
     error: str,
     job_id: str | None = None,
     token: str | None = None,
+    private_artifacts: bool = True,
 ) -> dict[str, Any]:
     from huggingface_hub import HfApi
 
@@ -196,13 +258,27 @@ def publish_failure(
     )
     write_json(run_dir / "reports" / "hub_run.json", record)
     api = HfApi(token=token)
-    api.create_repo(artifact_repo, repo_type="dataset", exist_ok=True)
+    api.create_repo(
+        artifact_repo,
+        repo_type="dataset",
+        private=private_artifacts,
+        exist_ok=True,
+    )
+    api.update_repo_settings(
+        artifact_repo,
+        repo_type="dataset",
+        private=private_artifacts,
+    )
     commit = api.upload_folder(
         repo_id=artifact_repo,
         repo_type="dataset",
-        folder_path=run_dir / "reports",
-        path_in_repo=f"runs/{run_id}/reports",
-        commit_message=f"Record failed PostTrain Arena run {run_id}",
+        folder_path=run_dir,
+        path_in_repo=f"runs/{run_id}",
+        ignore_patterns=[
+            "data/train/**",
+            "data/eval/**",
+        ],
+        commit_message=f"Checkpoint failed PostTrain Arena run {run_id}",
     )
     leaderboard = publish_record(
         repo_id=leaderboard_repo,
@@ -213,6 +289,12 @@ def publish_failure(
         "run": record,
         "artifact_commit": commit.oid,
         "artifact_url": artifact_url,
+        "resume_available": any(
+            path.is_file()
+            for root in (run_dir / "jobs", run_dir / "checkpoints")
+            if root.is_dir()
+            for path in root.rglob("*")
+        ),
         "leaderboard": leaderboard,
     }
 
