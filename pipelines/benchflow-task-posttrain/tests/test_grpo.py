@@ -198,6 +198,28 @@ def test_trajectory_to_rollout_tokens_requires_provider_logprobs(
         )
 
 
+def test_trajectory_to_rollout_tokens_resolves_streaming_logprobs(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "llm_trajectory.jsonl"
+    row = _exchange([{"role": "user", "content": "hi"}], "A", -0.1)
+    row["response"]["body"]["id"] = "chatcmpl-1"
+    expected = row["response"]["body"]["choices"][0].pop("logprobs")
+    path.write_text(json.dumps(row) + "\n")
+
+    tokens = trajectory_to_rollout_tokens(
+        path,
+        FakeTokenizer(),
+        max_completion_tokens=1000,
+        logprob_resolver=lambda completion_id: (
+            expected if completion_id == "chatcmpl-1" else {}
+        ),
+    )
+
+    assert tokens.completion_ids == [ord("A")]
+    assert tokens.logprobs == [-0.1]
+
+
 def test_verifier_reward_uses_rollout_metadata() -> None:
     assert verifier_reward(["a", "b"], rollout_reward=[1.0, 0.25]) == [1.0, 0.25]
 

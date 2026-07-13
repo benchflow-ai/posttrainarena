@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import re
 import time
+from collections import OrderedDict
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Any
@@ -25,6 +26,7 @@ class ModelBridgeConfig:
     api_key: str | None = None
     default_max_tokens: int = 16384
     timeout_seconds: float = 900.0
+    max_sidecar_entries: int = 4096
 
 
 def parse_qwen_tool_calls(text: str) -> tuple[str | None, list[dict[str, Any]]]:
@@ -253,6 +255,7 @@ def create_model_bridge_app(
             return data
 
     app = FastAPI(title="PostTrain Arena TRL model bridge")
+    logprob_store: OrderedDict[str, dict[str, Any]] = OrderedDict()
 
     def authorize(authorization: str | None) -> None:
         if config.api_key is None:
@@ -281,6 +284,17 @@ def create_model_bridge_app(
             ],
         }
 
+    @app.get("/v1/benchflow/logprobs/{completion_id}")
+    async def completion_logprobs(
+        completion_id: str,
+        authorization: str | None = Header(default=None),
+    ) -> dict[str, Any]:
+        authorize(authorization)
+        payload = logprob_store.get(completion_id)
+        if payload is None:
+            raise HTTPException(status_code=404, detail="unknown completion id")
+        return payload
+
     @app.post("/v1/chat/completions")
     async def chat_completions(
         body: dict[str, Any],
@@ -294,6 +308,14 @@ def create_model_bridge_app(
             tokenizer=tokenizer,
             model=model,
         )
+        completion_id = str(translated["id"])
+        logprob_store[completion_id] = {
+            "id": completion_id,
+            "logprobs": translated["choices"][0]["logprobs"],
+        }
+        logprob_store.move_to_end(completion_id)
+        while len(logprob_store) > config.max_sidecar_entries:
+            logprob_store.popitem(last=False)
         if body.get("stream") is True:
             return _streaming_response(translated)
         return translated

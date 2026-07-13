@@ -31,7 +31,11 @@ posttrainarena-train model-bridge \
 Only the bridge needs public ingress. It forwards chat messages and tool schemas
 to TRL's `/chat/` endpoint, decodes the returned token IDs, parses Qwen
 `<tool_call>` blocks into OpenAI tool calls, and emits OpenAI-compatible
-streaming responses with sampled-token logprobs.
+streaming responses. Because LiteLLM's stream aggregation does not retain
+choice-level logprobs, the bridge also keeps a bounded authenticated sidecar
+keyed by the OpenAI completion ID. The GRPO collector resolves the exact sampled
+token IDs/logprobs from that sidecar and writes `grpo_tokens.json` beside each
+rollout attempt.
 
 ## Per-update lifecycle
 

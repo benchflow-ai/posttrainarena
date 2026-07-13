@@ -8,6 +8,7 @@ import os
 import gc
 from dataclasses import dataclass
 from pathlib import Path
+from collections.abc import Callable
 from typing import Any, Sequence
 
 from .config import PipelineConfig
@@ -272,7 +273,12 @@ def _sampled_tokens(
 
 def _exchange_parts(
     row: dict[str, Any],
-) -> tuple[list[dict[str, Any]], list[dict[str, Any]] | None, dict[str, Any]]:
+) -> tuple[
+    list[dict[str, Any]],
+    list[dict[str, Any]] | None,
+    dict[str, Any],
+    str | None,
+]:
     request = row.get("request")
     response = row.get("response")
     request_body = request.get("body") if isinstance(request, dict) else None
@@ -292,7 +298,13 @@ def _exchange_parts(
     choices = response_body.get("choices")
     if not isinstance(choices, list) or not choices or not isinstance(choices[0], dict):
         raise RuntimeError("OpenCode trajectory response has no choice")
-    return messages, tools, choices[0]
+    completion_id = response_body.get("id")
+    return (
+        messages,
+        tools,
+        choices[0],
+        completion_id if isinstance(completion_id, str) else None,
+    )
 
 
 @dataclass(frozen=True)
@@ -308,6 +320,7 @@ def trajectory_to_rollout_tokens(
     tokenizer: Any,
     *,
     max_completion_tokens: int,
+    logprob_resolver: Callable[[str], dict[str, Any]] | None = None,
 ) -> RolloutTokens:
     rows = _load_jsonl(path)
     prompt_ids: list[int] | None = None
@@ -317,7 +330,7 @@ def trajectory_to_rollout_tokens(
     current_ids: list[int] = []
 
     for index, row in enumerate(rows):
-        messages, tools, choice = _exchange_parts(row)
+        messages, tools, choice, completion_id = _exchange_parts(row)
         request_ids = _chat_prompt_ids(tokenizer, messages, tools)
         if index == 0:
             prompt_ids = request_ids
@@ -339,7 +352,18 @@ def trajectory_to_rollout_tokens(
             env_mask.extend([0] * len(external_ids))
             current_ids = list(request_ids)
 
-        generated_ids, generated_logprobs = _sampled_tokens(choice, tokenizer)
+        resolved_choice = choice
+        if not isinstance(choice.get("logprobs"), dict):
+            if logprob_resolver is None or completion_id is None:
+                raise RuntimeError("OpenCode response has no sampled-token logprobs")
+            resolved_choice = {
+                **choice,
+                "logprobs": logprob_resolver(completion_id),
+            }
+        generated_ids, generated_logprobs = _sampled_tokens(
+            resolved_choice,
+            tokenizer,
+        )
         completion_ids.extend(generated_ids)
         sampled_logprobs.extend(generated_logprobs)
         env_mask.extend([1] * len(generated_ids))
@@ -385,6 +409,29 @@ class OpenCodeRolloutCollector:
         self.jobs_dir = jobs_dir
         self.records: list[dict[str, Any]] = []
         self._rollout_index = 0
+
+    def _resolve_bridge_logprobs(self, completion_id: str) -> dict[str, Any]:
+        import httpx
+
+        base_url = _required_environment(
+            self.config.evaluation.base_url_env,
+            label="OpenCode model bridge endpoint",
+        ).rstrip("/")
+        api_key = _required_environment(
+            self.config.evaluation.api_key_env,
+            label="OpenCode model bridge API key",
+        )
+        response = httpx.get(
+            f"{base_url}/benchflow/logprobs/{completion_id}",
+            headers={"Authorization": f"Bearer {api_key}"},
+            timeout=60.0,
+        )
+        response.raise_for_status()
+        payload = response.json()
+        logprobs = payload.get("logprobs") if isinstance(payload, dict) else None
+        if not isinstance(logprobs, dict):
+            raise RuntimeError(f"Model bridge returned no logprobs for {completion_id}")
+        return logprobs
 
     def __call__(self, prompts: list[Any], trainer: Any) -> dict[str, Any]:
         tokenizer = trainer.processing_class
@@ -460,6 +507,7 @@ class OpenCodeRolloutCollector:
                     trajectory_path,
                     tokenizer,
                     max_completion_tokens=self.config.runtime.max_completion_length,
+                    logprob_resolver=self._resolve_bridge_logprobs,
                 )
                 record = {
                     "task_id": task_id,
@@ -473,6 +521,16 @@ class OpenCodeRolloutCollector:
                     "action_tokens": sum(tokens.env_mask),
                 }
                 write_json(attempt_root / "rollout.json", record)
+                write_json(
+                    attempt_root / "grpo_tokens.json",
+                    {
+                        "prompt_ids": tokens.prompt_ids,
+                        "completion_ids": tokens.completion_ids,
+                        "logprobs": tokens.logprobs,
+                        "action_mask": tokens.env_mask,
+                        "reward": float(reward),
+                    },
+                )
                 self.records.append(record)
                 return CollectedRollout(
                     task_id=task_id,

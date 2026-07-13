@@ -123,6 +123,13 @@ def test_model_bridge_serves_authenticated_streaming_tool_call() -> None:
     assert chunk["choices"][0]["finish_reason"] == "tool_calls"
     assert chunk["choices"][0]["logprobs"]["content"]
     assert events[-1] == "[DONE]"
+    completion_id = chunk["id"]
+    sidecar = client.get(
+        f"/v1/benchflow/logprobs/{completion_id}",
+        headers={"Authorization": "Bearer secret"},
+    )
+    assert sidecar.status_code == 200
+    assert sidecar.json()["logprobs"]["content"]
     assert captured["payload"]["messages"] == [request["messages"]]
     assert captured["payload"]["tools"] == request["tools"]
     assert captured["payload"]["logprobs"] == 0
