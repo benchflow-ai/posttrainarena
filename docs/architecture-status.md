@@ -82,7 +82,7 @@ competition-scale readiness.
 | TRL GRPO | Implemented | Reward-gated by default; custom OpenCode rollout function returns token IDs, sampled logprobs, action mask, and BenchFlow verifier reward |
 | OpenCode teacher collection | Implemented | Provider-qualified teacher model, required usage tracking, adaptive retries, and one training-ready rollout selected per task |
 | OpenCode evaluation | Implemented | Baseline, post-SFT, training gate, final, and multi-benchmark evaluation all use `bench eval run --agent opencode`; the real SkillsBench + Daytona canary passed with complete telemetry and healthy trajectories |
-| OpenCode GRPO | Implemented; live GPU smoke pending | TRL custom rollout function invokes OpenCode/BenchFlow, reconstructs masked causal token sequences, consumes provider logprobs, forwards verifier reward, and resynchronizes the vLLM endpoint |
+| OpenCode GRPO | Implemented and live GPU validated | TRL custom rollout function invokes OpenCode/BenchFlow, reconstructs masked causal token sequences, consumes provider logprobs, forwards verifier reward, and resynchronizes the vLLM endpoint; the SkillsBench + Daytona smoke completed two rollouts and one optimizer step |
 | Harbor | Not a dependency | No Harbor adapter or trajectory translation is used |
 | OpenEnv client/server lifecycle | Implemented | Pinned dependency, served adapter, typed client, real lifecycle tests, finalization, state, and session isolation |
 | OpenEnv/BenchFlow Docker parity | Manually validated | Checked-in security task produced identical output and reward `1.0` through both integrations; CI uses a no-spend fake BenchFlow boundary |
@@ -99,6 +99,8 @@ The OpenCode evaluation evidence is recorded in
 [`opencode-evaluation-canary.md`](opencode-evaluation-canary.md).
 The GRPO rollout and endpoint contract is documented in
 [`opencode-grpo.md`](opencode-grpo.md).
+The real two-H100 SkillsBench + Daytona run is recorded in
+[`opencode-grpo-smoke.md`](opencode-grpo-smoke.md).
 
 ## OpenEnv integration
 

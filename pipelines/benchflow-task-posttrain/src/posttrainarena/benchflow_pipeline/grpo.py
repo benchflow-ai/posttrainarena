@@ -12,7 +12,7 @@ from collections.abc import Callable
 from typing import Any, Sequence
 
 from .config import PipelineConfig
-from .io import CommandRunner, supported_kwargs, write_json
+from .io import CommandRunner, load_json, supported_kwargs, write_json
 from .opencode import evaluate
 
 
@@ -71,6 +71,25 @@ def _model_init_kwargs(config: PipelineConfig, model: str) -> dict[str, Any]:
     return values
 
 
+def _load_tokenizer(config: PipelineConfig, model: str | Path) -> Any:
+    from transformers import AutoTokenizer
+
+    values: dict[str, Any] = {
+        "trust_remote_code": True,
+        "fix_mistral_regex": True,
+    }
+    if str(model) == config.model and config.model_revision:
+        values["revision"] = config.model_revision
+    return AutoTokenizer.from_pretrained(str(model), **values)
+
+
+def _close_weight_communicator(generation: Any) -> None:
+    client = getattr(generation, "vllm_client", None)
+    close = getattr(client, "close_communicator", None)
+    if callable(close):
+        close()
+
+
 def sync_model_to_vllm(
     *,
     config: PipelineConfig,
@@ -97,10 +116,7 @@ def sync_model_to_vllm(
     try:
         synchronizer.sync_weights()
     finally:
-        client = getattr(synchronizer, "vllm_client", None)
-        close = getattr(client, "close_communicator", None)
-        if callable(close):
-            close()
+        _close_weight_communicator(synchronizer)
 
 
 def sync_checkpoint_to_vllm(
@@ -109,15 +125,12 @@ def sync_checkpoint_to_vllm(
     checkpoint: Path,
 ) -> dict[str, Any]:
     from accelerate import Accelerator
-    from transformers import AutoModelForCausalLM, AutoTokenizer
+    from transformers import AutoModelForCausalLM
 
     if not checkpoint.is_dir():
         raise FileNotFoundError(checkpoint)
     accelerator = Accelerator(mixed_precision="bf16")
-    tokenizer = AutoTokenizer.from_pretrained(
-        str(checkpoint),
-        trust_remote_code=True,
-    )
+    tokenizer = _load_tokenizer(config, checkpoint)
     model = AutoModelForCausalLM.from_pretrained(
         str(checkpoint),
         trust_remote_code=True,
@@ -322,7 +335,29 @@ def trajectory_to_rollout_tokens(
     max_completion_tokens: int,
     logprob_resolver: Callable[[str], dict[str, Any]] | None = None,
 ) -> RolloutTokens:
-    rows = _load_jsonl(path)
+    rows = []
+    for row in _load_jsonl(path):
+        metadata = row.get("metadata")
+        call_purpose = (
+            metadata.get("call_purpose") if isinstance(metadata, dict) else None
+        )
+        if not isinstance(call_purpose, str):
+            raise RuntimeError(
+                "OpenCode trajectory exchange has no call-purpose metadata"
+            )
+        if call_purpose != "agent":
+            continue
+        response = row.get("response")
+        status_code = (
+            response.get("status_code") if isinstance(response, dict) else None
+        )
+        if not isinstance(status_code, int) or isinstance(status_code, bool):
+            raise RuntimeError("OpenCode trajectory exchange has no response status")
+        if 200 <= status_code < 300:
+            rows.append(row)
+    if not rows:
+        raise RuntimeError("OpenCode trajectory has no agent exchanges")
+
     prompt_ids: list[int] | None = None
     completion_ids: list[int] = []
     sampled_logprobs: list[float] = []
@@ -336,20 +371,33 @@ def trajectory_to_rollout_tokens(
             prompt_ids = request_ids
             current_ids = list(request_ids)
         else:
-            if request_ids[: len(current_ids)] != current_ids:
-                common = 0
-                for left, right in zip(current_ids, request_ids, strict=False):
-                    if left != right:
-                        break
-                    common += 1
-                raise RuntimeError(
-                    "OpenCode request history does not extend the prior sampled "
-                    f"tokens (common prefix {common}/{len(current_ids)})"
-                )
-            external_ids = request_ids[len(current_ids) :]
-            completion_ids.extend(external_ids)
-            sampled_logprobs.extend([0.0] * len(external_ids))
-            env_mask.extend([0] * len(external_ids))
+            common = 0
+            for left, right in zip(current_ids, request_ids, strict=False):
+                if left != right:
+                    break
+                common += 1
+            if common < len(prompt_ids):
+                # OpenCode can refresh dynamic system context or compact history
+                # between turns. Start a new causal segment at that request so
+                # the returned prompt remains an exact model input.
+                prompt_ids = request_ids
+                completion_ids.clear()
+                sampled_logprobs.clear()
+                env_mask.clear()
+            else:
+                # OpenCode stores tool calls as structured messages. On the next
+                # turn, the chat template may canonicalize a suffix of the prior
+                # sampled tool-call text. Roll back that rewritten suffix, retain
+                # sampled-token credit for the exact common prefix, and treat the
+                # canonical replacement plus tool feedback as environment context.
+                retained_completion = common - len(prompt_ids)
+                del completion_ids[retained_completion:]
+                del sampled_logprobs[retained_completion:]
+                del env_mask[retained_completion:]
+                external_ids = request_ids[common:]
+                completion_ids.extend(external_ids)
+                sampled_logprobs.extend([0.0] * len(external_ids))
+                env_mask.extend([0] * len(external_ids))
             current_ids = list(request_ids)
 
         resolved_choice = choice
@@ -402,21 +450,26 @@ class OpenCodeRolloutCollector:
         model: str,
         tasks_dir: Path,
         jobs_dir: Path,
+        resume: bool = False,
     ) -> None:
         self.config = config
         self.model = model
         self.tasks_dir = tasks_dir
         self.jobs_dir = jobs_dir
+        self.resume = resume
         self.records: list[dict[str, Any]] = []
         self._rollout_index = 0
 
     def _resolve_bridge_logprobs(self, completion_id: str) -> dict[str, Any]:
         import httpx
 
-        base_url = _required_environment(
-            self.config.evaluation.base_url_env,
-            label="OpenCode model bridge endpoint",
-        ).rstrip("/")
+        base_url = os.environ.get(self.config.evaluation.control_url_env)
+        if not base_url:
+            base_url = _required_environment(
+                self.config.evaluation.base_url_env,
+                label="OpenCode model bridge endpoint",
+            )
+        base_url = base_url.rstrip("/")
         api_key = _required_environment(
             self.config.evaluation.api_key_env,
             label="OpenCode model bridge API key",
@@ -474,70 +527,35 @@ class OpenCodeRolloutCollector:
         for attempt in range(1, self.config.grpo.rollout_attempts + 1):
             attempt_root = rollout_root / f"attempt-{attempt:02d}"
             try:
-                payload = evaluate(
-                    config=self.config,
-                    runner=CommandRunner(cwd=self.config.source.parent),
-                    stage=f"grpo_rollout_{global_step:06d}_{rollout_index:06d}",
-                    model=self.model,
-                    model_role="student",
-                    tasks_dir=self.tasks_dir,
-                    task_ids=[task_id],
-                    jobs_dir=attempt_root / "jobs",
-                    metrics_path=attempt_root / "metrics.json",
-                    capture_token_logprobs=True,
-                )
-                rows = payload["health"].get("rows")
-                if (
-                    not isinstance(rows, list)
-                    or len(rows) != 1
-                    or not isinstance(rows[0], dict)
-                ):
-                    raise RuntimeError("OpenCode GRPO health summary has no rollout")
-                health_row = rows[0]
-                reward = health_row.get("reward")
-                if (
-                    not isinstance(reward, int | float)
-                    or isinstance(reward, bool)
-                    or not math.isfinite(float(reward))
-                ):
-                    raise RuntimeError(f"Invalid verifier reward: {reward!r}")
-                rollout_dir = Path(str(health_row.get("rollout_dir") or ""))
-                trajectory_path = rollout_dir / "trajectory" / "llm_trajectory.jsonl"
-                tokens = trajectory_to_rollout_tokens(
-                    trajectory_path,
-                    tokenizer,
-                    max_completion_tokens=self.config.runtime.max_completion_length,
-                    logprob_resolver=self._resolve_bridge_logprobs,
-                )
-                record = {
-                    "task_id": task_id,
-                    "reward": float(reward),
-                    "rollout_dir": str(rollout_dir),
-                    "attempt": attempt,
-                    "global_step": global_step,
-                    "rank": rank,
-                    "prompt_tokens": len(tokens.prompt_ids),
-                    "completion_tokens": len(tokens.completion_ids),
-                    "action_tokens": sum(tokens.env_mask),
-                }
-                write_json(attempt_root / "rollout.json", record)
-                write_json(
-                    attempt_root / "grpo_tokens.json",
-                    {
-                        "prompt_ids": tokens.prompt_ids,
-                        "completion_ids": tokens.completion_ids,
-                        "logprobs": tokens.logprobs,
-                        "action_mask": tokens.env_mask,
-                        "reward": float(reward),
-                    },
-                )
-                self.records.append(record)
-                return CollectedRollout(
+                metrics_path = attempt_root / "metrics.json"
+                if self.resume and metrics_path.is_file():
+                    payload = load_json(metrics_path)
+                else:
+                    payload = evaluate(
+                        config=self.config,
+                        runner=CommandRunner(cwd=self.config.source.parent),
+                        stage=(
+                            f"grpo_rollout_{global_step:06d}_{rollout_index:06d}"
+                        ),
+                        model=self.model,
+                        model_role="student",
+                        tasks_dir=self.tasks_dir,
+                        task_ids=[task_id],
+                        jobs_dir=attempt_root / "jobs",
+                        metrics_path=metrics_path,
+                        capture_token_logprobs=True,
+                    )
+                rollout = self._materialize_rollout(
+                    payload=payload,
+                    attempt_root=attempt_root,
+                    attempt=attempt,
                     task_id=task_id,
-                    reward=float(reward),
-                    rollout_dir=rollout_dir,
-                    tokens=tokens,
+                    tokenizer=tokenizer,
+                    global_step=global_step,
+                    rank=rank,
                 )
+                (attempt_root / "rollout_error.json").unlink(missing_ok=True)
+                return rollout
             except Exception as exc:
                 failure = {
                     "attempt": attempt,
@@ -551,6 +569,71 @@ class OpenCodeRolloutCollector:
             f"{self.config.grpo.rollout_attempts} attempts: {failures}"
         )
 
+    def _materialize_rollout(
+        self,
+        *,
+        payload: dict[str, Any],
+        attempt_root: Path,
+        attempt: int,
+        task_id: str,
+        tokenizer: Any,
+        global_step: int,
+        rank: int,
+    ) -> CollectedRollout:
+        health = payload.get("health")
+        rows = health.get("rows") if isinstance(health, dict) else None
+        if (
+            not isinstance(rows, list)
+            or len(rows) != 1
+            or not isinstance(rows[0], dict)
+        ):
+            raise RuntimeError("OpenCode GRPO health summary has no rollout")
+        health_row = rows[0]
+        reward = health_row.get("reward")
+        if (
+            not isinstance(reward, int | float)
+            or isinstance(reward, bool)
+            or not math.isfinite(float(reward))
+        ):
+            raise RuntimeError(f"Invalid verifier reward: {reward!r}")
+        rollout_dir = Path(str(health_row.get("rollout_dir") or ""))
+        trajectory_path = rollout_dir / "trajectory" / "llm_trajectory.jsonl"
+        tokens = trajectory_to_rollout_tokens(
+            trajectory_path,
+            tokenizer,
+            max_completion_tokens=self.config.runtime.max_completion_length,
+            logprob_resolver=self._resolve_bridge_logprobs,
+        )
+        record = {
+            "task_id": task_id,
+            "reward": float(reward),
+            "rollout_dir": str(rollout_dir),
+            "attempt": attempt,
+            "global_step": global_step,
+            "rank": rank,
+            "prompt_tokens": len(tokens.prompt_ids),
+            "completion_tokens": len(tokens.completion_ids),
+            "action_tokens": sum(tokens.env_mask),
+        }
+        write_json(attempt_root / "rollout.json", record)
+        write_json(
+            attempt_root / "grpo_tokens.json",
+            {
+                "prompt_ids": tokens.prompt_ids,
+                "completion_ids": tokens.completion_ids,
+                "logprobs": tokens.logprobs,
+                "action_mask": tokens.env_mask,
+                "reward": float(reward),
+            },
+        )
+        self.records.append(record)
+        return CollectedRollout(
+            task_id=task_id,
+            reward=float(reward),
+            rollout_dir=rollout_dir,
+            tokens=tokens,
+        )
+
 
 def train_grpo(
     *,
@@ -561,6 +644,7 @@ def train_grpo(
     jobs_dir: Path,
     output_dir: Path,
     run_name: str,
+    resume: bool = False,
 ) -> dict[str, Any]:
     from trl import GRPOConfig, GRPOTrainer
 
@@ -570,11 +654,13 @@ def train_grpo(
         model=model,
         tasks_dir=tasks_dir,
         jobs_dir=jobs_dir,
+        resume=resume,
     )
     vllm_server_base_url = _required_environment(
         config.grpo.vllm_server_base_url_env,
         label="TRL vLLM server endpoint",
     )
+    processing_class = _load_tokenizer(config, model)
     values = {
         "output_dir": str(output_dir),
         "run_name": run_name,
@@ -607,8 +693,14 @@ def train_grpo(
         train_dataset=dataset,
         reward_funcs=[verifier_reward],
         rollout_func=collector,
+        processing_class=processing_class,
     )
-    result = trainer.train()
+    try:
+        result = trainer.train()
+    finally:
+        _close_weight_communicator(
+            getattr(trainer, "vllm_generation", None)
+        )
     import torch
 
     trained_model = trainer.model

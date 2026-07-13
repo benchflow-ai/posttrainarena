@@ -402,6 +402,7 @@ class Pipeline:
             jobs_dir=self.layout.jobs / "grpo-train",
             output_dir=Path(output_model),
             run_name=f"{self.run_name}-grpo",
+            resume=self.resume,
         )
 
     def _sync_student_endpoint(self, *, checkpoint: Path, stage: str) -> None:

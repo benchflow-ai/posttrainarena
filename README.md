@@ -100,6 +100,7 @@ See [CONTRIBUTING.md](./CONTRIBUTING.md) for the submission workflow, validation
 - [Architecture and implementation status](./docs/architecture-status.md)
 - [Training pipeline operator guide](./docs/training-pipeline.md)
 - [OpenCode GRPO rollout contract](./docs/opencode-grpo.md)
+- [OpenCode SFT-to-GRPO smoke](./docs/opencode-grpo-smoke.md)
 - [OpenCode evaluation canary](./docs/opencode-evaluation-canary.md)
 - [Hugging Face Jobs and leaderboard handoff](./docs/hf-jobs.md)
 - [HF handoff validation report](./docs/hf-jobs-validation.md)

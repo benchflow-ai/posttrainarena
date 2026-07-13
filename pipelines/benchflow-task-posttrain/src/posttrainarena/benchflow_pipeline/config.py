@@ -67,6 +67,7 @@ class EvaluationConfig:
     base_model_env: str = "BENCHFLOW_BASE_MODEL"
     student_model_env: str = "BENCHFLOW_ADAPTER_MODEL"
     base_url_env: str = "BENCHFLOW_PROVIDER_BASE_URL"
+    control_url_env: str = "BENCHFLOW_MODEL_BRIDGE_CONTROL_URL"
     api_key_env: str = "BENCHFLOW_PROVIDER_API_KEY"
 
 
@@ -156,6 +157,7 @@ class PipelineConfig:
             ("evaluation.base_model_env", self.evaluation.base_model_env),
             ("evaluation.student_model_env", self.evaluation.student_model_env),
             ("evaluation.base_url_env", self.evaluation.base_url_env),
+            ("evaluation.control_url_env", self.evaluation.control_url_env),
             ("evaluation.api_key_env", self.evaluation.api_key_env),
         ):
             if not isinstance(value, str) or not value.strip():

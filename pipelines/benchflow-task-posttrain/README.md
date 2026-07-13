@@ -103,10 +103,16 @@ The example recipe requires:
   current-student model aliases
 - `BENCHFLOW_PROVIDER_BASE_URL` and `BENCHFLOW_PROVIDER_API_KEY` for the
   OpenAI-compatible endpoint used by OpenCode evaluation
+- `BENCHFLOW_MODEL_BRIDGE_CONTROL_URL` for trainer-local logprob retrieval when
+  the public provider URL uses separate ingress
 - `TRL_VLLM_SERVER_BASE_URL` for TRL's weight-sync/control connection to the
   same student server
 - `WANDB_API_KEY` when `tracking.report_to = "wandb"`
 - any verifier-specific credentials required by the selected task packages
+
+The trainer and TRL vLLM server must use different physical CUDA devices. On a
+two-GPU host, use `CUDA_VISIBLE_DEVICES=1` for `trl vllm-serve` and
+`CUDA_VISIBLE_DEVICES=0` for `posttrainarena-train run`.
 
 Provider credential values are never written to the run plan or score report.
 

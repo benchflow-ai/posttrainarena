@@ -33,6 +33,8 @@ def test_model_bridge_cli_contract() -> None:
             "Qwen/Qwen3-4B",
             "--tokenizer-revision",
             "a" * 40,
+            "--max-tokens",
+            "2048",
             "--port",
             "9001",
         ]
@@ -41,4 +43,5 @@ def test_model_bridge_cli_contract() -> None:
     assert args.command == "model-bridge"
     assert args.tokenizer == "Qwen/Qwen3-4B"
     assert args.api_key_env == "BENCHFLOW_PROVIDER_API_KEY"
+    assert args.max_tokens == 2048
     assert args.port == 9001

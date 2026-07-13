@@ -24,9 +24,17 @@ class ModelBridgeConfig:
     tokenizer_id: str
     tokenizer_revision: str | None = None
     api_key: str | None = None
-    default_max_tokens: int = 16384
+    max_tokens_per_call: int = 4096
     timeout_seconds: float = 900.0
     max_sidecar_entries: int = 4096
+
+    def __post_init__(self) -> None:
+        if (
+            not isinstance(self.max_tokens_per_call, int)
+            or isinstance(self.max_tokens_per_call, bool)
+            or self.max_tokens_per_call < 1
+        ):
+            raise ValueError("max_tokens_per_call must be a positive integer")
 
 
 def parse_qwen_tool_calls(text: str) -> tuple[str | None, list[dict[str, Any]]]:
@@ -183,6 +191,14 @@ def _trl_request(body: dict[str, Any], config: ModelBridgeConfig) -> dict[str, A
     extra_body = body.get("extra_body")
     if isinstance(extra_body, dict):
         generation_kwargs.update(extra_body)
+    requested_max_tokens = body.get("max_completion_tokens")
+    if requested_max_tokens is None:
+        requested_max_tokens = body.get("max_tokens")
+    max_tokens = (
+        config.max_tokens_per_call
+        if requested_max_tokens is None
+        else min(int(requested_max_tokens), config.max_tokens_per_call)
+    )
     return {
         "messages": [messages],
         "n": 1,
@@ -191,7 +207,7 @@ def _trl_request(body: dict[str, Any], config: ModelBridgeConfig) -> dict[str, A
         "top_p": float(body.get("top_p", 1.0)),
         "top_k": int(body.get("top_k", -1)),
         "min_p": float(body.get("min_p", 0.0)),
-        "max_tokens": int(body.get("max_tokens") or config.default_max_tokens),
+        "max_tokens": max_tokens,
         "logprobs": 0,
         "generation_kwargs": generation_kwargs,
         "chat_template_kwargs": body.get("chat_template_kwargs") or {},
@@ -329,6 +345,7 @@ def serve_model_bridge(
     tokenizer_id: str,
     tokenizer_revision: str | None,
     api_key: str | None,
+    max_tokens_per_call: int,
     host: str,
     port: int,
 ) -> None:
@@ -340,6 +357,7 @@ def serve_model_bridge(
             tokenizer_id=tokenizer_id,
             tokenizer_revision=tokenizer_revision,
             api_key=api_key,
+            max_tokens_per_call=max_tokens_per_call,
         )
     )
     uvicorn.run(app, host=host, port=port)

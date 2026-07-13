@@ -19,6 +19,7 @@ from posttrainarena.benchflow_pipeline.grpo import (
     trajectory_to_rollout_tokens,
     verifier_reward,
 )
+from posttrainarena.benchflow_pipeline.io import write_json
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -63,8 +64,13 @@ def _exchange(
     messages: list[dict[str, Any]],
     text: str,
     logprob: float,
+    *,
+    call_purpose: str = "agent",
 ) -> dict[str, Any]:
     return {
+        "metadata": {
+            "call_purpose": call_purpose,
+        },
         "request": {
             "body": {
                 "messages": messages,
@@ -77,6 +83,7 @@ def _exchange(
             }
         },
         "response": {
+            "status_code": 200,
             "body": {
                 "choices": [
                     {
@@ -158,7 +165,68 @@ def test_trajectory_to_rollout_tokens_masks_environment_feedback(
     assert sum(tokens.env_mask) == 2
 
 
-def test_trajectory_to_rollout_tokens_rejects_history_drift(tmp_path: Path) -> None:
+def test_trajectory_to_rollout_tokens_ignores_helper_calls(tmp_path: Path) -> None:
+    path = tmp_path / "llm_trajectory.jsonl"
+    helper = _exchange(
+        [{"role": "user", "content": "generate a title"}],
+        "Task title",
+        -0.5,
+        call_purpose="title",
+    )
+    agent = _exchange([{"role": "user", "content": "hi"}], "A", -0.1)
+    path.write_text(json.dumps(helper) + "\n" + json.dumps(agent) + "\n")
+
+    tokens = trajectory_to_rollout_tokens(
+        path,
+        FakeTokenizer(),
+        max_completion_tokens=1000,
+    )
+
+    assert tokens.completion_ids == [ord("A")]
+    assert tokens.logprobs == [-0.1]
+
+
+def test_trajectory_to_rollout_tokens_ignores_failed_provider_attempts(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "llm_trajectory.jsonl"
+    failed = _exchange([{"role": "user", "content": "hi"}], "ignored", -0.5)
+    failed["response"] = {
+        "status_code": 500,
+        "body": {"error": {"message": "upstream failed"}},
+    }
+    agent = _exchange([{"role": "user", "content": "hi"}], "A", -0.1)
+    path.write_text(json.dumps(failed) + "\n" + json.dumps(agent) + "\n")
+
+    tokens = trajectory_to_rollout_tokens(
+        path,
+        FakeTokenizer(),
+        max_completion_tokens=1000,
+    )
+
+    assert tokens.completion_ids == [ord("A")]
+    assert tokens.logprobs == [-0.1]
+
+
+def test_trajectory_to_rollout_tokens_requires_call_purpose(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "llm_trajectory.jsonl"
+    row = _exchange([{"role": "user", "content": "hi"}], "A", -0.1)
+    row.pop("metadata")
+    path.write_text(json.dumps(row) + "\n")
+
+    with pytest.raises(RuntimeError, match="call-purpose metadata"):
+        trajectory_to_rollout_tokens(
+            path,
+            FakeTokenizer(),
+            max_completion_tokens=1000,
+        )
+
+
+def test_trajectory_to_rollout_tokens_masks_canonicalized_history(
+    tmp_path: Path,
+) -> None:
     path = tmp_path / "llm_trajectory.jsonl"
     first_messages = [{"role": "user", "content": "hi"}]
     rows = [
@@ -174,12 +242,48 @@ def test_trajectory_to_rollout_tokens_rejects_history_drift(tmp_path: Path) -> N
     ]
     path.write_text("".join(json.dumps(row) + "\n" for row in rows))
 
-    with pytest.raises(RuntimeError, match="does not extend"):
-        trajectory_to_rollout_tokens(
-            path,
-            FakeTokenizer(),
-            max_completion_tokens=1000,
-        )
+    tokens = trajectory_to_rollout_tokens(
+        path,
+        FakeTokenizer(),
+        max_completion_tokens=1000,
+    )
+
+    assert sum(tokens.env_mask) == 1
+    assert tokens.logprobs[-1] == -0.2
+    assert 0 in tokens.env_mask
+
+
+def test_trajectory_to_rollout_tokens_resets_on_original_prompt_drift(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "llm_trajectory.jsonl"
+    rows = [
+        _exchange([{"role": "user", "content": "hi"}], "A", -0.1),
+        _exchange([{"role": "user", "content": "bye"}], "B", -0.2),
+    ]
+    path.write_text("".join(json.dumps(row) + "\n" for row in rows))
+
+    tokens = trajectory_to_rollout_tokens(
+        path,
+        FakeTokenizer(),
+        max_completion_tokens=1000,
+    )
+
+    expected_prompt = FakeTokenizer().apply_chat_template(
+        [{"role": "user", "content": "bye"}],
+        tools=[
+            {
+                "type": "function",
+                "function": {"name": "shell"},
+            }
+        ],
+        tokenize=True,
+        add_generation_prompt=True,
+    )
+    assert tokens.prompt_ids == expected_prompt
+    assert tokens.completion_ids == [ord("B")]
+    assert tokens.logprobs == [-0.2]
+    assert tokens.env_mask == [1]
 
 
 def test_trajectory_to_rollout_tokens_requires_provider_logprobs(
@@ -280,6 +384,114 @@ def test_collector_runs_one_opencode_rollout_per_prompt(
     assert len(collector.records) == 2
 
 
+def test_collector_resumes_verified_rollout_artifacts(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config = load_config(ROOT / "configs/qwen3-4b-data-agent-smoke.toml")
+    tasks_dir = tmp_path / "tasks"
+    (tasks_dir / "task-a").mkdir(parents=True)
+    jobs_dir = tmp_path / "jobs"
+    attempt_root = (
+        jobs_dir / "step-000002/rank-00/rollout-000000/attempt-01"
+    )
+    rollout_dir = attempt_root / "jobs/job/task-a"
+    _write_trajectory(rollout_dir / "trajectory/llm_trajectory.jsonl")
+    write_json(
+        attempt_root / "metrics.json",
+        {
+            "health": {
+                "rows": [
+                    {
+                        "reward": 0.75,
+                        "rollout_dir": str(rollout_dir),
+                    }
+                ]
+            }
+        },
+    )
+    write_json(attempt_root / "rollout_error.json", {"error": "stale"})
+
+    def unexpected_evaluate(**_: Any) -> None:
+        raise AssertionError("cached rollout should not be re-evaluated")
+
+    monkeypatch.setattr(
+        "posttrainarena.benchflow_pipeline.grpo.evaluate",
+        unexpected_evaluate,
+    )
+    collector = OpenCodeRolloutCollector(
+        config=config,
+        model="/tmp/student",
+        tasks_dir=tasks_dir,
+        jobs_dir=jobs_dir,
+        resume=True,
+    )
+    trainer = SimpleNamespace(
+        processing_class=FakeTokenizer(),
+        state=SimpleNamespace(global_step=2),
+        accelerator=SimpleNamespace(process_index=0),
+    )
+
+    output = collector([task_handle("task-a")], trainer)
+
+    assert output["rollout_reward"] == [0.75]
+    assert (attempt_root / "grpo_tokens.json").is_file()
+    assert not (attempt_root / "rollout_error.json").exists()
+
+
+def test_collector_uses_local_bridge_control_url(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import httpx
+
+    config = load_config(ROOT / "configs/qwen3-4b-data-agent-smoke.toml")
+    tasks_dir = tmp_path / "tasks"
+    tasks_dir.mkdir()
+    captured: dict[str, Any] = {}
+
+    class FakeResponse:
+        @staticmethod
+        def raise_for_status() -> None:
+            return None
+
+        @staticmethod
+        def json() -> dict[str, Any]:
+            return {"logprobs": {"content": [{"token": "A"}]}}
+
+    def fake_get(url: str, **kwargs: Any) -> FakeResponse:
+        captured["url"] = url
+        captured["kwargs"] = kwargs
+        return FakeResponse()
+
+    monkeypatch.setattr(httpx, "get", fake_get)
+    monkeypatch.setenv(
+        "BENCHFLOW_PROVIDER_BASE_URL",
+        "https://public.example/v1",
+    )
+    monkeypatch.setenv(
+        "BENCHFLOW_MODEL_BRIDGE_CONTROL_URL",
+        "http://127.0.0.1:8002/v1",
+    )
+    monkeypatch.setenv("BENCHFLOW_PROVIDER_API_KEY", "secret")
+    collector = OpenCodeRolloutCollector(
+        config=config,
+        model="/tmp/student",
+        tasks_dir=tasks_dir,
+        jobs_dir=tmp_path / "jobs",
+    )
+
+    payload = collector._resolve_bridge_logprobs("chatcmpl-1")
+
+    assert payload["content"]
+    assert captured["url"] == (
+        "http://127.0.0.1:8002/v1/benchflow/logprobs/chatcmpl-1"
+    )
+    assert captured["kwargs"]["headers"] == {
+        "Authorization": "Bearer secret"
+    }
+
+
 def test_collector_retries_failed_opencode_rollout(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -354,11 +566,18 @@ def test_train_grpo_wires_custom_rollout_and_vllm_sync(
         def save_pretrained(self, path):
             captured["processor_path"] = path
 
+    class FakeVllmClient:
+        def close_communicator(self):
+            captured["trainer_communicator_closed"] = True
+
     class FakeTrainer:
         def __init__(self, **kwargs):
             captured["trainer_kwargs"] = kwargs
             self.model = FakeModel()
             self.processing_class = FakeProcessor()
+            self.vllm_generation = SimpleNamespace(
+                vllm_client=FakeVllmClient()
+            )
 
         def train(self):
             return SimpleNamespace(metrics={"loss": 0.5})
@@ -372,6 +591,12 @@ def test_train_grpo_wires_custom_rollout_and_vllm_sync(
         grpo_module,
         "supported_kwargs",
         lambda _callable, values: values,
+    )
+    tokenizer = object()
+    monkeypatch.setattr(
+        grpo_module,
+        "_load_tokenizer",
+        lambda config, model: tokenizer,
     )
     monkeypatch.setenv("TRL_VLLM_SERVER_BASE_URL", "http://127.0.0.1:8000")
     output_dir = tmp_path / "checkpoint"
@@ -393,11 +618,13 @@ def test_train_grpo_wires_custom_rollout_and_vllm_sync(
         OpenCodeRolloutCollector,
     )
     assert trainer_kwargs["reward_funcs"] == [verifier_reward]
+    assert trainer_kwargs["processing_class"] is tokenizer
     assert "environment_factory" not in trainer_kwargs
     assert args["use_vllm"] is True
     assert args["vllm_mode"] == "server"
     assert args["vllm_server_base_url"] == "http://127.0.0.1:8000"
     assert args["vllm_importance_sampling_correction"] is True
+    assert captured["trainer_communicator_closed"] is True
     assert payload["rollout_contract"]["endpoint_sync"] == ("trl-vllm-sync-weights")
 
 
@@ -472,7 +699,10 @@ def test_sync_checkpoint_loads_saved_policy_before_endpoint_update(
     monkeypatch.setattr(
         transformers.AutoTokenizer,
         "from_pretrained",
-        lambda *args, **kwargs: FakeTokenizer(),
+        lambda *args, **kwargs: (
+            captured.update(tokenizer_args=args, tokenizer_kwargs=kwargs)
+            or FakeTokenizer()
+        ),
     )
     monkeypatch.setattr(
         transformers.AutoModelForCausalLM,
@@ -492,5 +722,10 @@ def test_sync_checkpoint_loads_saved_policy_before_endpoint_update(
 
     assert captured["accelerator_kwargs"] == {"mixed_precision": "bf16"}
     assert captured["model_device"] == "cuda:0"
+    assert captured["tokenizer_args"] == (str(checkpoint),)
+    assert captured["tokenizer_kwargs"] == {
+        "trust_remote_code": True,
+        "fix_mistral_regex": True,
+    }
     assert captured["sync_kwargs"]["config"] is config
     assert payload["synced"] is True

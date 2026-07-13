@@ -103,6 +103,7 @@ def build_parser() -> argparse.ArgumentParser:
     bridge.add_argument("--tokenizer", required=True)
     bridge.add_argument("--tokenizer-revision")
     bridge.add_argument("--api-key-env", default="BENCHFLOW_PROVIDER_API_KEY")
+    bridge.add_argument("--max-tokens", type=int, default=4096)
     bridge.add_argument("--host", default="0.0.0.0")
     bridge.add_argument("--port", type=int, default=8001)
     return parser
@@ -330,6 +331,7 @@ def main(argv: list[str] | None = None) -> int:
             tokenizer_id=args.tokenizer,
             tokenizer_revision=args.tokenizer_revision,
             api_key=os.environ.get(args.api_key_env),
+            max_tokens_per_call=args.max_tokens,
             host=args.host,
             port=args.port,
         )

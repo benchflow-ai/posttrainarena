@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
+import pytest
 from fastapi.testclient import TestClient
 
 from posttrainarena.benchflow_pipeline.model_bridge import (
@@ -133,3 +134,42 @@ def test_model_bridge_serves_authenticated_streaming_tool_call() -> None:
     assert captured["payload"]["messages"] == [request["messages"]]
     assert captured["payload"]["tools"] == request["tools"]
     assert captured["payload"]["logprobs"] == 0
+    assert captured["payload"]["max_tokens"] == 32
+
+
+def test_model_bridge_caps_tokens_per_call() -> None:
+    captured: dict[str, Any] = {}
+
+    async def fake_chat(payload: dict[str, Any]) -> dict[str, Any]:
+        captured["payload"] = payload
+        return _upstream("OK")
+
+    app = create_model_bridge_app(
+        ModelBridgeConfig(
+            upstream_url="http://127.0.0.1:8000",
+            tokenizer_id="Qwen/Qwen3-4B",
+            max_tokens_per_call=64,
+        ),
+        tokenizer=FakeTokenizer(),
+        chat_call=fake_chat,
+    )
+    response = TestClient(app).post(
+        "/v1/chat/completions",
+        json={
+            "model": "Qwen/Qwen3-4B",
+            "messages": [{"role": "user", "content": "inspect"}],
+            "max_tokens": 8192,
+        },
+    )
+
+    assert response.status_code == 200
+    assert captured["payload"]["max_tokens"] == 64
+
+
+def test_model_bridge_rejects_invalid_token_cap() -> None:
+    with pytest.raises(ValueError, match="positive integer"):
+        ModelBridgeConfig(
+            upstream_url="http://127.0.0.1:8000",
+            tokenizer_id="Qwen/Qwen3-4B",
+            max_tokens_per_call=0,
+        )

@@ -169,10 +169,17 @@ The example Daytona recipe expects:
   baseline and current-student model aliases
 - `BENCHFLOW_PROVIDER_BASE_URL` and `BENCHFLOW_PROVIDER_API_KEY` for the
   OpenAI-compatible model endpoint used by OpenCode evaluation
+- `BENCHFLOW_MODEL_BRIDGE_CONTROL_URL` when the trainer should resolve sampled
+  logprobs through a local bridge URL instead of public ingress
 - `TRL_VLLM_SERVER_BASE_URL` for TRL's local/control connection to the same
   vLLM server used by OpenCode through the public provider URL
 - `WANDB_API_KEY` when `tracking.report_to = "wandb"`
 - any task-specific credentials required by selected verifiers
+
+TRL's server-mode weight synchronization requires the trainer and vLLM server
+to use different physical CUDA devices. On one two-GPU machine, launch the
+server with `CUDA_VISIBLE_DEVICES=1` and the pipeline with
+`CUDA_VISIBLE_DEVICES=0`. The public bridge can remain CPU-only.
 
 Provider credential values are not written to the run plan or score report.
 
@@ -207,6 +214,8 @@ complete provider telemetry, and healthy `results.jsonl` and
 [`opencode-evaluation-canary.md`](opencode-evaluation-canary.md).
 The GRPO rollout format and endpoint topology are documented in
 [`opencode-grpo.md`](opencode-grpo.md).
+The real OpenCode-only SFT-to-GRPO validation is documented in
+[`opencode-grpo-smoke.md`](opencode-grpo-smoke.md).
 
 ## SFT, RL-only, and reward gating
 

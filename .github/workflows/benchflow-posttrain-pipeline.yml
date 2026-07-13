@@ -8,6 +8,8 @@ on:
       - "docs/architecture-status.md"
       - "docs/hf-jobs.md"
       - "docs/hf-jobs-validation.md"
+      - "docs/opencode-grpo.md"
+      - "docs/opencode-grpo-smoke.md"
       - "docs/README.md"
       - "README.md"
       - "CONTRIBUTING.md"
@@ -24,6 +26,8 @@ on:
       - "docs/architecture-status.md"
       - "docs/hf-jobs.md"
       - "docs/hf-jobs-validation.md"
+      - "docs/opencode-grpo.md"
+      - "docs/opencode-grpo-smoke.md"
       - "docs/README.md"
       - "README.md"
       - "CONTRIBUTING.md"
@@ -64,6 +68,8 @@ jobs:
             --config configs/qwen3-4b-data-agent-forced-grpo-smoke.toml
           posttrainarena-train validate \
             --config configs/qwen3-4b-hf-job-smoke.toml
+          posttrainarena-train validate \
+            --config configs/qwen3-4b-skillsbench-e2e-smoke.toml
           posttrainarena-train plan \
             --config configs/qwen3-4b-data-agent-forced-grpo-smoke.toml \
             --run-name ci-plan > /tmp/posttrainarena-plan.json

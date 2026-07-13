@@ -24,6 +24,10 @@ def test_example_config_is_valid_and_pinned() -> None:
     assert config.evaluation.base_model_env == "BENCHFLOW_BASE_MODEL"
     assert config.evaluation.student_model_env == "BENCHFLOW_ADAPTER_MODEL"
     assert config.evaluation.base_url_env == "BENCHFLOW_PROVIDER_BASE_URL"
+    assert (
+        config.evaluation.control_url_env
+        == "BENCHFLOW_MODEL_BRIDGE_CONTROL_URL"
+    )
     assert config.evaluation.api_key_env == "BENCHFLOW_PROVIDER_API_KEY"
     assert config.teacher.model == "glm/glm-5.1"
     assert config.teacher.min_reward == 1.0
@@ -40,6 +44,19 @@ def test_forced_grpo_smoke_config_bypasses_reward_gate() -> None:
 
     assert config.grpo.run_policy == "always"
     assert config.grpo.max_steps == 2
+
+
+def test_skillsbench_e2e_smoke_is_disjoint_and_minimal() -> None:
+    config = load_config(ROOT / "configs/qwen3-4b-skillsbench-e2e-smoke.toml")
+
+    assert config.train_dataset.repo_id == "benchflow/skillsbench"
+    assert config.eval_dataset.repo_id == "benchflow/skillsbench"
+    assert config.train_dataset.task_list.read_text().strip() == "3d-scan-calc"
+    assert config.eval_dataset.task_list.read_text().strip() == "citation-check"
+    assert config.sft.max_steps == 1
+    assert config.grpo.max_steps == 1
+    assert config.grpo.run_policy == "always"
+    assert config.tracking.report_to == "none"
 
 
 def test_config_accepts_always_grpo_run_policy(tmp_path: Path) -> None:
@@ -112,6 +129,7 @@ def test_config_rejects_non_opencode_harness() -> None:
         ("base_model_env", "", "evaluation.base_model_env"),
         ("student_model_env", "", "evaluation.student_model_env"),
         ("base_url_env", "", "evaluation.base_url_env"),
+        ("control_url_env", "", "evaluation.control_url_env"),
         ("api_key_env", "", "evaluation.api_key_env"),
     ],
 )
