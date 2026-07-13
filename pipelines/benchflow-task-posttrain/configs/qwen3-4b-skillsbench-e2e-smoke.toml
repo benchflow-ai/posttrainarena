@@ -1,18 +1,22 @@
+# TRL server mode requires distinct physical CUDA devices for the trainer and
+# vLLM worker. A two-GPU smoke can use GPU 0 for this pipeline and GPU 1 for
+# `trl vllm-serve`.
+
 [model]
 id = "Qwen/Qwen3-4B"
 revision = "1cfa9a7208912126459214e8b04321603b3df60c"
 
 [train_dataset]
-repo_id = "benchflow/data_agent_rl_environment_train"
-revision = "34ff63c91731df6b3670bfcd7e3d44e6790ddc48"
-path = "tasks"
-task_list = "../task-lists/data-agent-train-15.txt"
+repo_id = "benchflow/skillsbench"
+revision = "be2a6ce2cb1f4ff67ce937307cade0c5a0477a13"
+path = ""
+task_list = "../task-lists/skillsbench-train-1.txt"
 
 [eval_dataset]
-repo_id = "benchflow/data_agent_rl_environment_eval"
-revision = "0ea976c79e3248c85737c4f7363484e4d47ce287"
-path = "tasks"
-task_list = "../task-lists/data-agent-eval-2.txt"
+repo_id = "benchflow/skillsbench"
+revision = "be2a6ce2cb1f4ff67ce937307cade0c5a0477a13"
+path = ""
+task_list = "../task-lists/skillsbench-citation-eval-1.txt"
 
 [runtime]
 sandbox = "daytona"
@@ -38,35 +42,35 @@ api_key_env = "BENCHFLOW_PROVIDER_API_KEY"
 [teacher]
 enabled = true
 model = "glm/glm-5.1"
-max_attempts = 3
-min_verified = 15
+max_attempts = 2
+min_verified = 1
 min_reward = 1.0
-max_accepted_total_tokens = 200000
-max_accepted_tool_calls = 50
+max_accepted_total_tokens = 400000
+max_accepted_tool_calls = 100
 
 [sft]
 enabled = true
-max_steps = 40
+max_steps = 1
 learning_rate = 0.00002
 max_length = 40960
-gradient_accumulation_steps = 8
+gradient_accumulation_steps = 1
 lora_r = 16
 lora_alpha = 32
 
 [grpo]
 enabled = true
-run_policy = "on_reward"
-threshold = 0.05
-gate_task_count = 4
-max_steps = 2
+run_policy = "always"
+threshold = 0.0
+gate_task_count = 1
+max_steps = 1
 learning_rate = 0.000001
-gradient_accumulation_steps = 8
+gradient_accumulation_steps = 1
 rollout_attempts = 2
 vllm_server_base_url_env = "TRL_VLLM_SERVER_BASE_URL"
 
 [tracking]
-report_to = "wandb"
-project = "posttrainarena-benchflow"
+report_to = "none"
+project = "posttrainarena-skillsbench-e2e"
 
 [output]
 root = "../runs"

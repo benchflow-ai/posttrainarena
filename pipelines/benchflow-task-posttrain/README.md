@@ -1,9 +1,9 @@
 # BenchFlow Task-List Post-Training Pipeline
 
 This is the public, reproducible training path for running SFT and optional
-GRPO over BenchFlow-compatible task suites. OpenCode drives teacher collection
-and evaluation; the temporary legacy GRPO path lets TRL drive BenchFlow
-directly or through a real OpenEnv client/server protocol adapter.
+GRPO over BenchFlow-compatible task suites. OpenCode drives teacher collection,
+evaluation, and GRPO rollouts. TRL owns optimization and synchronizes the
+current policy to the shared vLLM endpoint.
 
 The repository-wide architecture and compatibility status is documented in
 [`docs/architecture-status.md`](../../docs/architecture-status.md). In
@@ -16,25 +16,20 @@ The interface is intentionally small:
 training task list + held-out eval task list + TOML recipe
     -> baseline eval
     -> verifier-approved teacher trajectories
-    -> tool-aware SFT
+    -> native TRL prompt/completion/tools SFT
     -> post-SFT reward gate
     -> optional GRPO
     -> held-out score and paired lift report
 ```
 
 BenchFlow owns task snapshots, sandbox lifecycle, verifiers, rollout artifacts,
-and paired evaluation. OpenCode owns teacher and evaluation model interaction.
-TRL owns SFT and GRPO optimization. Only GRPO rollouts remain on the legacy
-TRL-owned tool loop. OpenEnv is an optional protocol for that temporary GRPO
-path, not a second runtime or eval engine. The default
+and paired evaluation. OpenCode owns teacher, evaluation, and GRPO model
+interaction. TRL owns SFT and GRPO optimization. OpenEnv remains a standalone
+compatibility service, not a second training runtime or eval engine. The default
 recipes pin the public BenchFlow-native `task.md` datasets
 `benchflow/data_agent_rl_environment_train` and
 `benchflow/data_agent_rl_environment_eval`. The pipeline does not depend on
 Harbor or translate Harbor trajectories.
-The optional `openenv_url` mode currently requires a shared filesystem for
-pinned task snapshots and BenchFlow artifacts; it is not a general remote
-artifact transport.
-
 ## Repository Layout
 
 ```text
@@ -46,8 +41,8 @@ benchflow-task-posttrain/
   src/.../pipeline.py      resumable stage orchestration
   src/.../teacher.py       verified OpenCode teacher rollouts
   src/.../opencode.py      OpenCode baseline/gate/final evaluation
-  src/.../sft.py           tool-aware LoRA SFT and weight merge
-  src/.../policy.py        temporary legacy GRPO rollout integration
+  src/.../grpo.py          OpenCode custom rollouts for TRL GRPO
+  src/.../sft.py           TRL completion-only/assistant-only LoRA SFT
   src/.../openenv/         OpenEnv client/server protocol adapter
   tests/                   no-spend contract tests
 ```
@@ -89,8 +84,8 @@ For a GPU host, `scripts/bootstrap_gpu.sh` installs this package and its pinned
 BenchFlow dependency into an isolated virtual environment. The script pins the
 CUDA 12.8 Torch wheel and fails immediately if the GPU is unavailable.
 
-Use `configs/qwen3-4b-data-agent-openenv-smoke.toml` to route environment
-interaction through OpenEnv. It sets `grpo.run_policy = "always"` so a
+Use `configs/qwen3-4b-data-agent-forced-grpo-smoke.toml` to force the GRPO
+plumbing path. It sets `grpo.run_policy = "always"` so a
 zero-reward GRPO run can validate plumbing; production recipes should normally
 retain `run_policy = "on_reward"`.
 
@@ -108,8 +103,16 @@ The example recipe requires:
   current-student model aliases
 - `BENCHFLOW_PROVIDER_BASE_URL` and `BENCHFLOW_PROVIDER_API_KEY` for the
   OpenAI-compatible endpoint used by OpenCode evaluation
+- `BENCHFLOW_MODEL_BRIDGE_CONTROL_URL` for trainer-local logprob retrieval when
+  the public provider URL uses separate ingress
+- `TRL_VLLM_SERVER_BASE_URL` for TRL's weight-sync/control connection to the
+  same student server
 - `WANDB_API_KEY` when `tracking.report_to = "wandb"`
 - any verifier-specific credentials required by the selected task packages
+
+The trainer and TRL vLLM server must use different physical CUDA devices. On a
+two-GPU host, use `CUDA_VISIBLE_DEVICES=1` for `trl vllm-serve` and
+`CUDA_VISIBLE_DEVICES=0` for `posttrainarena-train run`.
 
 Provider credential values are never written to the run plan or score report.
 
@@ -124,9 +127,10 @@ posttrainarena-train run \
 Use `--resume` after interruption. Completed snapshots, evaluations, and
 checkpoints are reused when their expected marker artifacts exist.
 
-The endpoint named by the evaluation environment variables must already serve
-the checkpoint selected for the stage. Automatic student endpoint
-resynchronization is part of the remaining OpenCode GRPO migration.
+The public OpenCode endpoint is `posttrainarena-train model-bridge`, which
+forwards to the TRL server at `TRL_VLLM_SERVER_BASE_URL`. The pipeline
+synchronizes SFT weights before SFT evaluation, the current GRPO policy before
+each rollout batch, and final weights before the held-out evaluation.
 
 The final contract is:
 

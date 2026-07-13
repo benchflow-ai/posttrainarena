@@ -6,10 +6,12 @@ import json
 import math
 import os
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from .config import PipelineConfig
 from .io import CommandRunner, load_json, write_json
+
+ServedModelRole = Literal["auto", "base", "student"]
 
 
 def _environment_value(name: str, *, label: str, required: bool) -> str:
@@ -26,10 +28,16 @@ def served_model(
     model: str,
     *,
     required: bool = True,
+    role: ServedModelRole = "auto",
 ) -> str:
+    if role not in {"auto", "base", "student"}:
+        raise ValueError(f"Unknown served model role: {role}")
+    resolved_role = "base" if role == "auto" and model == config.model else role
+    if resolved_role == "auto":
+        resolved_role = "student"
     env_name = (
         config.evaluation.base_model_env
-        if model == config.model
+        if resolved_role == "base"
         else config.evaluation.student_model_env
     )
     resolved = _environment_value(
@@ -74,6 +82,8 @@ def build_evaluation_command(
     task_manifest_path: Path,
     run_config_path: Path,
     require_environment: bool = True,
+    capture_token_logprobs: bool = False,
+    model_role: ServedModelRole = "auto",
 ) -> list[str]:
     if not task_ids:
         raise ValueError("OpenCode evaluation requires at least one task")
@@ -86,7 +96,12 @@ def build_evaluation_command(
         "--agent",
         config.harness.agent,
         "--model",
-        served_model(config, model, required=require_environment),
+        served_model(
+            config,
+            model,
+            required=require_environment,
+            role=model_role,
+        ),
         "--sandbox",
         config.sandbox,
         "--skill-mode",
@@ -119,6 +134,13 @@ def build_evaluation_command(
         command.extend(["--sandbox-user", config.runtime.sandbox_user])
     if config.harness.reasoning_effort:
         command.extend(["--reasoning-effort", config.harness.reasoning_effort])
+    if capture_token_logprobs:
+        command.extend(
+            [
+                "--agent-env",
+                "BENCHFLOW_CAPTURE_TOKEN_LOGPROBS=1",
+            ]
+        )
     for task_id in task_ids:
         command.extend(["--include", task_id])
     return command
@@ -204,6 +226,8 @@ def evaluate(
     task_ids: list[str],
     jobs_dir: Path,
     metrics_path: Path,
+    capture_token_logprobs: bool = False,
+    model_role: ServedModelRole = "auto",
 ) -> dict[str, Any]:
     require_environment = not runner.dry_run
     health_path = metrics_path.with_name(f"{metrics_path.stem}_health.json")
@@ -223,6 +247,8 @@ def evaluate(
             task_manifest_path=task_manifest_path,
             run_config_path=run_config_path,
             require_environment=require_environment,
+            capture_token_logprobs=capture_token_logprobs,
+            model_role=model_role,
         ),
         env_overrides=evaluation_env(config, required=require_environment),
     )
@@ -231,11 +257,17 @@ def evaluate(
             "mode": "eval",
             "harness": config.harness.agent,
             "model": model,
-            "served_model": served_model(config, model, required=False),
+            "served_model": served_model(
+                config,
+                model,
+                required=False,
+                role=model_role,
+            ),
             "task_ids": task_ids,
             "task_count": len(task_ids),
             "score": None,
             "jobs_dir": str(jobs_dir),
+            "capture_token_logprobs": capture_token_logprobs,
         }
     loaded = load_summary(
         jobs_dir=jobs_dir,
@@ -246,7 +278,7 @@ def evaluate(
         "mode": "eval",
         "harness": config.harness.agent,
         "model": model,
-        "served_model": served_model(config, model),
+        "served_model": served_model(config, model, role=model_role),
         "task_ids": task_ids,
         "task_count": len(task_ids),
         "score": loaded["score"],
@@ -256,6 +288,7 @@ def evaluate(
         "health_path": str(health_path),
         "task_manifest_path": str(task_manifest_path),
         "run_config_path": str(run_config_path),
+        "capture_token_logprobs": capture_token_logprobs,
     }
     write_json(metrics_path, payload)
     return payload

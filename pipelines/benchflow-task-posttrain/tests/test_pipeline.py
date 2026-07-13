@@ -34,11 +34,12 @@ def test_plan_exposes_public_stage_contract(tmp_path: Path) -> None:
         "base_model_env": "BENCHFLOW_BASE_MODEL",
         "student_model_env": "BENCHFLOW_ADAPTER_MODEL",
         "base_url_env": "BENCHFLOW_PROVIDER_BASE_URL",
+        "control_url_env": "BENCHFLOW_MODEL_BRIDGE_CONTROL_URL",
         "api_key_env": "BENCHFLOW_PROVIDER_API_KEY",
     }
     assert plan["harness_migration"] == {
-        "applied_stages": ["teacher", "evaluation"],
-        "pending_stages": ["grpo"],
+        "applied_stages": ["teacher", "evaluation", "grpo"],
+        "pending_stages": [],
     }
     assert plan["stages"][0] == "snapshot_train_tasks"
     assert plan["stages"][-1] == "write_score_report"
@@ -60,6 +61,7 @@ def test_dry_run_writes_score_schema_without_heavy_dependencies(tmp_path: Path) 
     assert saved["harness_migration"]["applied_stages"] == [
         "teacher",
         "evaluation",
+        "grpo",
     ]
     convert = next(
         item
@@ -67,14 +69,26 @@ def test_dry_run_writes_score_schema_without_heavy_dependencies(tmp_path: Path) 
         if item["name"] == "convert_verified_sft_data"
     )
     assert convert["command"][convert["command"].index("--min-reward") + 1] == "1.0"
+    assert convert["command"][convert["command"].index("--format") + 1] == "trl-sft"
+    assert convert["command"][convert["command"].index("--row-mode") + 1] == (
+        "exchange"
+    )
+    assert convert["command"][convert["command"].index("--tokenizer") + 1] == (
+        config.model
+    )
+    assert convert["command"][convert["command"].index("--max-length") + 1] == (
+        str(config.sft.max_length)
+    )
     assert len(saved["train_task_ids"]) == 15
     assert {item["name"] for item in saved["commands"]} >= {
         "snapshot_train_tasks",
         "baseline_eval",
         "collect_verified_teacher_rollouts",
         "train_sft",
+        "sync_sft_endpoint",
         "sft_eval",
         "grpo_gate_eval",
+        "sync_grpo_endpoint",
         "compare_eval_lift",
     }
     evaluation_commands = [
@@ -120,6 +134,11 @@ def test_rl_only_dry_run_uses_base_model(tmp_path: Path) -> None:
     ]
 
     assert grpo["model"] == config.model
+    assert grpo["call"] == "grpo.train_grpo"
+    sync = next(
+        item for item in result["commands"] if item["name"] == "sync_grpo_endpoint"
+    )
+    assert sync["checkpoint"].endswith("/checkpoints/grpo")
     assert (
         gate_task_ids
         == Pipeline(config, run_name="task-list", dry_run=True).train_task_ids[

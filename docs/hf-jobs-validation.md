@@ -9,8 +9,8 @@ scheduler is currently blocked by account credits, not code.
 This July 11 evidence predates the OpenCode evaluation migration. It validates
 the HF bundle, trainer, publishing, and earlier TRL evaluation path. The current
 OpenCode evaluator has separate real SkillsBench + Daytona canary evidence, but
-the full HF H100 flow must be rerun after a student endpoint and automatic
-checkpoint resynchronization are available.
+the full HF H100 flow must be rerun against the new shared vLLM endpoint and
+OpenCode custom-rollout GRPO path.
 
 ## Validated flow
 

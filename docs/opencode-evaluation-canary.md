@@ -34,5 +34,6 @@ were supplied only through process environment variables.
 This proves the OpenCode evaluation command, endpoint environment mapping,
 Daytona execution, verifier scoring, and fail-closed artifact-health checks.
 It does not prove evaluation of a newly trained checkpoint; that requires the
-student endpoint to load the checkpoint before evaluation. Automatic
-policy-to-endpoint synchronization remains part of the GRPO migration.
+student endpoint to load the checkpoint before evaluation. The current pipeline
+implements that synchronization through TRL's vLLM weight-transfer path; a live
+GPU training smoke remains separate.

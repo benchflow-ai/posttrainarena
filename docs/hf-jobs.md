@@ -35,7 +35,7 @@ into the bundle, plan, score, or leaderboard.
 ```bash
 posttrainarena-train prepare-submission \
   --entry submissions/<team-entry> \
-  --base-config configs/qwen3-4b-data-agent-openenv-smoke.toml \
+  --base-config configs/qwen3-4b-data-agent-forced-grpo-smoke.toml \
   --out .local/prepared/<team-entry> \
   --dataset-repo <namespace>/posttrainarena-<team-entry> \
   --upload
@@ -101,8 +101,19 @@ posttrainarena-train hf-job-submit \
 
 Default full-run secrets are `HF_TOKEN`, `DAYTONA_API_KEY`, `GLM_API_KEY`,
 `GLM_BASE_URL`, `BENCHFLOW_BASE_MODEL`, `BENCHFLOW_ADAPTER_MODEL`,
-`BENCHFLOW_PROVIDER_BASE_URL`, `BENCHFLOW_PROVIDER_API_KEY`, and
-`WANDB_API_KEY`. Override the list with repeated `--secret-env NAME`.
+`BENCHFLOW_PROVIDER_BASE_URL`, `BENCHFLOW_PROVIDER_API_KEY`,
+`TRL_VLLM_SERVER_BASE_URL`, and `WANDB_API_KEY`. Override the list with
+repeated `--secret-env NAME`.
+
+The GPU job also needs a TRL-compatible vLLM server plus
+`posttrainarena-train model-bridge`. Its trainer-side control URL is
+`TRL_VLLM_SERVER_BASE_URL`; `BENCHFLOW_PROVIDER_BASE_URL` must expose the bridge
+to OpenCode inside Daytona. Set `BENCHFLOW_MODEL_BRIDGE_CONTROL_URL` when the
+trainer should retrieve sampled logprobs through a local bridge URL. The
+checked-in UV runner does not create public ingress automatically, so the
+operator must provision that endpoint before launching the current
+OpenCode-GRPO path. TRL server mode also requires the trainer and vLLM worker to
+run on different physical CUDA devices.
 
 ## 4. Inspect a job
 

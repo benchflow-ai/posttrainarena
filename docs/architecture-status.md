@@ -29,23 +29,25 @@ The supported executable reference is the Qwen3-4B pipeline under
 
 ```text
 PostTrain task lists and pinned HF snapshots
-    -> direct BenchFlow or OpenEnv protocol integration
     -> BenchFlow task loading and sandbox lifecycle
     -> OpenCode teacher rollouts through BenchFlow
     -> verifier-approved, training-ready teacher trajectories
     -> TRL LoRA SFT and merged checkpoint
     -> OpenCode training-task reward gate through BenchFlow
-    -> legacy TRL environment_factory optional GRPO
+    -> TRL GRPOTrainer custom rollout_func
+    -> OpenCode rollouts through BenchFlow and current student endpoint
+    -> token IDs, sampled logprobs, action mask, and verifier reward
+    -> policy update and vLLM endpoint resynchronization
     -> OpenCode held-out evaluation and paired lift report
 ```
 
 Teacher collection and every evaluation stage now use OpenCode as the agent
 harness with required provider telemetry and BenchFlow artifact-health gates.
-Only GRPO rollout generation still uses the older TRL-owned `run_bash` /
-`submit` loop. Evaluation resolves the base and student model aliases plus the
-OpenAI-compatible endpoint from named environment variables. The endpoint must
-already expose the checkpoint selected for that stage; the GRPO migration owns
-automatic policy-to-endpoint resynchronization.
+GRPO uses TRL 1.8's custom rollout function, not `environment_factory`.
+Evaluation resolves the base and student model aliases plus the
+OpenAI-compatible endpoint from named environment variables. TRL synchronizes
+the SFT policy before its evaluation, the current GRPO policy before each
+rollout batch, and the final policy before held-out evaluation.
 
 The final machine-readable contract is:
 
@@ -76,11 +78,11 @@ competition-scale readiness.
 | BenchFlow task-list training/eval | Implemented | Public pipeline, tests, CLI dry-run, and completed H100 smoke |
 | Docker runtime | Implemented | Local author harness and BenchFlow runtime option |
 | Daytona runtime | Implemented in pipeline | BenchFlow runtime option; credentials required for real execution |
-| TRL SFT | Implemented | Tool-aware LoRA SFT and merged checkpoint path |
-| TRL GRPO | Implemented | Reward-gated by default; explicit `always` policy supports zero-reward plumbing runs |
+| TRL SFT | Implemented | BenchFlow `trl-sft` prompt/completion/tools conversion, tokenizer-aware message windows, completion-only and assistant-only LoRA loss, and merged checkpoint path |
+| TRL GRPO | Implemented | Reward-gated by default; custom OpenCode rollout function returns token IDs, sampled logprobs, action mask, and BenchFlow verifier reward |
 | OpenCode teacher collection | Implemented | Provider-qualified teacher model, required usage tracking, adaptive retries, and one training-ready rollout selected per task |
 | OpenCode evaluation | Implemented | Baseline, post-SFT, training gate, final, and multi-benchmark evaluation all use `bench eval run --agent opencode`; the real SkillsBench + Daytona canary passed with complete telemetry and healthy trajectories |
-| OpenCode GRPO | In migration | GRPO rollout generation and policy-to-endpoint resynchronization still use the legacy TRL environment loop |
+| OpenCode GRPO | Implemented and live GPU validated | TRL custom rollout function invokes OpenCode/BenchFlow, reconstructs masked causal token sequences, consumes provider logprobs, forwards verifier reward, and resynchronizes the vLLM endpoint; the SkillsBench + Daytona smoke completed two rollouts and one optimizer step |
 | Harbor | Not a dependency | No Harbor adapter or trajectory translation is used |
 | OpenEnv client/server lifecycle | Implemented | Pinned dependency, served adapter, typed client, real lifecycle tests, finalization, state, and session isolation |
 | OpenEnv/BenchFlow Docker parity | Manually validated | Checked-in security task produced identical output and reward `1.0` through both integrations; CI uses a no-spend fake BenchFlow boundary |
@@ -95,14 +97,18 @@ competition-scale readiness.
 
 The OpenCode evaluation evidence is recorded in
 [`opencode-evaluation-canary.md`](opencode-evaluation-canary.md).
+The GRPO rollout and endpoint contract is documented in
+[`opencode-grpo.md`](opencode-grpo.md).
+The real two-H100 SkillsBench + Daytona run is recorded in
+[`opencode-grpo-smoke.md`](opencode-grpo-smoke.md).
 
 ## OpenEnv integration
 
-OpenEnv is currently confined to the temporary legacy GRPO integration.
-Teacher collection and evaluation invoke BenchFlow directly through the
-OpenCode-backed `bench eval run` path.
+OpenEnv is a standalone protocol compatibility surface. The current training
+pipeline does not use it as an agent harness or GRPO transport; teacher
+collection, evaluation, and GRPO all invoke BenchFlow through OpenCode.
 
-The supported GRPO path is:
+The supported protocol path is:
 
 ```text
 TRL
@@ -138,16 +144,9 @@ through the direct and OpenEnv integrations. Both paths produced identical
 oracle output, reward `1.0`, and complete BenchFlow artifact trees. The
 protocol lifecycle tests run in CI; the Docker canary remains an operator test.
 
-Set `runtime.openenv_url` only for a separately deployed copy that shares the
-pipeline's pinned task snapshots and BenchFlow artifact filesystem. When
-omitted, the pipeline starts a local server. A general remote deployment still
-requires task-resolution and artifact-transfer contracts. In both current
-cases, BenchFlow remains the task/runtime/eval engine.
-
 `posttrainarena-train openenv-serve` exposes the adapter as a discoverable
 server command and resolves task IDs against server-owned pinned snapshots.
-The managed HF Job uses co-located mode so task and artifact paths stay inside
-one job. A general third-party artifact-transfer protocol remains separate.
+A general third-party artifact-transfer protocol remains separate.
 
 The related upstream discussion is
 [huggingface/OpenEnv#898](https://github.com/huggingface/OpenEnv/issues/898).

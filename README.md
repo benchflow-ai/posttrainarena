@@ -44,7 +44,7 @@ The checked-in implementation is intentionally smaller than the draft competitio
 | --- | --- |
 | Participant task format and local validation | **Implemented** — eight worked examples, structural checks, Docker oracle replay, and empty-trial rejection |
 | BenchFlow task-list training and evaluation | **Implemented** — pinned snapshots, verified teacher collection, LoRA SFT, reward-gated or forced GRPO, held-out evaluation, and score reports |
-| OpenCode harness migration | **Teacher and evaluation implemented** — teacher collection, baseline/gate/final eval, and benchmark matrices use OpenCode; GRPO rollout generation and endpoint resync remain in migration |
+| OpenCode agent harness | **Implemented end to end** — teacher collection, baseline/gate/final eval, benchmark matrices, and TRL custom GRPO rollouts use OpenCode; TRL synchronizes the current policy to the shared vLLM endpoint |
 | Public data | **Available** — [2,238 training tasks](https://huggingface.co/datasets/benchflow/data_agent_rl_environment_train) and [366 held-out evaluation tasks](https://huggingface.co/datasets/benchflow/data_agent_rl_environment_eval) in native `task.md` format |
 | OpenEnv protocol path | **Implemented** — served adapter, typed client, lifecycle tests, Docker parity validation, and a native-dataset end-to-end smoke |
 | HF Jobs execution | **Implemented** — portable UV job bundles, pinned code refs, named-secret boundaries, status inspection, and Hub publishing; live scheduler allocation currently awaits HF credits |
@@ -99,6 +99,9 @@ See [CONTRIBUTING.md](./CONTRIBUTING.md) for the submission workflow, validation
 - [Task authoring specification](https://posttrain.com/docs/spec)
 - [Architecture and implementation status](./docs/architecture-status.md)
 - [Training pipeline operator guide](./docs/training-pipeline.md)
+- [OpenCode GRPO rollout contract](./docs/opencode-grpo.md)
+- [OpenCode SFT-to-GRPO smoke](./docs/opencode-grpo-smoke.md)
+- [OpenCode evaluation canary](./docs/opencode-evaluation-canary.md)
 - [Hugging Face Jobs and leaderboard handoff](./docs/hf-jobs.md)
 - [HF handoff validation report](./docs/hf-jobs-validation.md)
 - [Native-dataset OpenEnv smoke report](https://github.com/benchflow-ai/posttrainarena/blob/main/docs/native-dataset-openenv-smoke.md)

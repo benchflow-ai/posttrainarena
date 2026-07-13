@@ -24,21 +24,39 @@ def test_example_config_is_valid_and_pinned() -> None:
     assert config.evaluation.base_model_env == "BENCHFLOW_BASE_MODEL"
     assert config.evaluation.student_model_env == "BENCHFLOW_ADAPTER_MODEL"
     assert config.evaluation.base_url_env == "BENCHFLOW_PROVIDER_BASE_URL"
+    assert (
+        config.evaluation.control_url_env
+        == "BENCHFLOW_MODEL_BRIDGE_CONTROL_URL"
+    )
     assert config.evaluation.api_key_env == "BENCHFLOW_PROVIDER_API_KEY"
     assert config.teacher.model == "glm/glm-5.1"
     assert config.teacher.min_reward == 1.0
     assert config.teacher.min_verified == 15
     assert config.runtime.num_generations == 2
     assert config.grpo.run_policy == "on_reward"
+    assert config.grpo.rollout_attempts == 2
+    assert config.grpo.vllm_server_base_url_env == "TRL_VLLM_SERVER_BASE_URL"
+    assert config.sft.max_length == 40960
 
 
-def test_hf_job_smoke_config_forces_one_step_grpo() -> None:
-    config = load_config(ROOT / "configs/qwen3-4b-hf-job-smoke.toml")
+def test_forced_grpo_smoke_config_bypasses_reward_gate() -> None:
+    config = load_config(ROOT / "configs/qwen3-4b-data-agent-forced-grpo-smoke.toml")
 
-    assert config.runtime.integration == "openenv"
-    assert config.sft.max_steps == 1
     assert config.grpo.run_policy == "always"
+    assert config.grpo.max_steps == 2
+
+
+def test_skillsbench_e2e_smoke_is_disjoint_and_minimal() -> None:
+    config = load_config(ROOT / "configs/qwen3-4b-skillsbench-e2e-smoke.toml")
+
+    assert config.train_dataset.repo_id == "benchflow/skillsbench"
+    assert config.eval_dataset.repo_id == "benchflow/skillsbench"
+    assert config.train_dataset.task_list.read_text().strip() == "3d-scan-calc"
+    assert config.eval_dataset.task_list.read_text().strip() == "citation-check"
+    assert config.sft.max_steps == 1
     assert config.grpo.max_steps == 1
+    assert config.grpo.run_policy == "always"
+    assert config.tracking.report_to == "none"
 
 
 def test_config_accepts_always_grpo_run_policy(tmp_path: Path) -> None:
@@ -70,6 +88,33 @@ def test_config_rejects_unknown_grpo_run_policy() -> None:
         config.validate()
 
 
+@pytest.mark.parametrize(
+    ("field", "value", "message"),
+    [
+        ("rollout_attempts", 0, "grpo.rollout_attempts"),
+        ("rollout_attempts", True, "grpo.rollout_attempts"),
+        (
+            "vllm_server_base_url_env",
+            "",
+            "grpo.vllm_server_base_url_env",
+        ),
+    ],
+)
+def test_config_rejects_invalid_opencode_grpo_values(
+    field: str,
+    value: object,
+    message: str,
+) -> None:
+    config = load_config(ROOT / "configs/qwen3-4b-data-agent-smoke.toml")
+    config = replace(
+        config,
+        grpo=replace(config.grpo, **{field: value}),  # type: ignore[arg-type]
+    )
+
+    with pytest.raises(ValueError, match=message):
+        config.validate()
+
+
 def test_config_rejects_non_opencode_harness() -> None:
     config = load_config(ROOT / "configs/qwen3-4b-data-agent-smoke.toml")
     config = replace(config, harness=replace(config.harness, agent="openhands"))
@@ -84,6 +129,7 @@ def test_config_rejects_non_opencode_harness() -> None:
         ("base_model_env", "", "evaluation.base_model_env"),
         ("student_model_env", "", "evaluation.student_model_env"),
         ("base_url_env", "", "evaluation.base_url_env"),
+        ("control_url_env", "", "evaluation.control_url_env"),
         ("api_key_env", "", "evaluation.api_key_env"),
     ],
 )
@@ -256,28 +302,6 @@ def test_config_accepts_non_default_opencode_harness_values() -> None:
     )
 
     config.validate()
-
-
-def test_config_rejects_conflicting_sandbox_aliases() -> None:
-    config = load_config(ROOT / "configs/qwen3-4b-data-agent-smoke.toml")
-    config = replace(
-        config,
-        runtime=replace(config.runtime, environment="docker", sandbox="daytona"),
-    )
-
-    with pytest.raises(ValueError, match="runtime.sandbox conflicts"):
-        config.validate()
-
-
-def test_openenv_url_requires_openenv_integration() -> None:
-    config = load_config(ROOT / "configs/qwen3-4b-data-agent-smoke.toml")
-    config = replace(
-        config,
-        runtime=replace(config.runtime, openenv_url="http://localhost:8000"),
-    )
-
-    with pytest.raises(ValueError, match="openenv_url requires"):
-        config.validate()
 
 
 def test_config_rejects_missing_task_list(tmp_path: Path) -> None:

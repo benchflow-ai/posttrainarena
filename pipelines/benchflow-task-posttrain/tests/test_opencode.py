@@ -80,6 +80,7 @@ def test_served_model_distinguishes_base_and_trained_checkpoint() -> None:
 
     assert served_model(config, config.model) == "vllm/base"
     assert served_model(config, "/tmp/sft") == "vllm/student"
+    assert served_model(config, config.model, role="student") == "vllm/student"
 
 
 def test_served_model_requires_provider_qualified_value(
@@ -141,6 +142,27 @@ def test_build_evaluation_command_uses_opencode_contract(tmp_path: Path) -> None
     assert command[command.index("--usage-tracking") + 1] == "required"
     assert command[command.index("--expected-tasks") + 1] == "2"
     assert command.count("--include") == 2
+
+
+def test_build_evaluation_command_can_capture_sampled_token_logprobs(
+    tmp_path: Path,
+) -> None:
+    command = build_evaluation_command(
+        config=_config(),
+        model="/tmp/student",
+        model_role="student",
+        tasks_dir=tmp_path / "tasks",
+        task_ids=["task-a"],
+        jobs_dir=tmp_path / "jobs",
+        health_path=tmp_path / "health.json",
+        task_manifest_path=tmp_path / "task-manifest.json",
+        run_config_path=tmp_path / "run-config.json",
+        capture_token_logprobs=True,
+    )
+
+    index = command.index("--agent-env")
+    assert command[index + 1] == "BENCHFLOW_CAPTURE_TOKEN_LOGPROBS=1"
+    assert command[command.index("--model") + 1] == "vllm/student"
 
 
 @pytest.mark.parametrize(
