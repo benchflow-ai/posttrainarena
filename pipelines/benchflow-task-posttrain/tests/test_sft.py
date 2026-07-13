@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import sys
 from importlib.machinery import ModuleSpec
 from pathlib import Path
@@ -136,4 +137,100 @@ def test_train_sft_uses_native_trl_rows_and_masked_loss(
     )
     assert args["completion_only_loss"] is True
     assert args["assistant_only_loss"] is True
+    assert args["max_steps"] == config.sft.max_steps
+    assert "num_train_epochs" not in args
+    assert args["gradient_checkpointing"] is True
+    assert trainer_kwargs["peft_config"].values["lora_dropout"] == (
+        config.sft.lora_dropout
+    )
     assert "dataset_text_field" not in args
+    dependency = json.loads((tmp_path / "adapter/adapter_dependency.json").read_text())
+    assert dependency["base_model"] == config.model
+    assert dependency["base_revision"] == config.model_revision
+
+
+def test_full_recipe_sft_uses_one_epoch_instead_of_max_steps(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import datasets
+    import transformers
+    import posttrainarena.benchflow_pipeline.sft as sft_module
+
+    source = tmp_path / "train.jsonl"
+    source.write_text(
+        '{"prompt":[{"role":"user","content":"solve"}],'
+        '"completion":[{"role":"assistant","content":"done"}],'
+        '"tools":[]}\n'
+    )
+    config = load_config(ROOT / "configs/qwen3.5-9b-data-agent-full.toml")
+    captured: dict[str, Any] = {}
+
+    class FakeTokenizer:
+        def save_pretrained(self, _path):
+            return None
+
+    class FakeModel:
+        pass
+
+    class FakeMerged:
+        def save_pretrained(self, _path, **_kwargs):
+            return None
+
+    class FakePeftModel:
+        @classmethod
+        def from_pretrained(cls, _model, _path):
+            return cls()
+
+        def merge_and_unload(self):
+            return FakeMerged()
+
+    class FakeConfig:
+        def __init__(self, **kwargs):
+            self.values = kwargs
+
+    class FakeTrainer:
+        def __init__(self, **kwargs):
+            captured["args"] = kwargs["args"].values
+
+        def train(self):
+            return SimpleNamespace(metrics={"loss": 0.1})
+
+        def save_model(self, _path):
+            return None
+
+    monkeypatch.setattr(
+        datasets.Dataset,
+        "from_list",
+        lambda rows: rows,
+    )
+    monkeypatch.setattr(
+        transformers.AutoTokenizer,
+        "from_pretrained",
+        lambda *args, **kwargs: FakeTokenizer(),
+    )
+    monkeypatch.setattr(
+        transformers.AutoModelForCausalLM,
+        "from_pretrained",
+        lambda *args, **kwargs: FakeModel(),
+    )
+    monkeypatch.setattr("peft.PeftModel", FakePeftModel)
+    monkeypatch.setattr("peft.LoraConfig", FakeConfig)
+    monkeypatch.setattr("trl.SFTConfig", FakeConfig)
+    monkeypatch.setattr("trl.SFTTrainer", FakeTrainer)
+    monkeypatch.setattr(
+        sft_module,
+        "supported_kwargs",
+        lambda _callable, values: values,
+    )
+
+    train_sft(
+        config=config,
+        train_jsonl=source,
+        adapter_dir=tmp_path / "adapter",
+        output_dir=tmp_path / "merged",
+        run_name="full",
+    )
+
+    assert captured["args"]["num_train_epochs"] == 1.0
+    assert "max_steps" not in captured["args"]

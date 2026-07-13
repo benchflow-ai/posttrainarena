@@ -15,6 +15,7 @@ from posttrainarena.benchflow_pipeline.teacher import (
     build_teacher_command,
     collect_verified_teacher_rollouts,
 )
+from posttrainarena.benchflow_pipeline.opencode import opencode_config_env
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -103,6 +104,7 @@ def test_build_teacher_command_uses_opencode_and_required_telemetry(
         == '{"agent":{"timeout_sec":900}}'
     )
     assert command.count("--include") == 2
+    assert opencode_config_env(config) in command
     assert "--matrix" not in command
     assert "--trials" not in command
 
@@ -423,6 +425,7 @@ def test_collect_teacher_dry_run_records_all_possible_attempts(
     )
 
     assert manifest["verified_count"] is None
+    assert manifest["teacher_source_identity_enforced"] is False
     assert [record["name"] for record in runner.commands] == [
         "collect_verified_teacher_rollouts",
         "collect_verified_teacher_rollouts_attempt-02",
@@ -455,8 +458,7 @@ def test_collect_teacher_retries_only_tasks_without_verified_rollout(
     responses = iter(
         [
             ([task_a], [task_a]),
-            ([task_a, task_b], [task_a, task_b]),
-            ([task_a, task_b], [task_a, task_b]),
+            ([task_b], [task_b]),
         ]
     )
     monkeypatch.setattr(
@@ -501,7 +503,7 @@ def test_collect_teacher_retries_after_rollout_exit_one(
         "reward": 1.0,
         "eligible": True,
     }
-    responses = iter([([], []), ([selected], [selected]), ([selected], [selected])])
+    responses = iter([([], []), ([selected], [selected])])
     monkeypatch.setattr(
         "posttrainarena.benchflow_pipeline.teacher._select_verified",
         lambda **_kwargs: next(responses),
@@ -535,6 +537,79 @@ def test_collect_teacher_rejects_cli_usage_error(tmp_path: Path) -> None:
             manifest_path=tmp_path / "reports" / "teacher.json",
             selection_path=tmp_path / "reports" / "selection.json",
         )
+
+
+def test_collect_teacher_requires_one_verified_rollout_per_task(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config = load_config(ROOT / "configs/qwen3-4b-data-agent-smoke.toml")
+    config = replace(
+        config,
+        teacher=replace(config.teacher, max_attempts=1, min_verified=1),
+    )
+    runner = FakeRunner(ROOT, dry_run=False, returncodes=[0])
+    selected = {
+        "task_id": "task-a",
+        "rollout_dir": str(tmp_path / "task-a"),
+        "reward": 1.0,
+        "eligible": True,
+    }
+    monkeypatch.setattr(
+        "posttrainarena.benchflow_pipeline.teacher._select_verified",
+        lambda **_kwargs: ([selected], [selected]),
+    )
+
+    with pytest.raises(RuntimeError, match="required 2"):
+        collect_verified_teacher_rollouts(
+            config=config,
+            runner=runner,
+            tasks_dir=tmp_path / "tasks",
+            task_ids=["task-a", "task-b"],
+            jobs_dir=tmp_path / "jobs",
+            manifest_path=tmp_path / "reports" / "teacher.json",
+            selection_path=tmp_path / "reports" / "selection.json",
+        )
+
+
+def test_collect_teacher_can_use_minimum_when_all_tasks_is_disabled(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config = load_config(ROOT / "configs/qwen3-4b-data-agent-smoke.toml")
+    config = replace(
+        config,
+        teacher=replace(
+            config.teacher,
+            max_attempts=1,
+            min_verified=1,
+            require_all_tasks=False,
+        ),
+    )
+    runner = FakeRunner(ROOT, dry_run=False, returncodes=[0])
+    selected = {
+        "task_id": "task-a",
+        "rollout_dir": str(tmp_path / "task-a"),
+        "reward": 1.0,
+        "eligible": True,
+    }
+    monkeypatch.setattr(
+        "posttrainarena.benchflow_pipeline.teacher._select_verified",
+        lambda **_kwargs: ([selected], [selected]),
+    )
+
+    manifest = collect_verified_teacher_rollouts(
+        config=config,
+        runner=runner,
+        tasks_dir=tmp_path / "tasks",
+        task_ids=["task-a", "task-b"],
+        jobs_dir=tmp_path / "jobs",
+        manifest_path=tmp_path / "reports" / "teacher.json",
+        selection_path=tmp_path / "reports" / "selection.json",
+    )
+
+    assert manifest["required_verified_count"] == 1
+    assert manifest["verified_count"] == 1
 
 
 def test_collect_teacher_does_not_retry_over_budget_task(

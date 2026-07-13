@@ -27,6 +27,22 @@ class RunLayout:
         return self.root / "reports" / "teacher_selection.json"
 
     @property
+    def sft_adapter(self) -> Path:
+        return self.checkpoints / "sft-adapter"
+
+    @property
+    def sft_merged(self) -> Path:
+        return self.checkpoints / "sft-merged"
+
+    @property
+    def grpo_adapter(self) -> Path:
+        return self.checkpoints / "grpo-adapter"
+
+    @property
+    def grpo_merged(self) -> Path:
+        return self.checkpoints / "grpo-merged"
+
+    @property
     def jobs(self) -> Path:
         return self.root / "jobs"
 

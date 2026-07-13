@@ -6,13 +6,14 @@ import json
 import math
 import os
 import gc
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 from collections.abc import Callable
 from typing import Any, Sequence
 
 from .config import PipelineConfig
-from .io import CommandRunner, load_json, supported_kwargs, write_json
+from .io import CommandRunner, supported_kwargs, write_json
 from .opencode import evaluate
 
 
@@ -119,22 +120,20 @@ def sync_model_to_vllm(
         _close_weight_communicator(synchronizer)
 
 
-def sync_checkpoint_to_vllm(
+def sync_reference_to_vllm(
     *,
     config: PipelineConfig,
-    checkpoint: Path,
+    reference: str | Path,
 ) -> dict[str, Any]:
     from accelerate import Accelerator
     from transformers import AutoModelForCausalLM
 
-    if not checkpoint.is_dir():
-        raise FileNotFoundError(checkpoint)
+    model_reference = str(reference)
     accelerator = Accelerator(mixed_precision="bf16")
-    tokenizer = _load_tokenizer(config, checkpoint)
+    tokenizer = _load_tokenizer(config, model_reference)
     model = AutoModelForCausalLM.from_pretrained(
-        str(checkpoint),
-        trust_remote_code=True,
-        dtype="bfloat16",
+        model_reference,
+        **_model_init_kwargs(config, model_reference),
     )
     model.to(accelerator.device)
     sync_model_to_vllm(
@@ -152,10 +151,27 @@ def sync_checkpoint_to_vllm(
     except ImportError:
         pass
     return {
-        "checkpoint": str(checkpoint),
+        "reference": model_reference,
         "student_model_env": config.evaluation.student_model_env,
         "vllm_server_base_url_env": config.grpo.vllm_server_base_url_env,
         "synced": True,
+    }
+
+
+def sync_checkpoint_to_vllm(
+    *,
+    config: PipelineConfig,
+    checkpoint: Path,
+) -> dict[str, Any]:
+    if not checkpoint.is_dir():
+        raise FileNotFoundError(checkpoint)
+    payload = sync_reference_to_vllm(
+        config=config,
+        reference=checkpoint,
+    )
+    return {
+        **payload,
+        "checkpoint": str(checkpoint),
     }
 
 
@@ -450,13 +466,11 @@ class OpenCodeRolloutCollector:
         model: str,
         tasks_dir: Path,
         jobs_dir: Path,
-        resume: bool = False,
     ) -> None:
         self.config = config
         self.model = model
         self.tasks_dir = tasks_dir
         self.jobs_dir = jobs_dir
-        self.resume = resume
         self.records: list[dict[str, Any]] = []
         self._rollout_index = 0
 
@@ -487,15 +501,29 @@ class OpenCodeRolloutCollector:
         return logprobs
 
     def __call__(self, prompts: list[Any], trainer: Any) -> dict[str, Any]:
+        if not prompts:
+            raise ValueError("OpenCode GRPO rollout batch must not be empty")
         tokenizer = trainer.processing_class
-        collected = [
-            self._collect_one(
-                task_id=task_id_from_prompt(prompt),
+        start_index = self._rollout_index
+        self._rollout_index += len(prompts)
+        requests = [
+            (start_index + offset, task_id_from_prompt(prompt))
+            for offset, prompt in enumerate(prompts)
+        ]
+
+        def collect(request: tuple[int, str]) -> CollectedRollout:
+            rollout_index, task_id = request
+            return self._collect_one(
+                rollout_index=rollout_index,
+                task_id=task_id,
                 tokenizer=tokenizer,
                 trainer=trainer,
             )
-            for prompt in prompts
-        ]
+
+        with ThreadPoolExecutor(
+            max_workers=min(self.config.harness.concurrency, len(requests))
+        ) as executor:
+            collected = list(executor.map(collect, requests))
         return {
             "prompt_ids": [rollout.tokens.prompt_ids for rollout in collected],
             "completion_ids": [rollout.tokens.completion_ids for rollout in collected],
@@ -509,12 +537,11 @@ class OpenCodeRolloutCollector:
     def _collect_one(
         self,
         *,
+        rollout_index: int,
         task_id: str,
         tokenizer: Any,
         trainer: Any,
     ) -> CollectedRollout:
-        rollout_index = self._rollout_index
-        self._rollout_index += 1
         global_step = int(getattr(trainer.state, "global_step", 0))
         rank = int(getattr(trainer.accelerator, "process_index", 0))
         rollout_root = (
@@ -528,23 +555,18 @@ class OpenCodeRolloutCollector:
             attempt_root = rollout_root / f"attempt-{attempt:02d}"
             try:
                 metrics_path = attempt_root / "metrics.json"
-                if self.resume and metrics_path.is_file():
-                    payload = load_json(metrics_path)
-                else:
-                    payload = evaluate(
-                        config=self.config,
-                        runner=CommandRunner(cwd=self.config.source.parent),
-                        stage=(
-                            f"grpo_rollout_{global_step:06d}_{rollout_index:06d}"
-                        ),
-                        model=self.model,
-                        model_role="student",
-                        tasks_dir=self.tasks_dir,
-                        task_ids=[task_id],
-                        jobs_dir=attempt_root / "jobs",
-                        metrics_path=metrics_path,
-                        capture_token_logprobs=True,
-                    )
+                payload = evaluate(
+                    config=self.config,
+                    runner=CommandRunner(cwd=self.config.source.parent),
+                    stage=f"grpo_rollout_{global_step:06d}_{rollout_index:06d}",
+                    model=self.model,
+                    model_role="student",
+                    tasks_dir=self.tasks_dir,
+                    task_ids=[task_id],
+                    jobs_dir=attempt_root / "jobs",
+                    metrics_path=metrics_path,
+                    capture_token_logprobs=True,
+                )
                 rollout = self._materialize_rollout(
                     payload=payload,
                     attempt_root=attempt_root,
@@ -642,10 +664,12 @@ def train_grpo(
     tasks_dir: Path,
     task_ids: list[str],
     jobs_dir: Path,
+    adapter_dir: Path,
     output_dir: Path,
     run_name: str,
-    resume: bool = False,
 ) -> dict[str, Any]:
+    from peft import LoraConfig, PeftModel
+    from transformers import AutoModelForCausalLM
     from trl import GRPOConfig, GRPOTrainer
 
     dataset = build_grpo_dataset(tasks_dir, task_ids)
@@ -654,15 +678,18 @@ def train_grpo(
         model=model,
         tasks_dir=tasks_dir,
         jobs_dir=jobs_dir,
-        resume=resume,
     )
     vllm_server_base_url = _required_environment(
         config.grpo.vllm_server_base_url_env,
         label="TRL vLLM server endpoint",
     )
     processing_class = _load_tokenizer(config, model)
+    generation_batch_size = (
+        config.grpo.generation_batch_size
+        or config.runtime.num_generations * config.harness.concurrency
+    )
     values = {
-        "output_dir": str(output_dir),
+        "output_dir": str(adapter_dir),
         "run_name": run_name,
         "bf16": True,
         "report_to": (
@@ -672,7 +699,7 @@ def train_grpo(
         ),
         "remove_unused_columns": False,
         "max_completion_length": config.runtime.max_completion_length,
-        "log_completions": True,
+        "log_completions": config.grpo.log_completions,
         "use_vllm": True,
         "vllm_mode": "server",
         "vllm_server_base_url": vllm_server_base_url,
@@ -680,13 +707,17 @@ def train_grpo(
         "logging_steps": 1,
         "per_device_train_batch_size": 1,
         "gradient_accumulation_steps": config.grpo.gradient_accumulation_steps,
-        "generation_batch_size": config.runtime.num_generations,
+        "gradient_checkpointing": config.grpo.gradient_checkpointing,
+        "generation_batch_size": generation_batch_size,
         "learning_rate": config.grpo.learning_rate,
-        "max_steps": config.grpo.max_steps,
         "save_strategy": "no",
         "num_generations": config.runtime.num_generations,
         "model_init_kwargs": _model_init_kwargs(config, model),
     }
+    if config.grpo.max_steps is None:
+        values["num_train_epochs"] = config.grpo.num_train_epochs
+    else:
+        values["max_steps"] = config.grpo.max_steps
     trainer = GRPOTrainer(
         model=model,
         args=GRPOConfig(**supported_kwargs(GRPOConfig, values)),
@@ -694,21 +725,50 @@ def train_grpo(
         reward_funcs=[verifier_reward],
         rollout_func=collector,
         processing_class=processing_class,
+        peft_config=LoraConfig(
+            r=config.grpo.lora_r,
+            lora_alpha=config.grpo.lora_alpha,
+            lora_dropout=config.grpo.lora_dropout,
+            bias="none",
+            task_type="CAUSAL_LM",
+            target_modules="all-linear",
+        ),
     )
     try:
         result = trainer.train()
     finally:
-        _close_weight_communicator(
-            getattr(trainer, "vllm_generation", None)
-        )
-    import torch
-
-    trained_model = trainer.model
-    if trained_model is None:
-        raise RuntimeError("TRL GRPOTrainer returned no trained model")
-    trained_model.to(dtype=torch.bfloat16)
-    trainer.save_model(str(output_dir))
+        _close_weight_communicator(getattr(trainer, "vllm_generation", None))
+    adapter_dir.mkdir(parents=True, exist_ok=True)
+    trainer.save_model(str(adapter_dir))
     processing_class = getattr(trainer, "processing_class", None)
+    if processing_class is not None:
+        processing_class.save_pretrained(str(adapter_dir))
+    write_json(
+        adapter_dir / "adapter_dependency.json",
+        {
+            "schema_version": 1,
+            "stage": "grpo",
+            "base_checkpoint": model,
+            "published_base_sibling": "../sft-merged",
+            "original_base_model": config.model,
+            "original_base_revision": config.model_revision,
+        },
+    )
+    del trainer
+    gc.collect()
+    try:
+        import torch
+
+        torch.cuda.empty_cache()
+    except ImportError:
+        pass
+    base = AutoModelForCausalLM.from_pretrained(
+        model,
+        **_model_init_kwargs(config, model),
+    )
+    merged = PeftModel.from_pretrained(base, str(adapter_dir)).merge_and_unload()
+    output_dir.mkdir(parents=True, exist_ok=True)
+    merged.save_pretrained(str(output_dir), safe_serialization=True)
     if processing_class is not None:
         processing_class.save_pretrained(str(output_dir))
     payload = {
@@ -716,8 +776,17 @@ def train_grpo(
         "harness": config.harness.agent,
         "model": model,
         "task_ids": task_ids,
+        "num_train_epochs": (
+            config.grpo.num_train_epochs if config.grpo.max_steps is None else None
+        ),
+        "max_steps": config.grpo.max_steps,
+        "generation_batch_size": generation_batch_size,
+        "quantization": None,
         "metrics": result.metrics,
         "jobs_dir": str(jobs_dir),
+        "adapter_dir": str(adapter_dir),
+        "merged_model_dir": str(output_dir),
+        "resume_policy": "restart-stage",
         "rollout_count": len(collector.records),
         "rollouts": collector.records,
         "rollout_contract": {

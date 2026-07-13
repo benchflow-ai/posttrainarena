@@ -4,11 +4,12 @@ from __future__ import annotations
 
 import tomllib
 from dataclasses import dataclass, field
+from math import isfinite
 from pathlib import Path
 from typing import Any, Literal
 
 
-BENCHFLOW_COMMIT = "93e58a2bd730a8ff3ca5aff5247aec845a370d1c"
+BENCHFLOW_COMMIT = "cbc295464e62aa39f84e0daa675aa939c0e72f00"
 GrpoRunPolicy = Literal["on_reward", "always"]
 HarnessSkillMode = Literal["no-skill", "with-skill"]
 UsageTrackingPolicy = Literal["required"]
@@ -34,6 +35,26 @@ def _is_positive_int(value: object) -> bool:
     return isinstance(value, int) and not isinstance(value, bool) and value >= 1
 
 
+def _is_positive_number(value: object) -> bool:
+    return (
+        isinstance(value, int | float)
+        and not isinstance(value, bool)
+        and isfinite(float(value))
+        and float(value) > 0
+    )
+
+
+def _tuple_field(
+    table: dict[str, Any],
+    name: str,
+    default: tuple[str, ...],
+) -> tuple[Any, ...]:
+    value = table.get(name, default)
+    if not isinstance(value, list | tuple):
+        raise ValueError(f"harness.{name} must be a TOML array")
+    return tuple(value)
+
+
 @dataclass(frozen=True)
 class DatasetConfig:
     repo_id: str
@@ -55,6 +76,8 @@ class HarnessConfig:
     agent: str = "opencode"
     skill_mode: HarnessSkillMode = "no-skill"
     usage_tracking: UsageTrackingPolicy = "required"
+    external_directory_allow: tuple[str, ...] = ("/home/user/input/**",)
+    deny_bash_patterns: tuple[str, ...] = ("*<<*",)
     concurrency: int = 1
     sandbox_setup_timeout_sec: int = 300
     agent_idle_timeout_sec: int = 300
@@ -75,8 +98,11 @@ class EvaluationConfig:
 class TeacherConfig:
     enabled: bool = True
     model: str = "glm/glm-5.1"
+    source_model: str | None = None
+    source_revision: str | None = None
     max_attempts: int = 3
     min_verified: int = 1
+    require_all_tasks: bool = True
     min_reward: float = 1.0
     max_accepted_total_tokens: int = 200000
     max_accepted_tool_calls: int = 50
@@ -85,12 +111,15 @@ class TeacherConfig:
 @dataclass(frozen=True)
 class SftConfig:
     enabled: bool = True
-    max_steps: int = 40
+    num_train_epochs: float = 1.0
+    max_steps: int | None = None
     learning_rate: float = 2e-5
     max_length: int = 4096
     gradient_accumulation_steps: int = 8
+    gradient_checkpointing: bool = True
     lora_r: int = 16
     lora_alpha: int = 32
+    lora_dropout: float = 0.05
 
 
 @dataclass(frozen=True)
@@ -99,9 +128,16 @@ class GrpoConfig:
     run_policy: GrpoRunPolicy = "on_reward"
     threshold: float = 0.05
     gate_task_count: int = 4
-    max_steps: int = 5
+    num_train_epochs: float = 1.0
+    max_steps: int | None = None
     learning_rate: float = 1e-6
     gradient_accumulation_steps: int = 8
+    gradient_checkpointing: bool = True
+    lora_r: int = 16
+    lora_alpha: int = 32
+    lora_dropout: float = 0.05
+    log_completions: bool = False
+    generation_batch_size: int | None = None
     rollout_attempts: int = 2
     vllm_server_base_url_env: str = "TRL_VLLM_SERVER_BASE_URL"
 
@@ -140,6 +176,26 @@ class PipelineConfig:
             errors.append("harness.skill_mode must be no-skill or with-skill")
         if self.harness.usage_tracking != "required":
             errors.append("harness.usage_tracking must be required")
+        if (
+            not isinstance(self.harness.external_directory_allow, tuple)
+            or not self.harness.external_directory_allow
+            or any(
+                not isinstance(path, str) or not path.startswith("/")
+                for path in self.harness.external_directory_allow
+            )
+        ):
+            errors.append(
+                "harness.external_directory_allow must contain absolute paths"
+            )
+        if (
+            not isinstance(self.harness.deny_bash_patterns, tuple)
+            or not self.harness.deny_bash_patterns
+            or any(
+                not isinstance(pattern, str) or not pattern
+                for pattern in self.harness.deny_bash_patterns
+            )
+        ):
+            errors.append("harness.deny_bash_patterns must contain strings")
         if not _is_positive_int(self.harness.concurrency):
             errors.append("harness.concurrency must be positive")
         if not _is_positive_int(self.harness.sandbox_setup_timeout_sec):
@@ -174,8 +230,37 @@ class PipelineConfig:
             errors.append("grpo.run_policy must be on_reward or always")
         if self.grpo.gate_task_count < 1:
             errors.append("grpo.gate_task_count must be positive")
-        if self.grpo.max_steps < 1:
+        if self.grpo.max_steps is not None and not _is_positive_int(
+            self.grpo.max_steps
+        ):
             errors.append("grpo.max_steps must be positive")
+        if not _is_positive_number(self.grpo.num_train_epochs):
+            errors.append("grpo.num_train_epochs must be positive")
+        if not _is_positive_int(self.grpo.gradient_accumulation_steps):
+            errors.append("grpo.gradient_accumulation_steps must be positive")
+        if not isinstance(self.grpo.gradient_checkpointing, bool):
+            errors.append("grpo.gradient_checkpointing must be boolean")
+        if not _is_positive_int(self.grpo.lora_r):
+            errors.append("grpo.lora_r must be positive")
+        if not _is_positive_int(self.grpo.lora_alpha):
+            errors.append("grpo.lora_alpha must be positive")
+        if (
+            not isinstance(self.grpo.lora_dropout, int | float)
+            or isinstance(self.grpo.lora_dropout, bool)
+            or not isfinite(float(self.grpo.lora_dropout))
+            or not 0 <= float(self.grpo.lora_dropout) < 1
+        ):
+            errors.append("grpo.lora_dropout must be between 0 and 1")
+        if not isinstance(self.grpo.log_completions, bool):
+            errors.append("grpo.log_completions must be boolean")
+        if self.grpo.generation_batch_size is not None and (
+            not _is_positive_int(self.grpo.generation_batch_size)
+            or self.grpo.generation_batch_size % self.runtime.num_generations != 0
+        ):
+            errors.append(
+                "grpo.generation_batch_size must be positive and divisible by "
+                "runtime.num_generations"
+            )
         if not _is_positive_int(self.grpo.rollout_attempts):
             errors.append("grpo.rollout_attempts must be positive")
         if (
@@ -193,6 +278,29 @@ class PipelineConfig:
             or "/" not in self.teacher.model
         ):
             errors.append("teacher.model must use provider/model format")
+        if self.teacher.source_model is not None:
+            if (
+                not isinstance(self.teacher.source_model, str)
+                or "/" not in self.teacher.source_model
+            ):
+                errors.append("teacher.source_model must use org/model format")
+            elif self.teacher.model.rsplit("/", 1)[-1].lower() != (
+                self.teacher.source_model.rsplit("/", 1)[-1].lower()
+            ):
+                errors.append("teacher.model must match teacher.source_model")
+            if (
+                not isinstance(self.teacher.source_revision, str)
+                or len(self.teacher.source_revision) != 40
+                or any(
+                    character not in "0123456789abcdef"
+                    for character in self.teacher.source_revision.lower()
+                )
+            ):
+                errors.append("teacher.source_revision must be a 40-character SHA")
+        elif self.teacher.source_revision is not None:
+            errors.append("teacher.source_revision requires teacher.source_model")
+        if not isinstance(self.teacher.require_all_tasks, bool):
+            errors.append("teacher.require_all_tasks must be boolean")
         if (
             not isinstance(self.teacher.min_reward, int | float)
             or isinstance(self.teacher.min_reward, bool)
@@ -203,8 +311,25 @@ class PipelineConfig:
             errors.append("teacher.max_accepted_total_tokens must be positive")
         if not _is_positive_int(self.teacher.max_accepted_tool_calls):
             errors.append("teacher.max_accepted_tool_calls must be positive")
-        if self.sft.max_steps < 1:
+        if self.sft.max_steps is not None and not _is_positive_int(self.sft.max_steps):
             errors.append("sft.max_steps must be positive")
+        if not _is_positive_number(self.sft.num_train_epochs):
+            errors.append("sft.num_train_epochs must be positive")
+        if not _is_positive_int(self.sft.gradient_accumulation_steps):
+            errors.append("sft.gradient_accumulation_steps must be positive")
+        if not isinstance(self.sft.gradient_checkpointing, bool):
+            errors.append("sft.gradient_checkpointing must be boolean")
+        if not _is_positive_int(self.sft.lora_r):
+            errors.append("sft.lora_r must be positive")
+        if not _is_positive_int(self.sft.lora_alpha):
+            errors.append("sft.lora_alpha must be positive")
+        if (
+            not isinstance(self.sft.lora_dropout, int | float)
+            or isinstance(self.sft.lora_dropout, bool)
+            or not isfinite(float(self.sft.lora_dropout))
+            or not 0 <= float(self.sft.lora_dropout) < 1
+        ):
+            errors.append("sft.lora_dropout must be between 0 and 1")
         for label, path in (
             ("train_dataset.task_list", self.train_dataset.task_list),
             ("eval_dataset.task_list", self.eval_dataset.task_list),
@@ -249,7 +374,21 @@ def load_config(path: str | Path) -> PipelineConfig:
             path=str(eval_data.get("path", "tasks")),
         ),
         runtime=RuntimeConfig(**runtime),
-        harness=HarnessConfig(**harness),
+        harness=HarnessConfig(
+            **{
+                **harness,
+                "external_directory_allow": _tuple_field(
+                    harness,
+                    "external_directory_allow",
+                    HarnessConfig().external_directory_allow,
+                ),
+                "deny_bash_patterns": _tuple_field(
+                    harness,
+                    "deny_bash_patterns",
+                    HarnessConfig().deny_bash_patterns,
+                ),
+            }
+        ),
         evaluation=EvaluationConfig(**evaluation),
         teacher=TeacherConfig(**teacher),
         sft=SftConfig(**sft),

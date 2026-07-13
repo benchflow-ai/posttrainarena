@@ -17,11 +17,10 @@ git -C "$WORK_ROOT" fetch origin "$REPO_REF"
 git -C "$WORK_ROOT" checkout --detach FETCH_HEAD
 
 uv venv "$WORK_ROOT/.venv" --python 3.12
+export UV_TORCH_BACKEND="${UV_TORCH_BACKEND:-auto}"
 uv pip install --python "$WORK_ROOT/.venv/bin/python" \
+  --torch-backend "$UV_TORCH_BACKEND" \
   -e "$WORK_ROOT/pipelines/benchflow-task-posttrain[train]"
-uv pip install --python "$WORK_ROOT/.venv/bin/python" \
-  --index https://download.pytorch.org/whl/cu128 \
-  "torch==2.9.1+cu128"
 
 "$WORK_ROOT/.venv/bin/python" - <<'PY'
 import torch

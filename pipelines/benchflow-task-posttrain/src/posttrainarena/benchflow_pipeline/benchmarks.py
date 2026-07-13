@@ -10,6 +10,7 @@ from typing import Any
 
 from .config import load_config
 from .io import CommandRunner, load_json, read_task_ids, write_json
+from .layout import RunLayout
 
 
 SAFE_NAME = re.compile(r"^[a-z0-9][a-z0-9-]*$")
@@ -92,11 +93,12 @@ def run_benchmark_matrix(
     if not score_path.is_file() and not dry_run:
         raise FileNotFoundError(f"Run score not found: {score_path}")
     score = load_json(score_path) if score_path.is_file() else {}
-    final_model = str(score.get("final_model") or run_dir / "checkpoints" / "grpo")
+    final_model = str(score.get("final_model") or RunLayout(run_dir).grpo_merged)
     runner = CommandRunner(cwd=config.source.parent, dry_run=dry_run)
     results: list[dict[str, Any]] = []
     from .opencode import evaluate
 
+    prepared: list[tuple[BenchmarkSuite, list[str], Path, Path, Path]] = []
     for suite in suites:
         task_ids = read_task_ids(suite.task_list)
         if not task_ids:
@@ -108,6 +110,20 @@ def run_benchmark_matrix(
         )
         jobs_root = run_dir / "jobs" / "benchmarks" / suite.name
         results_root = run_dir / "results" / "benchmarks" / suite.name
+        prepared.append((suite, task_ids, tasks_dir, jobs_root, results_root))
+
+    base_sync: dict[str, Any] | None = None
+    final_sync: dict[str, Any] | None = None
+    if not dry_run:
+        from .grpo import sync_checkpoint_to_vllm, sync_reference_to_vllm
+
+        base_sync = sync_reference_to_vllm(
+            config=config,
+            reference=config.model,
+        )
+
+    baselines: dict[str, dict[str, Any]] = {}
+    for suite, task_ids, tasks_dir, jobs_root, results_root in prepared:
         baseline = evaluate(
             config=config,
             runner=runner,
@@ -118,6 +134,22 @@ def run_benchmark_matrix(
             jobs_dir=jobs_root / "baseline",
             metrics_path=results_root / "baseline.json",
         )
+        baselines[suite.name] = baseline
+
+    if not dry_run:
+        if final_model == config.model:
+            final_sync = sync_reference_to_vllm(
+                config=config,
+                reference=config.model,
+            )
+        else:
+            final_sync = sync_checkpoint_to_vllm(
+                config=config,
+                checkpoint=Path(final_model),
+            )
+
+    for suite, task_ids, tasks_dir, jobs_root, results_root in prepared:
+        baseline = baselines[suite.name]
         final = evaluate(
             config=config,
             runner=runner,
@@ -177,6 +209,10 @@ def run_benchmark_matrix(
         "run_name": run_dir.name,
         "base_model": config.model,
         "final_model": final_model,
+        "weight_sync": {
+            "baseline": base_sync,
+            "final": final_sync,
+        },
         "benchmark_count": len(results),
         "macro_delta_score": macro_delta,
         "benchmarks": results,

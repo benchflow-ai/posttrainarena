@@ -8,6 +8,7 @@ from typing import Any
 
 from .config import PipelineConfig
 from .io import CommandRunner, write_json
+from .opencode import opencode_config_env
 
 
 def build_teacher_command(
@@ -59,6 +60,8 @@ def build_teacher_command(
         str(health_path),
         "--jobs-dir",
         str(jobs_dir),
+        "--agent-env",
+        opencode_config_env(config),
     ]
     if config.runtime.sandbox_user is not None:
         command.extend(["--sandbox-user", config.runtime.sandbox_user])
@@ -194,7 +197,6 @@ def _select_verified(
 
     health = build_health_summary(jobs_dir)
     attempts: list[dict[str, Any]] = []
-    grouped: dict[str, list[dict[str, Any]]] = {}
     for row in health["rows"]:
         rollout_dir = Path(str(row.get("rollout_dir") or ""))
         reward = row.get("reward")
@@ -231,7 +233,16 @@ def _select_verified(
             "eligible": eligible,
         }
         attempts.append(enriched)
-        grouped.setdefault(str(row.get("task_id")), []).append(enriched)
+    return attempts, _select_from_attempts(attempts, task_ids)
+
+
+def _select_from_attempts(
+    attempts: list[dict[str, Any]],
+    task_ids: list[str],
+) -> list[dict[str, Any]]:
+    grouped: dict[str, list[dict[str, Any]]] = {}
+    for row in attempts:
+        grouped.setdefault(str(row.get("task_id")), []).append(row)
     selected = []
     for task_id in task_ids:
         candidates = [row for row in grouped.get(task_id, []) if row["eligible"]]
@@ -251,7 +262,7 @@ def _select_verified(
                 "selection_reason": "reward-then-tool-calls-then-trajectory-length",
             }
         )
-    return attempts, selected
+    return selected
 
 
 def collect_verified_teacher_rollouts(
@@ -265,6 +276,8 @@ def collect_verified_teacher_rollouts(
     selection_path: Path,
 ) -> dict[str, Any]:
     remaining = list(task_ids)
+    attempts_so_far: list[dict[str, Any]] = []
+    selected_so_far: list[dict[str, Any]] = []
     for attempt in range(1, config.teacher.max_attempts + 1):
         attempt_name = f"attempt-{attempt:02d}"
         attempt_jobs = jobs_dir / attempt_name
@@ -298,11 +311,13 @@ def collect_verified_teacher_rollouts(
             )
         if runner.dry_run:
             continue
-        attempts_so_far, selected_so_far = _select_verified(
+        new_attempts, _ = _select_verified(
             config=config,
-            jobs_dir=jobs_dir,
-            task_ids=task_ids,
+            jobs_dir=attempt_jobs,
+            task_ids=remaining,
         )
+        attempts_so_far.extend(new_attempts)
+        selected_so_far = _select_from_attempts(attempts_so_far, task_ids)
         selected_task_ids = {str(row["task_id"]) for row in selected_so_far}
         over_budget_task_ids = {
             str(row["task_id"])
@@ -324,17 +339,23 @@ def collect_verified_teacher_rollouts(
     if runner.dry_run:
         return {
             "teacher_model": config.teacher.model,
+            "teacher_source_model": config.teacher.source_model,
+            "teacher_source_revision": config.teacher.source_revision,
+            "teacher_source_identity_enforced": False,
             "requested_task_count": len(task_ids),
+            "required_verified_count": (
+                len(task_ids)
+                if config.teacher.require_all_tasks
+                else config.teacher.min_verified
+            ),
             "verified_count": None,
             "attempts": [],
             "verified": [],
         }
-    attempts, verified = _select_verified(
-        config=config,
-        jobs_dir=jobs_dir,
-        task_ids=task_ids,
-    )
+    attempts = attempts_so_far
+    verified = _select_from_attempts(attempts, task_ids)
     selected_dirs = {str(row.get("rollout_dir")) for row in verified}
+    requested_task_ids = set(task_ids)
     selection = {
         "schema_version": 1,
         "job_dir": str(jobs_dir),
@@ -343,17 +364,25 @@ def collect_verified_teacher_rollouts(
         "selected": verified,
         "rejected": [
             row
-            for task_id in task_ids
             for row in attempts
-            if row.get("task_id") == task_id
+            if row.get("task_id") in requested_task_ids
             and str(row.get("rollout_dir")) not in selected_dirs
         ],
     }
     write_json(selection_path, selection)
     manifest = {
         "teacher_model": config.teacher.model,
+        "teacher_source_model": config.teacher.source_model,
+        "teacher_source_revision": config.teacher.source_revision,
+        "teacher_source_identity_enforced": False,
         "harness": config.harness.agent,
         "requested_task_count": len(task_ids),
+        "required_verified_count": (
+            len(task_ids)
+            if config.teacher.require_all_tasks
+            else config.teacher.min_verified
+        ),
+        "require_all_tasks": config.teacher.require_all_tasks,
         "verified_count": len(verified),
         "min_reward": config.teacher.min_reward,
         "attempts": attempts,
@@ -361,9 +390,13 @@ def collect_verified_teacher_rollouts(
         "selection_path": str(selection_path),
     }
     write_json(manifest_path, manifest)
-    if len(verified) < config.teacher.min_verified:
+    required_verified = (
+        len(task_ids)
+        if config.teacher.require_all_tasks
+        else config.teacher.min_verified
+    )
+    if len(verified) < required_verified:
         raise RuntimeError(
-            f"Only {len(verified)} verified trajectories; "
-            f"required {config.teacher.min_verified}"
+            f"Only {len(verified)} verified trajectories; required {required_verified}"
         )
     return manifest
