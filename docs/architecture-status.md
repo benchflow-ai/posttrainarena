@@ -12,32 +12,32 @@ holding the model recipe and held-out evaluation suite fixed:
 ```text
 team task corpus
     -> organizer validation and verifier audit
-    -> fixed SFT and optional RL recipe
+    -> fixed SFT and GRPO recipe
     -> trained team checkpoint
     -> sealed held-out evaluation
     -> lift over a fixed reference checkpoint
 ```
 
-The competition proposal currently describes a Qwen3-8B organizer recipe and a
-private BenchFlow Signals evaluation suite. Those are draft competition rules,
-not frozen implementation details.
+The organizer implementation now targets Qwen3.5-9B with a private BenchFlow
+Signals evaluation suite. The competition rules and final compute budget remain
+draft until the Qwen3.5 recipe is validated at scale.
 
 ## Current public implementation
 
-The supported executable reference is the Qwen3-4B pipeline under
+The supported executable reference is the Qwen3.5-9B pipeline under
 [`pipelines/benchflow-task-posttrain/`](../pipelines/benchflow-task-posttrain):
 
 ```text
 PostTrain task lists and pinned HF snapshots
     -> BenchFlow task loading and sandbox lifecycle
     -> OpenCode teacher rollouts through BenchFlow
-    -> verifier-approved, training-ready teacher trajectories
-    -> TRL LoRA SFT and merged checkpoint
+    -> one verifier-approved Qwen3.5-397B-A17B trajectory per training task
+    -> one-epoch TRL LoRA SFT, adapter, and merged checkpoint
     -> OpenCode training-task reward gate through BenchFlow
     -> TRL GRPOTrainer custom rollout_func
     -> OpenCode rollouts through BenchFlow and current student endpoint
     -> token IDs, sampled logprobs, action mask, and verifier reward
-    -> policy update and vLLM endpoint resynchronization
+    -> LoRA policy update, adapter/merged export, and vLLM resynchronization
     -> OpenCode held-out evaluation and paired lift report
 ```
 
@@ -55,9 +55,10 @@ The final machine-readable contract is:
 runs/<run-name>/reports/score.json
 ```
 
-The checked-in smoke validates this orchestration and its zero-reward skip
-path. It measured `0.0 -> 0.0`, so it is not evidence of model-quality lift or
-competition-scale readiness.
+The full checked-in recipe covers all 2,238 public training tasks and all 366
+held-out public evaluation tasks. Historical Qwen3-4B smokes validate the
+orchestration, but measured `0.0 -> 0.0`; Qwen3.5 model-quality lift and
+competition-scale readiness remain unproven.
 
 ## Ownership boundaries
 
@@ -79,8 +80,8 @@ competition-scale readiness.
 | Docker runtime | Implemented | Local author harness and BenchFlow runtime option |
 | Daytona runtime | Implemented in pipeline | BenchFlow runtime option; credentials required for real execution |
 | TRL SFT | Implemented | BenchFlow `trl-sft` prompt/completion/tools conversion, tokenizer-aware message windows, completion-only and assistant-only LoRA loss, and merged checkpoint path |
-| TRL GRPO | Implemented | Reward-gated by default; custom OpenCode rollout function returns token IDs, sampled logprobs, action mask, and BenchFlow verifier reward |
-| OpenCode teacher collection | Implemented | Provider-qualified teacher model, required usage tracking, adaptive retries, and one training-ready rollout selected per task |
+| TRL GRPO | Implemented | Qwen3.5 full recipe always runs one epoch over all training tasks; the custom OpenCode rollout function returns token IDs, sampled logprobs, action mask, and BenchFlow verifier reward; optimization is LoRA without quantization |
+| OpenCode teacher collection | Implemented | Provider-qualified Qwen3.5-397B-A17B teacher, required usage tracking, adaptive retries, and fail-closed one-training-ready-rollout-per-task coverage |
 | OpenCode evaluation | Implemented | Baseline, post-SFT, training gate, final, and multi-benchmark evaluation all use `bench eval run --agent opencode`; the real SkillsBench + Daytona canary passed with complete telemetry and healthy trajectories |
 | OpenCode GRPO | Implemented and live GPU validated | TRL custom rollout function invokes OpenCode/BenchFlow, reconstructs masked causal token sequences, consumes provider logprobs, forwards verifier reward, and resynchronizes the vLLM endpoint; the SkillsBench + Daytona smoke completed two rollouts and one optimizer step |
 | Harbor | Not a dependency | No Harbor adapter or trajectory translation is used |
@@ -88,11 +89,11 @@ competition-scale readiness.
 | OpenEnv/BenchFlow Docker parity | Manually validated | Checked-in security task produced identical output and reward `1.0` through both integrations; CI uses a no-spend fake BenchFlow boundary |
 | Native dataset OpenEnv pipeline | Prior end-to-end smoke validated | One train and one held-out native `task.md` package completed the earlier OpenEnv/TRL eval path; rerun the current OpenCode-eval path after a student endpoint is configured |
 | Submission-to-recipe bridge | Implemented | Environment entries become pinned Hub datasets and portable recipes |
-| HF Jobs execution | Implemented; scheduler credit blocked | UV job bundle and exact H100 runner validated; HF API allocation currently returns HTTP 402 until Jobs credits are granted |
+| HF Jobs execution | Canary handoff implemented; scheduler credit blocked | UV job bundle and historical H100 runner validated; the Docker-based Qwen3.5 full recipe currently targets a persistent native Linux GPU host |
 | Hub artifact publishing | Implemented | Run reports, checkpoint provenance, logs, and failures publish to Hub datasets/models |
 | Continuous leaderboard | Implemented | Atomic dataset records plus a deployable Gradio Space |
 | Multi-benchmark evaluation | Implemented | One base/final checkpoint pair is evaluated across pinned suites with macro delta |
-| Final Qwen3-8B competition recipe | Draft | Current reproducible reference pins Qwen3-4B |
+| Qwen3.5-9B competition recipe | Implemented; live validation pending | Immutable base/data revisions, declared Qwen3.5-397B teacher provenance, all-task teacher coverage, one-epoch LoRA SFT, and one-epoch LoRA GRPO are checked in |
 | Demonstrated model-quality lift | Not yet | Reproduced smoke measured zero lift |
 
 The OpenCode evaluation evidence is recorded in

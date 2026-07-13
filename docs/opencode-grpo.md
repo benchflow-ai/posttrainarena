@@ -25,12 +25,12 @@ different physical CUDA devices. On a two-GPU host, a minimal split is:
 
 ```bash
 CUDA_VISIBLE_DEVICES=1 trl vllm-serve \
-  --model Qwen/Qwen3-4B \
+  --model Qwen/Qwen3.5-9B \
   --host 127.0.0.1 \
   --port 8000
 
 CUDA_VISIBLE_DEVICES=0 posttrainarena-train run \
-  --config configs/qwen3-4b-data-agent-smoke.toml
+  --config configs/qwen3.5-9b-data-agent-canary.toml
 ```
 
 Using one GPU for both roles is unsupported by TRL's weight communicator. The
@@ -39,7 +39,7 @@ operator starts the bridge separately with:
 ```bash
 posttrainarena-train model-bridge \
   --upstream-url http://127.0.0.1:8000 \
-  --tokenizer Qwen/Qwen3-4B \
+  --tokenizer Qwen/Qwen3.5-9B \
   --tokenizer-revision <immutable-sha> \
   --max-tokens 4096 \
   --port 8001
@@ -76,8 +76,9 @@ the chat-completions endpoint and preserves them in
 `trajectory/llm_trajectory.jsonl`.
 
 The executable pipeline pins BenchFlow
-`93e58a2bd730a8ff3ca5aff5247aec845a370d1c`, which includes both sampled-token
-logprob capture and the native TRL SFT converter.
+`cbc295464e62aa39f84e0daa675aa939c0e72f00`, which includes sampled-token
+logprob capture, the native TRL SFT converter, and Qwen3.5 generation-prefix
+validation.
 
 The rollout parser reconstructs one causal sequence across all model turns.
 Model-generated tokens receive action mask `1`; tool results, environment

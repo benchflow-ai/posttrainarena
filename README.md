@@ -9,7 +9,7 @@ The open arena for post-training: contribute agentic RL environments, then measu
 **[Website](https://posttrain.com)** · **[Authoring spec](https://posttrain.com/docs/spec)** · **[Training pipeline](./docs/training-pipeline.md)** · **[Architecture status](./docs/architecture-status.md)** · **[Contributing](./CONTRIBUTING.md)** · **[Discord](https://discord.gg/mZ9Rc8q8W3)**
 
 > [!IMPORTANT]
-> PostTrain Arena is a proposed NeurIPS 2026 competition. The competition rules and final Qwen3-8B organizer recipe remain draft. The public Qwen3-4B reference pipeline is executable and end-to-end smoke validated, but it has not yet demonstrated model-quality lift.
+> PostTrain Arena is a proposed NeurIPS 2026 competition. The checked-in organizer recipe now targets `Qwen/Qwen3.5-9B`, uses `Qwen/Qwen3.5-397B-A17B` teacher rollouts, and runs one-epoch LoRA SFT followed by LoRA GRPO. The older Qwen3-4B path has end-to-end execution evidence; the Qwen3.5 recipe has not yet demonstrated model-quality lift.
 
 ## How it works
 
@@ -38,19 +38,19 @@ The headline track rewards environments that teach capabilities which transfer b
 
 ## Public implementation status
 
-The checked-in implementation is intentionally smaller than the draft competition recipe, but it exercises the same task-list-in, score-out contract.
+The checked-in implementation now includes the full public-data organizer recipe plus a 1x1 canary; live Qwen3.5 validation and the sealed competition eval remain pending.
 
 | Surface | Current public status |
 | --- | --- |
 | Participant task format and local validation | **Implemented** — eight worked examples, structural checks, Docker oracle replay, and empty-trial rejection |
-| BenchFlow task-list training and evaluation | **Implemented** — pinned snapshots, verified teacher collection, LoRA SFT, reward-gated or forced GRPO, held-out evaluation, and score reports |
+| BenchFlow task-list training and evaluation | **Implemented** — pinned snapshots, one verified teacher rollout per training task, one-epoch LoRA SFT, LoRA GRPO over the training set, held-out evaluation, and score reports |
 | OpenCode agent harness | **Implemented end to end** — teacher collection, baseline/gate/final eval, benchmark matrices, and TRL custom GRPO rollouts use OpenCode; TRL synchronizes the current policy to the shared vLLM endpoint |
 | Public data | **Available** — [2,238 training tasks](https://huggingface.co/datasets/benchflow/data_agent_rl_environment_train) and [366 held-out evaluation tasks](https://huggingface.co/datasets/benchflow/data_agent_rl_environment_eval) in native `task.md` format |
 | OpenEnv protocol path | **Implemented** — served adapter, typed client, lifecycle tests, Docker parity validation, and a native-dataset end-to-end smoke |
 | HF Jobs execution | **Implemented** — portable UV job bundles, pinned code refs, named-secret boundaries, status inspection, and Hub publishing; live scheduler allocation currently awaits HF credits |
 | Continuous leaderboard | **Implemented** — atomic Hub dataset records and a deployable Gradio Space |
 | Multi-benchmark evaluation | **Implemented** — one base/final checkpoint pair can be scored across pinned Data Agent and SkillsBench suites |
-| Final Qwen3-8B competition recipe | **Draft** — the reproducible public reference currently pins Qwen3-4B |
+| Qwen3.5-9B organizer recipe | **Implemented, validation pending** — full 2,238-train/366-eval config is checked in; real quality lift is not yet proven |
 | Demonstrated model-quality lift | **Not yet** — completed smokes validated system mechanics, not learning gains |
 
 > [!NOTE]
@@ -101,6 +101,7 @@ See [CONTRIBUTING.md](./CONTRIBUTING.md) for the submission workflow, validation
 - [Training pipeline operator guide](./docs/training-pipeline.md)
 - [OpenCode GRPO rollout contract](./docs/opencode-grpo.md)
 - [OpenCode SFT-to-GRPO smoke](./docs/opencode-grpo-smoke.md)
+- [Qwen3.5 OpenCode teacher canary](./docs/qwen35-opencode-teacher-canary.md)
 - [OpenCode evaluation canary](./docs/opencode-evaluation-canary.md)
 - [Hugging Face Jobs and leaderboard handoff](./docs/hf-jobs.md)
 - [HF handoff validation report](./docs/hf-jobs-validation.md)

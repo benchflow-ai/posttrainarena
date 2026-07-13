@@ -1,7 +1,7 @@
 # BenchFlow Task-List Post-Training Pipeline
 
-This is the public, reproducible training path for running SFT and optional
-GRPO over BenchFlow-compatible task suites. OpenCode drives teacher collection,
+This is the public, reproducible training path for running SFT and GRPO over
+BenchFlow-compatible task suites. OpenCode drives teacher collection,
 evaluation, and GRPO rollouts. TRL owns optimization and synchronizes the
 current policy to the shared vLLM endpoint.
 
@@ -18,7 +18,7 @@ training task list + held-out eval task list + TOML recipe
     -> verifier-approved teacher trajectories
     -> native TRL prompt/completion/tools SFT
     -> post-SFT reward gate
-    -> optional GRPO
+    -> LoRA GRPO over the training set
     -> held-out score and paired lift report
 ```
 
@@ -41,7 +41,7 @@ benchflow-task-posttrain/
   src/.../pipeline.py      resumable stage orchestration
   src/.../teacher.py       verified OpenCode teacher rollouts
   src/.../opencode.py      OpenCode baseline/gate/final evaluation
-  src/.../grpo.py          OpenCode custom rollouts for TRL GRPO
+  src/.../grpo.py          OpenCode custom rollouts for TRL LoRA GRPO
   src/.../sft.py           TRL completion-only/assistant-only LoRA SFT
   src/.../openenv/         OpenEnv client/server protocol adapter
   tests/                   no-spend contract tests
@@ -64,30 +64,32 @@ uv pip install --python .venv/bin/python -e '.[train,test]'
 source .venv/bin/activate
 ```
 
-Validate and inspect the recipe without credentials or GPU spend:
+Validate and inspect the Qwen3.5 canary without credentials or GPU spend:
 
 ```bash
 posttrainarena-train validate \
-  --config configs/qwen3-4b-data-agent-smoke.toml
+  --config configs/qwen3.5-9b-data-agent-canary.toml
 
 posttrainarena-train plan \
-  --config configs/qwen3-4b-data-agent-smoke.toml \
+  --config configs/qwen3.5-9b-data-agent-canary.toml \
   --run-name local-review
 
 posttrainarena-train run \
-  --config configs/qwen3-4b-data-agent-smoke.toml \
+  --config configs/qwen3.5-9b-data-agent-canary.toml \
   --run-name local-review \
   --dry-run
 ```
 
-For a GPU host, `scripts/bootstrap_gpu.sh` installs this package and its pinned
-BenchFlow dependency into an isolated virtual environment. The script pins the
-CUDA 12.8 Torch wheel and fails immediately if the GPU is unavailable.
+`configs/qwen3.5-9b-data-agent-full.toml` is the organizer recipe. It selects
+all 2,238 public training tasks and all 366 public held-out tasks, requires one
+verified trajectory per training task, performs one SFT epoch, and always runs
+one GRPO epoch. The canary uses the same models and harness on a 1x1 task split.
 
-Use `configs/qwen3-4b-data-agent-forced-grpo-smoke.toml` to force the GRPO
-plumbing path. It sets `grpo.run_policy = "always"` so a
-zero-reward GRPO run can validate plumbing; production recipes should normally
-retain `run_policy = "on_reward"`.
+For a GPU host, `scripts/bootstrap_gpu.sh` installs this package and its pinned
+BenchFlow dependency into an isolated virtual environment. The script resolves
+Torch 2.11 and vLLM 0.20+ with `UV_TORCH_BACKEND=auto`, the compatible runtime
+line for Qwen3.5 plus Transformers 5.6+, and fails immediately if the GPU is
+unavailable.
 
 ## Credentials
 
@@ -98,7 +100,7 @@ The example recipe requires:
 
 - `HF_TOKEN` for task snapshots and optional artifact publication
 - `DAYTONA_API_KEY` for `runtime.sandbox = "daytona"`
-- `GLM_API_KEY` and `GLM_BASE_URL` for the example OpenCode teacher model
+- `OPENROUTER_API_KEY` for the Qwen3.5-397B-A17B OpenCode teacher
 - `BENCHFLOW_BASE_MODEL` and `BENCHFLOW_ADAPTER_MODEL` for the served base and
   current-student model aliases
 - `BENCHFLOW_PROVIDER_BASE_URL` and `BENCHFLOW_PROVIDER_API_KEY` for the
@@ -120,8 +122,8 @@ Provider credential values are never written to the run plan or score report.
 
 ```bash
 posttrainarena-train run \
-  --config configs/qwen3-4b-data-agent-smoke.toml \
-  --run-name qwen3-4b-data-agent
+  --config configs/qwen3.5-9b-data-agent-full.toml \
+  --run-name qwen35-9b-data-agent
 ```
 
 Use `--resume` after interruption. Completed snapshots, evaluations, and
@@ -141,24 +143,22 @@ runs/<run-name>/reports/score.json
 Important fields include `baseline_score`, `sft_score`, `grpo_gate_score`,
 `score_after_posttrain`, `delta_score`, `grpo_planned`, `grpo_ran`, exact task
 IDs, dataset revisions, BenchFlow commit, `grpo_run_policy`, and the recorded
-stage commands. A dry-run may set `grpo_planned` while leaving `grpo_ran` false.
+stage commands. The report also records the SFT and GRPO adapter and merged
+checkpoint paths. A dry-run may set `grpo_planned` while leaving `grpo_ran`
+false.
 
 ## Reward Gate
 
-GRPO runs only when the post-SFT score on the configured training-task gate is
-at least `grpo.threshold`. This prevents spending GPU time on a constant-zero
-reward distribution. A skipped GRPO stage is a valid pipeline result, not a
-runtime failure.
-
-`grpo.run_policy = "always"` bypasses the reward decision for end-to-end
-plumbing validation. It is not a recommendation for useful RL training.
+The Qwen3.5 full recipe sets `grpo.run_policy = "always"` because GRPO is part
+of the fixed organizer recipe. The engine still supports `on_reward` for
+low-cost experiments that should skip a constant-zero reward distribution.
 
 Do not use held-out eval tasks to tune this gate. Production recipes should use
 separate training, gate/development, and final evaluation lists.
 
-## Reproduced Smoke Result
+## Historical Qwen3-4B Smoke Result
 
-The checked-in recipe mirrors the completed public smoke:
+The retained Qwen3-4B smoke recipe mirrors the completed public smoke:
 
 - 15 training tasks produced 15 verifier-approved teacher trajectories
 - 40 LoRA SFT steps completed and merged into standalone Qwen3-4B weights

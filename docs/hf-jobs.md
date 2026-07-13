@@ -9,7 +9,8 @@ compute and the continuous leaderboard.
   jobs and publishing.
 - BenchFlow owns task loading, sandbox lifecycle, verifiers, rewards, and
   rollout artifacts.
-- OpenEnv is the optional protocol between TRL and BenchFlow.
+- OpenEnv is a standalone compatibility service; the current training job uses
+  OpenCode through BenchFlow for teacher, evaluation, and GRPO rollouts.
 - TRL owns SFT and GRPO optimization.
 - HF Jobs runs the pinned UV script; Hub datasets/models/Spaces store results.
 
@@ -35,14 +36,16 @@ into the bundle, plan, score, or leaderboard.
 ```bash
 posttrainarena-train prepare-submission \
   --entry submissions/<team-entry> \
-  --base-config configs/qwen3-4b-data-agent-forced-grpo-smoke.toml \
+  --base-config configs/qwen3.5-9b-data-agent-full.toml \
   --out .local/prepared/<team-entry> \
   --dataset-repo <namespace>/posttrainarena-<team-entry> \
   --upload
 ```
 
 The output contains the reviewed dataset staging tree, portable train/eval task
-lists, immutable recipe, and a machine-readable preparation manifest.
+lists, immutable recipe, and a machine-readable preparation manifest. Uploaded
+submission datasets are private by default; use `--public` only during the
+explicit post-competition release.
 
 ## 2. Test the HF path without GPU spend
 
@@ -50,7 +53,7 @@ Inspect the portable bundle without creating any remote resource:
 
 ```bash
 posttrainarena-train hf-job-submit \
-  --config configs/qwen3-4b-hf-job-smoke.toml \
+  --config configs/qwen3.5-9b-data-agent-canary.toml \
   --bundle-dir .local/hf-jobs/local-plan \
   --run-id local-plan-001 \
   --submission-id organizer-smoke \
@@ -66,7 +69,7 @@ Then run the same bundle on a real CPU Job:
 
 ```bash
 posttrainarena-train hf-job-submit \
-  --config configs/qwen3-4b-hf-job-smoke.toml \
+  --config configs/qwen3.5-9b-data-agent-canary.toml \
   --bundle-dir .local/hf-jobs/cpu-smoke \
   --run-id cpu-smoke-001 \
   --submission-id organizer-smoke \
@@ -79,31 +82,40 @@ posttrainarena-train hf-job-submit \
   --wait
 ```
 
-## 3. Run SFT, forced GRPO, and multi-benchmark eval
+## 3. Run the Qwen3.5 SFT→GRPO canary and multi-benchmark eval
 
 ```bash
 posttrainarena-train hf-job-submit \
-  --config configs/qwen3-4b-hf-job-smoke.toml \
+  --config configs/qwen3.5-9b-data-agent-canary.toml \
   --benchmarks configs/multi-benchmark-smoke.toml \
   --bundle-dir .local/hf-jobs/h100-smoke \
   --run-id h100-smoke-001 \
   --submission-id organizer-smoke \
   --team-name Organizers \
   --artifact-repo <namespace>/posttrainarena-results \
-  --model-repo <namespace>/posttrainarena-qwen3-4b \
+  --model-repo <namespace>/posttrainarena-qwen35-9b \
   --leaderboard-repo <namespace>/posttrainarena-leaderboard \
   --posttrainarena-ref "$(git rev-parse HEAD)" \
   --namespace <namespace> \
   --flavor h100 \
-  --timeout 2h \
+  --timeout 6h \
+  --private-artifacts \
   --wait
 ```
 
-Default full-run secrets are `HF_TOKEN`, `DAYTONA_API_KEY`, `GLM_API_KEY`,
-`GLM_BASE_URL`, `BENCHFLOW_BASE_MODEL`, `BENCHFLOW_ADAPTER_MODEL`,
-`BENCHFLOW_PROVIDER_BASE_URL`, `BENCHFLOW_PROVIDER_API_KEY`,
-`TRL_VLLM_SERVER_BASE_URL`, and `WANDB_API_KEY`. Override the list with
-repeated `--secret-env NAME`.
+After the canary passes, replace the config with
+`configs/qwen3.5-9b-data-agent-full.toml` for the organizer run. Keep
+`--private-artifacts` for any run that uses the sealed internal evaluation set;
+score reports contain exact task IDs and rollout evidence.
+Model repositories are also private by default. `--public-model` is reserved
+for the explicit release workflow after the competition.
+
+Default full-run secrets are derived from the recipe's teacher provider. The
+Qwen3.5 organizer recipe requires `HF_TOKEN`, `OPENROUTER_API_KEY`,
+`BENCHFLOW_BASE_MODEL`,
+`BENCHFLOW_ADAPTER_MODEL`, `BENCHFLOW_PROVIDER_BASE_URL`,
+`BENCHFLOW_PROVIDER_API_KEY`, and `TRL_VLLM_SERVER_BASE_URL`. Override the list
+with repeated `--secret-env NAME`.
 
 The GPU job also needs a TRL-compatible vLLM server plus
 `posttrainarena-train model-bridge`. Its trainer-side control URL is
@@ -114,6 +126,17 @@ checked-in UV runner does not create public ingress automatically, so the
 operator must provision that endpoint before launching the current
 OpenCode-GRPO path. TRL server mode also requires the trainer and vLLM worker to
 run on different physical CUDA devices.
+
+Caught failures publish the run's reports, rollout jobs, and checkpoints back
+to the private artifact repository. Reusing the same run ID restores that state
+and invokes `posttrainarena-train run --resume`; an interrupted GRPO stage is
+restarted from the SFT checkpoint rather than reusing stale-policy rollouts.
+Hard provider termination can still prevent the final failure upload, so the
+competition-scale recipe should use a persistent GPU host until stage-level
+checkpoint uploads are added.
+
+The canonical Qwen3.5 recipe uses Docker. Run it on a Docker-enabled native
+Linux GPU host; a generic managed Job container may not expose a Docker daemon.
 
 ## 4. Inspect a job
 
