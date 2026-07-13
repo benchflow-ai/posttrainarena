@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from posttrainarena.benchflow_pipeline.cli import main
+from posttrainarena.benchflow_pipeline.cli import build_parser, main
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -23,3 +23,22 @@ def test_plan_emits_machine_readable_json(capsys) -> None:
     payload = json.loads(capsys.readouterr().out)
     assert payload["run_name"] == "cli-test"
     assert payload["train_task_count"] == 15
+
+
+def test_model_bridge_cli_contract() -> None:
+    args = build_parser().parse_args(
+        [
+            "model-bridge",
+            "--tokenizer",
+            "Qwen/Qwen3-4B",
+            "--tokenizer-revision",
+            "a" * 40,
+            "--port",
+            "9001",
+        ]
+    )
+
+    assert args.command == "model-bridge"
+    assert args.tokenizer == "Qwen/Qwen3-4B"
+    assert args.api_key_env == "BENCHFLOW_PROVIDER_API_KEY"
+    assert args.port == 9001

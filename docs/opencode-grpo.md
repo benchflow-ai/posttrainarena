@@ -5,19 +5,33 @@ only agent harness during policy optimization.
 
 ## Runtime topology
 
-The trainer and OpenCode reach the same vLLM server through two addresses:
+The trainer reaches the TRL vLLM server directly. OpenCode reaches a small
+OpenAI-compatible bridge in front of that same server:
 
 - `TRL_VLLM_SERVER_BASE_URL`: trainer-side control URL used by TRL to
   synchronize policy weights;
-- `BENCHFLOW_PROVIDER_BASE_URL`: public OpenAI-compatible URL reachable from
-  the OpenCode process inside the BenchFlow sandbox.
+- `BENCHFLOW_PROVIDER_BASE_URL`: public URL of `posttrainarena-train
+  model-bridge`, reachable from the OpenCode process inside the BenchFlow
+  sandbox.
 
 `BENCHFLOW_ADAPTER_MODEL` is the model alias exposed by that server.
 `BENCHFLOW_PROVIDER_API_KEY` carries its bearer credential when required.
 
-The operator starts the server with `trl vllm-serve` and exposes the inference
-URL to Daytona or Docker. The local control URL and public inference URL must
-route to the same server.
+The operator starts the synchronized server with `trl vllm-serve`, starts the
+bridge with:
+
+```bash
+posttrainarena-train model-bridge \
+  --upstream-url http://127.0.0.1:8000 \
+  --tokenizer Qwen/Qwen3-4B \
+  --tokenizer-revision <immutable-sha> \
+  --port 8001
+```
+
+Only the bridge needs public ingress. It forwards chat messages and tool schemas
+to TRL's `/chat/` endpoint, decodes the returned token IDs, parses Qwen
+`<tool_call>` blocks into OpenAI tool calls, and emits OpenAI-compatible
+streaming responses with sampled-token logprobs.
 
 ## Per-update lifecycle
 

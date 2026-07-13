@@ -105,11 +105,12 @@ Default full-run secrets are `HF_TOKEN`, `DAYTONA_API_KEY`, `GLM_API_KEY`,
 `TRL_VLLM_SERVER_BASE_URL`, and `WANDB_API_KEY`. Override the list with
 repeated `--secret-env NAME`.
 
-The GPU job also needs a TRL-compatible vLLM server. Its trainer-side control
-URL is `TRL_VLLM_SERVER_BASE_URL`; `BENCHFLOW_PROVIDER_BASE_URL` must expose the
-same server to OpenCode inside Daytona. The checked-in UV runner does not create
-public ingress automatically, so the operator must provision that endpoint
-before launching the current OpenCode-GRPO path.
+The GPU job also needs a TRL-compatible vLLM server plus
+`posttrainarena-train model-bridge`. Its trainer-side control URL is
+`TRL_VLLM_SERVER_BASE_URL`; `BENCHFLOW_PROVIDER_BASE_URL` must expose the bridge
+to OpenCode inside Daytona. The checked-in UV runner does not create public
+ingress automatically, so the operator must provision that endpoint before
+launching the current OpenCode-GRPO path.
 
 ## 4. Inspect a job
 

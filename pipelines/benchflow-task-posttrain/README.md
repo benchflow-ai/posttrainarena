@@ -121,10 +121,10 @@ posttrainarena-train run \
 Use `--resume` after interruption. Completed snapshots, evaluations, and
 checkpoints are reused when their expected marker artifacts exist.
 
-The public OpenCode endpoint and `TRL_VLLM_SERVER_BASE_URL` must route to the
-same vLLM server. The pipeline synchronizes SFT weights before SFT evaluation,
-the current GRPO policy before each rollout batch, and final weights before the
-held-out evaluation.
+The public OpenCode endpoint is `posttrainarena-train model-bridge`, which
+forwards to the TRL server at `TRL_VLLM_SERVER_BASE_URL`. The pipeline
+synchronizes SFT weights before SFT evaluation, the current GRPO policy before
+each rollout batch, and final weights before the held-out evaluation.
 
 The final contract is:
 

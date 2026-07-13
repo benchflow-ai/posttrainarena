@@ -195,8 +195,8 @@ recipe or task list.
 
 The configured student endpoint must expose `BENCHFLOW_ADAPTER_MODEL`.
 Post-SFT and post-GRPO weights are synchronized through
-`TRL_VLLM_SERVER_BASE_URL`; OpenCode reaches the same server through
-`BENCHFLOW_PROVIDER_BASE_URL`. Evaluation and GRPO fail closed on missing
+`TRL_VLLM_SERVER_BASE_URL`; OpenCode reaches the same server through the public
+`model-bridge` URL in `BENCHFLOW_PROVIDER_BASE_URL`. Evaluation and GRPO fail closed on missing
 endpoint configuration, incomplete token telemetry, missing or malformed LLM
 trajectories, unscored rows, zero-tool rollouts, missing sampled logprobs,
 tokenizer drift, or action-token budget overflow.

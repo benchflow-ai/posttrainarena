@@ -97,6 +97,14 @@ def build_parser() -> argparse.ArgumentParser:
     serve.add_argument("--jobs-dir", type=Path, default=Path("jobs/openenv"))
     serve.add_argument("--host", default="0.0.0.0")
     serve.add_argument("--port", type=int, default=8000)
+
+    bridge = subparsers.add_parser("model-bridge")
+    bridge.add_argument("--upstream-url")
+    bridge.add_argument("--tokenizer", required=True)
+    bridge.add_argument("--tokenizer-revision")
+    bridge.add_argument("--api-key-env", default="BENCHFLOW_PROVIDER_API_KEY")
+    bridge.add_argument("--host", default="0.0.0.0")
+    bridge.add_argument("--port", type=int, default=8001)
     return parser
 
 
@@ -305,6 +313,23 @@ def main(argv: list[str] | None = None) -> int:
             environment=args.environment,
             sandbox_user=args.sandbox_user,
             jobs_dir=args.jobs_dir,
+            host=args.host,
+            port=args.port,
+        )
+        return 0
+    if args.command == "model-bridge":
+        from .model_bridge import serve_model_bridge
+
+        upstream_url = args.upstream_url or os.environ.get("TRL_VLLM_SERVER_BASE_URL")
+        if not upstream_url:
+            raise RuntimeError(
+                "model-bridge requires --upstream-url or TRL_VLLM_SERVER_BASE_URL"
+            )
+        serve_model_bridge(
+            upstream_url=upstream_url,
+            tokenizer_id=args.tokenizer,
+            tokenizer_revision=args.tokenizer_revision,
+            api_key=os.environ.get(args.api_key_env),
             host=args.host,
             port=args.port,
         )
