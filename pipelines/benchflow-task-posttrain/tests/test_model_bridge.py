@@ -239,7 +239,7 @@ def test_model_bridge_caps_tokens_per_call() -> None:
 
     assert response.status_code == 200
     assert captured["payload"]["max_tokens"] == 64
-    assert captured["payload"]["temperature"] == 0.0
+    assert captured["payload"]["temperature"] == 1.0
     assert captured["payload"]["generation_kwargs"]["seed"] == 0
     assert (
         client.get(

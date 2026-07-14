@@ -230,7 +230,7 @@ def _trl_request(body: dict[str, Any], config: ModelBridgeConfig) -> dict[str, A
         generation_kwargs["seed"] = 0
     temperature = body.get("temperature")
     if temperature is None:
-        temperature = 1.0 if capture_logprobs else 0.0
+        temperature = 1.0
     requested_max_tokens = body.get("max_completion_tokens")
     if requested_max_tokens is None:
         requested_max_tokens = body.get("max_tokens")
