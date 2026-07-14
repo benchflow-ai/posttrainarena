@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import gc
 import json
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
@@ -42,7 +43,7 @@ def load_trl_rows(path: Path) -> list[dict[str, Any]]:
 
 
 def _token_ids(value: Any) -> list[int]:
-    if isinstance(value, dict):
+    if isinstance(value, Mapping):
         value = value.get("input_ids")
     if hasattr(value, "tolist"):
         value = value.tolist()

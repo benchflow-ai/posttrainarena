@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import sys
+from collections import UserDict
 from importlib.machinery import ModuleSpec
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
@@ -12,12 +13,17 @@ import pytest
 from posttrainarena.benchflow_pipeline.config import load_config
 from posttrainarena.benchflow_pipeline.sft import (
     build_tokenized_sft_rows,
+    _token_ids,
     load_trl_rows,
     train_sft,
 )
 
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+def test_token_ids_accepts_batch_encoding_mapping() -> None:
+    assert _token_ids(UserDict({"input_ids": [[1, 2, 3]]})) == [1, 2, 3]
 
 
 def test_load_trl_rows_preserves_tools_and_object_arguments(tmp_path: Path) -> None:
