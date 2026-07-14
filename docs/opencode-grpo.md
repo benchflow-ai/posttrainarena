@@ -57,7 +57,10 @@ Qwen3.5's native `<function=...><parameter=...>` syntax, and emits
 OpenAI-compatible streaming responses. The 4,096-token per-call cap keeps the
 non-streaming TRL server response below OpenCode's idle window; the GRPO
 trajectory can still span multiple calls up to the recipe's aggregate
-completion-token limit. Because LiteLLM's stream aggregation
+completion-token limit. Requests without explicit logprob capture default to
+greedy `temperature=0` with `seed=0` so baseline/SFT/final pass rates are
+reproducible; GRPO logprob-capture requests retain stochastic sampling unless
+the caller explicitly overrides it. Because LiteLLM's stream aggregation
 does not retain choice-level logprobs, the bridge also keeps a bounded
 authenticated sidecar keyed by the OpenAI completion ID. The GRPO collector
 resolves the exact sampled token IDs/logprobs from that sidecar and writes

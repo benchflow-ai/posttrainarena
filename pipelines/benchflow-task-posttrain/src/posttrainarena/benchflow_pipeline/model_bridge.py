@@ -225,6 +225,12 @@ def _trl_request(body: dict[str, Any], config: ModelBridgeConfig) -> dict[str, A
     extra_body = body.get("extra_body")
     if isinstance(extra_body, dict):
         generation_kwargs.update(extra_body)
+    capture_logprobs = body.get("logprobs") is True
+    if not capture_logprobs and body.get("seed") is None:
+        generation_kwargs["seed"] = 0
+    temperature = body.get("temperature")
+    if temperature is None:
+        temperature = 1.0 if capture_logprobs else 0.0
     requested_max_tokens = body.get("max_completion_tokens")
     if requested_max_tokens is None:
         requested_max_tokens = body.get("max_tokens")
@@ -237,7 +243,7 @@ def _trl_request(body: dict[str, Any], config: ModelBridgeConfig) -> dict[str, A
         "messages": [messages],
         "n": 1,
         "repetition_penalty": float(body.get("repetition_penalty", 1.0)),
-        "temperature": float(body.get("temperature", 1.0)),
+        "temperature": float(temperature),
         "top_p": float(body.get("top_p", 1.0)),
         "top_k": int(body.get("top_k", -1)),
         "min_p": float(body.get("min_p", 0.0)),
