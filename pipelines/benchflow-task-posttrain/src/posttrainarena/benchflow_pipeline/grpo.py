@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import copy
 import hashlib
 import json
 import math
@@ -16,6 +15,7 @@ from typing import Any, Sequence
 
 from .config import PipelineConfig
 from .io import CommandRunner, supported_kwargs, write_json
+from .model_bridge import normalize_tool_call_arguments
 from .opencode import ServedModelRole, evaluate, served_model
 
 
@@ -432,30 +432,7 @@ def _chat_prompt_ids(
     messages: list[dict[str, Any]],
     tools: list[dict[str, Any]] | None,
 ) -> list[int]:
-    normalized_messages = copy.deepcopy(messages)
-    for message in normalized_messages:
-        tool_calls = message.get("tool_calls")
-        if not isinstance(tool_calls, list):
-            continue
-        for tool_call in tool_calls:
-            function = (
-                tool_call.get("function") if isinstance(tool_call, dict) else None
-            )
-            if not isinstance(function, dict):
-                continue
-            arguments = function.get("arguments")
-            if isinstance(arguments, str):
-                try:
-                    parsed = json.loads(arguments)
-                except json.JSONDecodeError as exc:
-                    raise RuntimeError(
-                        "OpenCode tool-call arguments are not valid JSON"
-                    ) from exc
-                if not isinstance(parsed, dict):
-                    raise RuntimeError(
-                        "OpenCode tool-call arguments must decode to an object"
-                    )
-                function["arguments"] = parsed
+    normalized_messages = normalize_tool_call_arguments(messages)
     kwargs: dict[str, Any] = {
         "tokenize": True,
         "add_generation_prompt": True,
