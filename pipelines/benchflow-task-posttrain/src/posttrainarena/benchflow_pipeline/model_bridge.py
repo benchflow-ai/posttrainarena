@@ -4,10 +4,11 @@ from __future__ import annotations
 
 import copy
 import json
+import logging
 import re
 import time
 from collections import OrderedDict
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
 from typing import Any
 from uuid import uuid4
@@ -22,6 +23,8 @@ FUNCTION_PARAMETER_PATTERN = re.compile(
     r"<parameter=([^>\n]+)>\s*(.*?)\s*</parameter>",
     re.DOTALL,
 )
+TOOL_OUTPUT_TRUNCATION_MARKER = "\n...[tool output truncated]"
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -31,6 +34,7 @@ class ModelBridgeConfig:
     tokenizer_revision: str | None = None
     api_key: str | None = None
     max_tokens_per_call: int = 4096
+    max_context_tokens: int = 49152
     timeout_seconds: float = 900.0
     max_sidecar_entries: int = 2048
 
@@ -41,6 +45,14 @@ class ModelBridgeConfig:
             or self.max_tokens_per_call < 1
         ):
             raise ValueError("max_tokens_per_call must be a positive integer")
+        if (
+            not isinstance(self.max_context_tokens, int)
+            or isinstance(self.max_context_tokens, bool)
+            or self.max_context_tokens <= self.max_tokens_per_call
+        ):
+            raise ValueError(
+                "max_context_tokens must be an integer greater than max_tokens_per_call"
+            )
         if (
             not isinstance(self.max_sidecar_entries, int)
             or isinstance(self.max_sidecar_entries, bool)
@@ -132,6 +144,115 @@ def normalize_tool_call_arguments(
                 )
             function["arguments"] = parsed
     return normalized_messages
+
+
+def _token_ids(value: Any) -> list[int]:
+    if isinstance(value, Mapping):
+        value = value.get("input_ids")
+    if hasattr(value, "tolist"):
+        value = value.tolist()
+    if isinstance(value, list) and len(value) == 1 and isinstance(value[0], list):
+        value = value[0]
+    if not isinstance(value, list) or any(
+        not isinstance(item, int) or isinstance(item, bool) for item in value
+    ):
+        raise RuntimeError("Chat template did not return token IDs")
+    return value
+
+
+def _prompt_token_count(
+    *,
+    tokenizer: Any,
+    messages: list[dict[str, Any]],
+    tools: list[dict[str, Any]] | None,
+) -> int:
+    kwargs: dict[str, Any] = {
+        "tokenize": True,
+        "add_generation_prompt": True,
+    }
+    if tools:
+        kwargs["tools"] = tools
+    return len(_token_ids(tokenizer.apply_chat_template(messages, **kwargs)))
+
+
+def fit_messages_to_context(
+    *,
+    tokenizer: Any,
+    messages: list[dict[str, Any]],
+    tools: list[dict[str, Any]] | None,
+    max_prompt_tokens: int,
+) -> tuple[list[dict[str, Any]], int, int, int]:
+    """Fit a prompt by truncating oldest tool outputs, never user instructions."""
+    if max_prompt_tokens < 1:
+        raise ValueError("max_prompt_tokens must be positive")
+    fitted = copy.deepcopy(messages)
+    original_tokens = _prompt_token_count(
+        tokenizer=tokenizer,
+        messages=fitted,
+        tools=tools,
+    )
+    if original_tokens <= max_prompt_tokens:
+        return fitted, original_tokens, original_tokens, 0
+
+    truncated_messages = 0
+    for index, message in enumerate(fitted):
+        content = message.get("content")
+        if (
+            message.get("role") != "tool"
+            or not isinstance(content, str)
+            or len(content) <= len(TOOL_OUTPUT_TRUNCATION_MARKER)
+        ):
+            continue
+        message["content"] = TOOL_OUTPUT_TRUNCATION_MARKER
+        truncated_messages += 1
+        minimal_tokens = _prompt_token_count(
+            tokenizer=tokenizer,
+            messages=fitted,
+            tools=tools,
+        )
+        if minimal_tokens > max_prompt_tokens:
+            continue
+
+        low = 0
+        high = len(content)
+        while low < high:
+            midpoint = (low + high + 1) // 2
+            fitted[index]["content"] = (
+                content[:midpoint] + TOOL_OUTPUT_TRUNCATION_MARKER
+            )
+            tokens = _prompt_token_count(
+                tokenizer=tokenizer,
+                messages=fitted,
+                tools=tools,
+            )
+            if tokens <= max_prompt_tokens:
+                low = midpoint
+            else:
+                high = midpoint - 1
+        fitted[index]["content"] = content[:low] + TOOL_OUTPUT_TRUNCATION_MARKER
+        fitted_tokens = _prompt_token_count(
+            tokenizer=tokenizer,
+            messages=fitted,
+            tools=tools,
+        )
+        if fitted_tokens > max_prompt_tokens:
+            raise RuntimeError(
+                "OpenCode prompt context fitting did not converge "
+                f"({fitted_tokens} > {max_prompt_tokens} tokens)"
+            )
+        return fitted, original_tokens, fitted_tokens, truncated_messages
+
+    fitted_tokens = _prompt_token_count(
+        tokenizer=tokenizer,
+        messages=fitted,
+        tools=tools,
+    )
+    if fitted_tokens > max_prompt_tokens:
+        raise RuntimeError(
+            "OpenCode prompt exceeds the model context after truncating all "
+            f"tool outputs ({fitted_tokens} > {max_prompt_tokens} tokens)"
+        )
+    return fitted, original_tokens, fitted_tokens, truncated_messages
 
 
 def _sampled_logprob_rows(
@@ -247,7 +368,11 @@ def translate_trl_chat_response(
     }
 
 
-def _trl_request(body: dict[str, Any], config: ModelBridgeConfig) -> dict[str, Any]:
+def _trl_request(
+    body: dict[str, Any],
+    config: ModelBridgeConfig,
+    tokenizer: Any,
+) -> dict[str, Any]:
     messages = body.get("messages")
     if not isinstance(messages, list) or not messages:
         raise ValueError("messages must be a non-empty list")
@@ -274,8 +399,26 @@ def _trl_request(body: dict[str, Any], config: ModelBridgeConfig) -> dict[str, A
         if requested_max_tokens is None
         else min(int(requested_max_tokens), config.max_tokens_per_call)
     )
+    normalized_messages = normalize_tool_call_arguments(messages)
+    tools = body.get("tools")
+    fitted_messages, original_tokens, fitted_tokens, truncated_messages = (
+        fit_messages_to_context(
+            tokenizer=tokenizer,
+            messages=normalized_messages,
+            tools=tools,
+            max_prompt_tokens=config.max_context_tokens - max_tokens,
+        )
+    )
+    if truncated_messages:
+        logger.warning(
+            "Truncated %d OpenCode tool output(s) to fit model context "
+            "(%d -> %d prompt tokens)",
+            truncated_messages,
+            original_tokens,
+            fitted_tokens,
+        )
     return {
-        "messages": [normalize_tool_call_arguments(messages)],
+        "messages": [fitted_messages],
         "n": 1,
         "repetition_penalty": float(body.get("repetition_penalty", 1.0)),
         "temperature": float(temperature),
@@ -286,7 +429,7 @@ def _trl_request(body: dict[str, Any], config: ModelBridgeConfig) -> dict[str, A
         "logprobs": 0,
         "generation_kwargs": generation_kwargs,
         "chat_template_kwargs": body.get("chat_template_kwargs") or {},
-        "tools": body.get("tools"),
+        "tools": tools,
     }
 
 
@@ -441,7 +584,7 @@ def create_model_bridge_app(
             upstream = None
             translated = _title_response(model=model)
         else:
-            upstream = await chat_call(_trl_request(body, config))
+            upstream = await chat_call(_trl_request(body, config, tokenizer))
             translated = translate_trl_chat_response(
                 payload=upstream,
                 tokenizer=tokenizer,
@@ -472,6 +615,7 @@ def serve_model_bridge(
     tokenizer_revision: str | None,
     api_key: str | None,
     max_tokens_per_call: int,
+    max_context_tokens: int,
     max_sidecar_entries: int,
     host: str,
     port: int,
@@ -485,6 +629,7 @@ def serve_model_bridge(
             tokenizer_revision=tokenizer_revision,
             api_key=api_key,
             max_tokens_per_call=max_tokens_per_call,
+            max_context_tokens=max_context_tokens,
             max_sidecar_entries=max_sidecar_entries,
         )
     )

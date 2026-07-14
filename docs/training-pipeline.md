@@ -218,6 +218,8 @@ The model bridge answers OpenCode's title-generator prompt locally with a fixed
 title, so that helper cannot consume model traffic or block task solving.
 It also converts OpenCode's stringified follow-up tool arguments back to JSON
 objects before Qwen3.5 chat-template rendering.
+The bridge fits each served prompt to the configured model context by truncating
+oldest tool outputs only; system and user instructions are never truncated.
 
 ## Execute and resume
 
