@@ -42,21 +42,27 @@ def _resume_plan_compatible(existing: dict[str, Any], current: dict[str, Any]) -
     if existing == current:
         return True
     normalized_current = _json_normalized(current)
-    existing_teacher = existing.get("teacher")
-    current_teacher = normalized_current.get("teacher")
-    if not isinstance(existing_teacher, dict) or not isinstance(current_teacher, dict):
-        return False
-    existing_attempts = existing_teacher.get("max_attempts")
-    current_attempts = current_teacher.get("max_attempts")
-    if (
-        not isinstance(existing_attempts, int)
-        or isinstance(existing_attempts, bool)
-        or not isinstance(current_attempts, int)
-        or isinstance(current_attempts, bool)
-        or current_attempts < existing_attempts
+    for section, field in (
+        ("teacher", "max_attempts"),
+        ("runtime", "max_completion_length"),
     ):
-        return False
-    current_teacher["max_attempts"] = existing_attempts
+        existing_section = existing.get(section)
+        current_section = normalized_current.get(section)
+        if not isinstance(existing_section, dict) or not isinstance(
+            current_section, dict
+        ):
+            return False
+        existing_value = existing_section.get(field)
+        current_value = current_section.get(field)
+        if (
+            not isinstance(existing_value, int)
+            or isinstance(existing_value, bool)
+            or not isinstance(current_value, int)
+            or isinstance(current_value, bool)
+            or current_value < existing_value
+        ):
+            return False
+        current_section[field] = existing_value
     return existing == normalized_current
 
 

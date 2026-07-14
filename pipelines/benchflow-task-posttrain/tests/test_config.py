@@ -65,6 +65,7 @@ def test_qwen35_full_recipe_uses_all_tasks_and_one_epoch_lora() -> None:
     )
     assert config.teacher.require_all_tasks is True
     assert config.teacher.min_verified == 2238
+    assert config.runtime.max_completion_length == 40960
     assert config.sft.num_train_epochs == 1.0
     assert config.sft.max_steps is None
     assert config.sft.lora_r == 16
