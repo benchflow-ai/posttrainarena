@@ -35,7 +35,7 @@ class ModelBridgeConfig:
     api_key: str | None = None
     max_tokens_per_call: int = 4096
     max_context_tokens: int = 49152
-    max_logprob_context_tokens: int = 24576
+    max_logprob_context_tokens: int = 16384
     timeout_seconds: float = 900.0
     max_sidecar_entries: int = 2048
 
