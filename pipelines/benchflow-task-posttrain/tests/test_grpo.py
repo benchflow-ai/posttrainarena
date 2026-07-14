@@ -14,6 +14,9 @@ from posttrainarena.benchflow_pipeline.grpo import (
     CollectedRollout,
     OpenCodeRolloutCollector,
     RolloutTokens,
+    _as_token_ids,
+    _chat_prompt_ids,
+    attest_served_policy,
     build_grpo_rows,
     sync_checkpoint_to_vllm,
     sync_model_to_vllm,
@@ -133,6 +136,47 @@ def test_task_handles_are_reversible() -> None:
 
     with pytest.raises(ValueError, match="Unexpected GRPO prompt"):
         task_id_from_prompt("plain prompt")
+
+
+def test_as_token_ids_accepts_transformers_batch_encoding() -> None:
+    assert _as_token_ids(
+        {"input_ids": [[11, 22, 33]], "attention_mask": [[1, 1, 1]]}
+    ) == [
+        11,
+        22,
+        33,
+    ]
+
+
+def test_chat_prompt_ids_normalizes_openai_tool_arguments() -> None:
+    class ToolArgumentTokenizer:
+        def apply_chat_template(self, messages, **_):
+            arguments = messages[1]["tool_calls"][0]["function"]["arguments"]
+            assert arguments == {"command": "pwd"}
+            return {"input_ids": [[1, 2, 3]]}
+
+    messages = [
+        {"role": "user", "content": "inspect"},
+        {
+            "role": "assistant",
+            "content": None,
+            "tool_calls": [
+                {
+                    "id": "call-1",
+                    "type": "function",
+                    "function": {
+                        "name": "bash",
+                        "arguments": '{"command":"pwd"}',
+                    },
+                }
+            ],
+        },
+    ]
+
+    assert _chat_prompt_ids(ToolArgumentTokenizer(), messages, None) == [1, 2, 3]
+    assert messages[1]["tool_calls"][0]["function"]["arguments"] == (
+        '{"command":"pwd"}'
+    )
 
 
 def test_build_grpo_rows_requires_snapshotted_tasks(tmp_path: Path) -> None:
@@ -320,11 +364,18 @@ def test_trajectory_to_rollout_tokens_resolves_streaming_logprobs(
         path,
         FakeTokenizer(),
         max_completion_tokens=1000,
-        logprob_resolver=lambda completion_id: (
-            expected if completion_id == "chatcmpl-1" else {}
+        trace_resolver=lambda completion_id: (
+            {
+                "prompt_ids": [900, 901],
+                "completion_ids": [ord("A")],
+                "logprobs": expected,
+            }
+            if completion_id == "chatcmpl-1"
+            else {}
         ),
     )
 
+    assert tokens.prompt_ids == [900, 901]
     assert tokens.completion_ids == [ord("A")]
     assert tokens.logprobs == [-0.1]
 
@@ -527,7 +578,11 @@ def test_collector_uses_local_bridge_control_url(
 
         @staticmethod
         def json() -> dict[str, Any]:
-            return {"logprobs": {"content": [{"token": "A"}]}}
+            return {
+                "prompt_ids": [1, 2],
+                "completion_ids": [3],
+                "logprobs": {"content": [{"token": "A"}]},
+            }
 
     def fake_get(url: str, **kwargs: Any) -> FakeResponse:
         captured["url"] = url
@@ -551,9 +606,10 @@ def test_collector_uses_local_bridge_control_url(
         jobs_dir=tmp_path / "jobs",
     )
 
-    payload = collector._resolve_bridge_logprobs("chatcmpl-1")
+    payload = collector._resolve_bridge_trace("chatcmpl-1")
 
-    assert payload["content"]
+    assert payload["prompt_ids"] == [1, 2]
+    assert payload["logprobs"]["content"]
     assert captured["url"] == ("http://127.0.0.1:8002/v1/benchflow/logprobs/chatcmpl-1")
     assert captured["kwargs"]["headers"] == {"Authorization": "Bearer secret"}
 
@@ -608,6 +664,65 @@ def test_collector_retries_failed_opencode_rollout(
     assert list((tmp_path / "jobs").rglob("rollout_error.json"))
 
 
+def test_collector_selects_scored_retry_from_health_rows(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config = load_config(ROOT / "configs/qwen3-4b-data-agent-smoke.toml")
+    tasks_dir = tmp_path / "tasks"
+    (tasks_dir / "task-a").mkdir(parents=True)
+
+    def fake_evaluate(**kwargs):
+        failed_dir = kwargs["jobs_dir"] / "job" / "task-a-failed"
+        rollout_dir = kwargs["jobs_dir"] / "job" / "task-a"
+        _write_trajectory(rollout_dir / "trajectory" / "llm_trajectory.jsonl")
+        return {
+            "health": {
+                "rows": [
+                    {
+                        "task_id": "task-a",
+                        "reward": None,
+                        "scored": False,
+                        "error": "process exited",
+                        "verifier_error": None,
+                        "valid_llm_trajectory": True,
+                        "rollout_dir": str(failed_dir),
+                    },
+                    {
+                        "task_id": "task-a",
+                        "reward": 1.0,
+                        "scored": True,
+                        "error": None,
+                        "verifier_error": None,
+                        "valid_llm_trajectory": True,
+                        "rollout_dir": str(rollout_dir),
+                    },
+                ]
+            }
+        }
+
+    monkeypatch.setattr(
+        "posttrainarena.benchflow_pipeline.grpo.evaluate",
+        fake_evaluate,
+    )
+    collector = OpenCodeRolloutCollector(
+        config=config,
+        model="/tmp/student",
+        tasks_dir=tasks_dir,
+        jobs_dir=tmp_path / "jobs",
+    )
+    trainer = SimpleNamespace(
+        processing_class=FakeTokenizer(),
+        state=SimpleNamespace(global_step=1),
+        accelerator=SimpleNamespace(process_index=0),
+    )
+
+    output = collector([task_handle("task-a")], trainer)
+
+    assert output["rollout_reward"] == [1.0]
+    assert output["rollout_dir"][0].endswith("/task-a")
+
+
 def test_train_grpo_wires_custom_rollout_and_vllm_sync(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -632,6 +747,8 @@ def test_train_grpo_wires_custom_rollout_and_vllm_sync(
     class FakeMerged:
         def save_pretrained(self, path, **kwargs):
             captured["merged_save"] = (path, kwargs)
+            Path(path).mkdir(parents=True, exist_ok=True)
+            (Path(path) / "model.safetensors").write_bytes(b"merged")
 
     class FakePeftModel:
         @classmethod
@@ -645,6 +762,8 @@ def test_train_grpo_wires_custom_rollout_and_vllm_sync(
     class FakeProcessor:
         def save_pretrained(self, path):
             captured.setdefault("processor_paths", []).append(path)
+            Path(path).mkdir(parents=True, exist_ok=True)
+            (Path(path) / "tokenizer.json").write_text("{}")
 
     class FakeVllmClient:
         def close_communicator(self):
@@ -662,6 +781,8 @@ def test_train_grpo_wires_custom_rollout_and_vllm_sync(
 
         def save_model(self, path):
             captured["model_path"] = path
+            Path(path).mkdir(parents=True, exist_ok=True)
+            (Path(path) / "adapter_model.safetensors").write_bytes(b"adapter")
 
     monkeypatch.setattr(trl, "GRPOConfig", FakeConfig)
     monkeypatch.setattr(trl, "GRPOTrainer", FakeTrainer)
@@ -726,6 +847,7 @@ def test_train_grpo_wires_custom_rollout_and_vllm_sync(
     assert args["max_steps"] == config.grpo.max_steps
     assert "num_train_epochs" not in args
     assert args["gradient_checkpointing"] is True
+    assert args["torch_empty_cache_steps"] == 1
     assert captured["trainer_communicator_closed"] is True
     assert captured["model_path"] == str(adapter_dir)
     assert captured["adapter_load"][1] == str(adapter_dir)
@@ -736,6 +858,9 @@ def test_train_grpo_wires_custom_rollout_and_vllm_sync(
     assert payload["adapter_dir"] == str(adapter_dir)
     assert payload["merged_model_dir"] == str(output_dir)
     assert payload["quantization"] is None
+    assert payload["base_checkpoint_sha256"]
+    assert payload["adapter_sha256"]
+    assert payload["merged_model_sha256"]
     dependency = json.loads((adapter_dir / "adapter_dependency.json").read_text())
     assert dependency["base_checkpoint"] == config.model
     assert dependency["published_base_sibling"] == "../sft-merged"
@@ -756,10 +881,10 @@ def test_train_grpo_wires_custom_rollout_and_vllm_sync(
 
     assert full_args["num_train_epochs"] == 1.0
     assert "max_steps" not in full_args
-    assert full_args["generation_batch_size"] == 16
+    assert full_args["generation_batch_size"] == 2
     assert full_payload["num_train_epochs"] == 1.0
     assert full_payload["max_steps"] is None
-    assert full_payload["generation_batch_size"] == 16
+    assert full_payload["generation_batch_size"] == 2
 
 
 def test_sync_model_to_vllm_closes_weight_communicator(
@@ -801,6 +926,80 @@ def test_sync_model_to_vllm_closes_weight_communicator(
     assert captured["kwargs"]["accelerator"] is accelerator
     assert captured["kwargs"]["processing_class"] is tokenizer
     assert captured["kwargs"]["mode"] == "server"
+
+
+def test_policy_attestation_matches_public_bridge_to_control_server(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import httpx
+
+    config = load_config(ROOT / "configs/qwen3-4b-data-agent-smoke.toml")
+    monkeypatch.setenv("TRL_VLLM_SERVER_BASE_URL", "http://127.0.0.1:8000")
+    monkeypatch.setenv("BENCHFLOW_PROVIDER_BASE_URL", "https://bridge.example/v1")
+    monkeypatch.setenv(
+        "BENCHFLOW_MODEL_BRIDGE_CONTROL_URL",
+        "http://127.0.0.1:8001/v1",
+    )
+    monkeypatch.setenv("BENCHFLOW_PROVIDER_API_KEY", "secret")
+    monkeypatch.setenv("BENCHFLOW_ADAPTER_MODEL", "vllm/student")
+    calls: list[str] = []
+
+    class FakeResponse:
+        def __init__(self, payload):
+            self.payload = payload
+
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return self.payload
+
+    def fake_post(url: str, **kwargs: Any) -> FakeResponse:
+        calls.append(url)
+        if url == "http://127.0.0.1:8000/chat/":
+            return FakeResponse(
+                {
+                    "prompt_ids": [[1, 2]],
+                    "completion_ids": [[3]],
+                    "logprobs": [[[-0.5]]],
+                    "logprob_token_ids": [[[3]]],
+                }
+            )
+        assert kwargs["headers"] == {"Authorization": "Bearer secret"}
+        assert kwargs["json"]["model"] == "vllm/student"
+        return FakeResponse({"id": "chatcmpl-probe"})
+
+    def fake_get(url: str, **kwargs: Any) -> FakeResponse:
+        calls.append(url)
+        assert kwargs["headers"] == {"Authorization": "Bearer secret"}
+        return FakeResponse(
+            {
+                "prompt_ids": [1, 2],
+                "completion_ids": [3],
+                "logprobs": {
+                    "content": [
+                        {
+                            "token_id": 3,
+                            "logprob": -0.5,
+                        }
+                    ]
+                },
+            }
+        )
+
+    monkeypatch.setattr(httpx, "post", fake_post)
+    monkeypatch.setattr(httpx, "get", fake_get)
+
+    payload = attest_served_policy(config=config, model_role="student")
+
+    assert payload["attested"] is True
+    assert payload["prompt_tokens"] == 2
+    assert payload["completion_tokens"] == 1
+    assert calls == [
+        "http://127.0.0.1:8000/chat/",
+        "https://bridge.example/v1/chat/completions",
+        "http://127.0.0.1:8001/v1/benchflow/logprobs/chatcmpl-probe",
+    ]
 
 
 def test_sync_checkpoint_loads_saved_policy_before_endpoint_update(

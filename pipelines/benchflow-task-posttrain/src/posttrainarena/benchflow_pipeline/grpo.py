@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import copy
+import hashlib
 import json
 import math
 import os
@@ -9,15 +11,33 @@ import gc
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from typing import Any, Sequence
 
 from .config import PipelineConfig
 from .io import CommandRunner, supported_kwargs, write_json
-from .opencode import evaluate
+from .opencode import ServedModelRole, evaluate, served_model
 
 
 TASK_HANDLE_PREFIX = "benchflow-task://"
+
+
+def _directory_sha256(path: Path) -> str:
+    files = sorted(
+        item
+        for item in path.rglob("*")
+        if item.is_file() and item.name != "train_metrics.json"
+    )
+    if not files:
+        raise ValueError(f"No checkpoint artifacts in {path}")
+    digest = hashlib.sha256()
+    for item in files:
+        digest.update(str(item.relative_to(path)).encode())
+        digest.update(b"\0")
+        with item.open("rb") as handle:
+            for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                digest.update(chunk)
+    return digest.hexdigest()
 
 
 def _required_environment(name: str, *, label: str) -> str:
@@ -175,6 +195,185 @@ def sync_checkpoint_to_vllm(
     }
 
 
+def _probe_selected_logprobs(payload: dict[str, Any]) -> list[float]:
+    completion_ids = payload.get("completion_ids")
+    logprobs = payload.get("logprobs")
+    logprob_token_ids = payload.get("logprob_token_ids")
+    if not (
+        isinstance(completion_ids, list)
+        and len(completion_ids) == 1
+        and isinstance(completion_ids[0], list)
+        and isinstance(logprobs, list)
+        and len(logprobs) == 1
+        and isinstance(logprobs[0], list)
+        and isinstance(logprob_token_ids, list)
+        and len(logprob_token_ids) == 1
+        and isinstance(logprob_token_ids[0], list)
+    ):
+        raise RuntimeError("TRL policy-attestation logprobs are malformed")
+    selected: list[float] = []
+    for token_id, values, candidate_ids in zip(
+        completion_ids[0],
+        logprobs[0],
+        logprob_token_ids[0],
+        strict=True,
+    ):
+        if not isinstance(values, list) or not isinstance(candidate_ids, list):
+            raise RuntimeError("TRL policy-attestation candidates are malformed")
+        value = next(
+            (
+                candidate
+                for candidate_id, candidate in zip(
+                    candidate_ids,
+                    values,
+                    strict=True,
+                )
+                if candidate_id == token_id
+            ),
+            None,
+        )
+        if not isinstance(value, int | float) or isinstance(value, bool):
+            raise RuntimeError("TRL policy-attestation sampled logprob is missing")
+        selected.append(float(value))
+    return selected
+
+
+def attest_served_policy(
+    *,
+    config: PipelineConfig,
+    model_role: ServedModelRole,
+) -> dict[str, Any]:
+    """Prove the public OpenCode bridge reaches the synchronized TRL server."""
+    import httpx
+
+    server_base_url = _required_environment(
+        config.grpo.vllm_server_base_url_env,
+        label="TRL vLLM server endpoint",
+    ).rstrip("/")
+    bridge_base_url = _required_environment(
+        config.evaluation.base_url_env,
+        label="OpenCode model bridge endpoint",
+    ).rstrip("/")
+    control_base_url = (
+        os.environ.get(config.evaluation.control_url_env) or bridge_base_url
+    ).rstrip("/")
+    api_key = _required_environment(
+        config.evaluation.api_key_env,
+        label="OpenCode model bridge API key",
+    )
+    messages = [
+        {
+            "role": "user",
+            "content": (
+                "Reply with one short token. "
+                "PostTrain Arena policy attestation nonce: v1-9f61."
+            ),
+        }
+    ]
+    direct_request = {
+        "messages": [messages],
+        "n": 1,
+        "repetition_penalty": 1.0,
+        "temperature": 0.0,
+        "top_p": 1.0,
+        "top_k": -1,
+        "min_p": 0.0,
+        "max_tokens": 16,
+        "logprobs": 0,
+        "generation_kwargs": {"seed": 0},
+        "chat_template_kwargs": {},
+        "tools": None,
+    }
+    direct_response = httpx.post(
+        f"{server_base_url}/chat/",
+        json=direct_request,
+        timeout=120.0,
+    )
+    direct_response.raise_for_status()
+    direct = direct_response.json()
+    if not isinstance(direct, dict):
+        raise RuntimeError("TRL policy-attestation response is not an object")
+
+    public_response = httpx.post(
+        f"{bridge_base_url}/chat/completions",
+        headers={"Authorization": f"Bearer {api_key}"},
+        json={
+            "model": served_model(
+                config,
+                config.model,
+                role=model_role,
+            ),
+            "messages": messages,
+            "stream": False,
+            "temperature": 0.0,
+            "top_p": 1.0,
+            "max_tokens": 16,
+            "seed": 0,
+            "logprobs": True,
+        },
+        timeout=120.0,
+    )
+    public_response.raise_for_status()
+    public = public_response.json()
+    completion_id = public.get("id") if isinstance(public, dict) else None
+    if not isinstance(completion_id, str) or not completion_id:
+        raise RuntimeError("OpenCode bridge attestation returned no completion ID")
+    trace_response = httpx.get(
+        f"{control_base_url}/benchflow/logprobs/{completion_id}",
+        headers={"Authorization": f"Bearer {api_key}"},
+        timeout=60.0,
+    )
+    trace_response.raise_for_status()
+    trace = trace_response.json()
+    if not isinstance(trace, dict):
+        raise RuntimeError("OpenCode bridge attestation returned no trace")
+
+    direct_prompt_ids = _as_token_ids(direct.get("prompt_ids"))
+    direct_completion_ids = _as_token_ids(direct.get("completion_ids"))
+    trace_prompt_ids = _as_token_ids(trace.get("prompt_ids"))
+    trace_completion_ids = _as_token_ids(trace.get("completion_ids"))
+    if direct_prompt_ids != trace_prompt_ids:
+        raise RuntimeError("Public bridge prompt IDs do not match the TRL server")
+    if direct_completion_ids != trace_completion_ids:
+        raise RuntimeError("Public bridge completion IDs do not match the TRL server")
+    direct_logprobs = _probe_selected_logprobs(direct)
+    trace_logprobs = (trace.get("logprobs") or {}).get("content")
+    if not isinstance(trace_logprobs, list):
+        raise RuntimeError("OpenCode bridge attestation trace has no logprobs")
+    public_logprobs = []
+    for row in trace_logprobs:
+        value = row.get("logprob") if isinstance(row, dict) else None
+        if not isinstance(value, int | float) or isinstance(value, bool):
+            raise RuntimeError("OpenCode bridge attestation logprob is invalid")
+        public_logprobs.append(float(value))
+    if len(direct_logprobs) != len(public_logprobs) or any(
+        not math.isclose(left, right, rel_tol=1e-5, abs_tol=1e-6)
+        for left, right in zip(direct_logprobs, public_logprobs, strict=True)
+    ):
+        raise RuntimeError("Public bridge logprobs do not match the TRL server")
+
+    digest = hashlib.sha256(
+        json.dumps(
+            {
+                "prompt_ids": direct_prompt_ids,
+                "completion_ids": direct_completion_ids,
+                "logprobs": [round(value, 8) for value in direct_logprobs],
+            },
+            separators=(",", ":"),
+        ).encode()
+    ).hexdigest()
+    return {
+        "attested": True,
+        "model_role": model_role,
+        "prompt_tokens": len(direct_prompt_ids),
+        "completion_tokens": len(direct_completion_ids),
+        "trace_sha256": digest,
+        "server_base_url_env": config.grpo.vllm_server_base_url_env,
+        "bridge_base_url_env": config.evaluation.base_url_env,
+        "control_url_env": config.evaluation.control_url_env,
+    }
+
+
 def verifier_reward(
     completions: Sequence[Any],
     *,
@@ -213,6 +412,8 @@ def _load_jsonl(path: Path) -> list[dict[str, Any]]:
 
 
 def _as_token_ids(value: Any) -> list[int]:
+    if isinstance(value, Mapping):
+        value = value.get("input_ids")
     if hasattr(value, "tolist"):
         value = value.tolist()
     if isinstance(value, list) and len(value) == 1 and isinstance(value[0], list):
@@ -231,13 +432,37 @@ def _chat_prompt_ids(
     messages: list[dict[str, Any]],
     tools: list[dict[str, Any]] | None,
 ) -> list[int]:
+    normalized_messages = copy.deepcopy(messages)
+    for message in normalized_messages:
+        tool_calls = message.get("tool_calls")
+        if not isinstance(tool_calls, list):
+            continue
+        for tool_call in tool_calls:
+            function = (
+                tool_call.get("function") if isinstance(tool_call, dict) else None
+            )
+            if not isinstance(function, dict):
+                continue
+            arguments = function.get("arguments")
+            if isinstance(arguments, str):
+                try:
+                    parsed = json.loads(arguments)
+                except json.JSONDecodeError as exc:
+                    raise RuntimeError(
+                        "OpenCode tool-call arguments are not valid JSON"
+                    ) from exc
+                if not isinstance(parsed, dict):
+                    raise RuntimeError(
+                        "OpenCode tool-call arguments must decode to an object"
+                    )
+                function["arguments"] = parsed
     kwargs: dict[str, Any] = {
         "tokenize": True,
         "add_generation_prompt": True,
     }
     if tools:
         kwargs["tools"] = tools
-    return _as_token_ids(tokenizer.apply_chat_template(messages, **kwargs))
+    return _as_token_ids(tokenizer.apply_chat_template(normalized_messages, **kwargs))
 
 
 def _sampled_tokens(
@@ -349,7 +574,7 @@ def trajectory_to_rollout_tokens(
     tokenizer: Any,
     *,
     max_completion_tokens: int,
-    logprob_resolver: Callable[[str], dict[str, Any]] | None = None,
+    trace_resolver: Callable[[str], dict[str, Any]] | None = None,
 ) -> RolloutTokens:
     rows = []
     for row in _load_jsonl(path):
@@ -382,7 +607,21 @@ def trajectory_to_rollout_tokens(
 
     for index, row in enumerate(rows):
         messages, tools, choice, completion_id = _exchange_parts(row)
-        request_ids = _chat_prompt_ids(tokenizer, messages, tools)
+        resolved_choice = choice
+        exact_completion_ids: list[int] | None = None
+        if trace_resolver is not None and completion_id is not None:
+            trace = trace_resolver(completion_id)
+            request_ids = _as_token_ids(trace.get("prompt_ids"))
+            exact_completion_ids = _as_token_ids(trace.get("completion_ids"))
+            logprobs = trace.get("logprobs")
+            if not isinstance(logprobs, dict):
+                raise RuntimeError("Model bridge trace has no sampled-token logprobs")
+            resolved_choice = {
+                **choice,
+                "logprobs": logprobs,
+            }
+        else:
+            request_ids = _chat_prompt_ids(tokenizer, messages, tools)
         if index == 0:
             prompt_ids = request_ids
             current_ids = list(request_ids)
@@ -416,18 +655,17 @@ def trajectory_to_rollout_tokens(
                 env_mask.extend([0] * len(external_ids))
             current_ids = list(request_ids)
 
-        resolved_choice = choice
         if not isinstance(choice.get("logprobs"), dict):
-            if logprob_resolver is None or completion_id is None:
+            if resolved_choice is choice:
                 raise RuntimeError("OpenCode response has no sampled-token logprobs")
-            resolved_choice = {
-                **choice,
-                "logprobs": logprob_resolver(completion_id),
-            }
         generated_ids, generated_logprobs = _sampled_tokens(
             resolved_choice,
             tokenizer,
         )
+        if exact_completion_ids is not None and generated_ids != exact_completion_ids:
+            raise RuntimeError(
+                "Model bridge completion IDs do not match sampled-token logprobs"
+            )
         completion_ids.extend(generated_ids)
         sampled_logprobs.extend(generated_logprobs)
         env_mask.extend([1] * len(generated_ids))
@@ -474,7 +712,7 @@ class OpenCodeRolloutCollector:
         self.records: list[dict[str, Any]] = []
         self._rollout_index = 0
 
-    def _resolve_bridge_logprobs(self, completion_id: str) -> dict[str, Any]:
+    def _resolve_bridge_trace(self, completion_id: str) -> dict[str, Any]:
         import httpx
 
         base_url = os.environ.get(self.config.evaluation.control_url_env)
@@ -495,10 +733,14 @@ class OpenCodeRolloutCollector:
         )
         response.raise_for_status()
         payload = response.json()
-        logprobs = payload.get("logprobs") if isinstance(payload, dict) else None
-        if not isinstance(logprobs, dict):
-            raise RuntimeError(f"Model bridge returned no logprobs for {completion_id}")
-        return logprobs
+        if not isinstance(payload, dict):
+            raise RuntimeError(f"Model bridge returned no trace for {completion_id}")
+        for key in ("prompt_ids", "completion_ids", "logprobs"):
+            if key not in payload:
+                raise RuntimeError(
+                    f"Model bridge trace has no {key} for {completion_id}"
+                )
+        return payload
 
     def __call__(self, prompts: list[Any], trainer: Any) -> dict[str, Any]:
         if not prompts:
@@ -604,13 +846,25 @@ class OpenCodeRolloutCollector:
     ) -> CollectedRollout:
         health = payload.get("health")
         rows = health.get("rows") if isinstance(health, dict) else None
-        if (
-            not isinstance(rows, list)
-            or len(rows) != 1
-            or not isinstance(rows[0], dict)
-        ):
+        if not isinstance(rows, list) or any(not isinstance(row, dict) for row in rows):
             raise RuntimeError("OpenCode GRPO health summary has no rollout")
-        health_row = rows[0]
+        if len(rows) == 1:
+            health_row = rows[0]
+        else:
+            candidates = [
+                row
+                for row in rows
+                if row.get("task_id") == task_id
+                and row.get("scored") is True
+                and row.get("error") is None
+                and row.get("verifier_error") is None
+                and row.get("valid_llm_trajectory") is True
+            ]
+            if not candidates:
+                raise RuntimeError(
+                    "OpenCode GRPO health summary has no healthy scored rollout"
+                )
+            health_row = candidates[-1]
         reward = health_row.get("reward")
         if (
             not isinstance(reward, int | float)
@@ -624,7 +878,7 @@ class OpenCodeRolloutCollector:
             trajectory_path,
             tokenizer,
             max_completion_tokens=self.config.runtime.max_completion_length,
-            logprob_resolver=self._resolve_bridge_logprobs,
+            trace_resolver=self._resolve_bridge_trace,
         )
         record = {
             "task_id": task_id,
@@ -708,6 +962,7 @@ def train_grpo(
         "per_device_train_batch_size": 1,
         "gradient_accumulation_steps": config.grpo.gradient_accumulation_steps,
         "gradient_checkpointing": config.grpo.gradient_checkpointing,
+        "torch_empty_cache_steps": 1,
         "generation_batch_size": generation_batch_size,
         "learning_rate": config.grpo.learning_rate,
         "save_strategy": "no",
@@ -771,6 +1026,14 @@ def train_grpo(
     merged.save_pretrained(str(output_dir), safe_serialization=True)
     if processing_class is not None:
         processing_class.save_pretrained(str(output_dir))
+    model_path = Path(model)
+    base_checkpoint_sha256 = (
+        _directory_sha256(model_path)
+        if model_path.is_dir()
+        else hashlib.sha256(
+            f"{model}@{config.model_revision or ''}".encode()
+        ).hexdigest()
+    )
     payload = {
         "mode": "grpo",
         "harness": config.harness.agent,
@@ -786,6 +1049,9 @@ def train_grpo(
         "jobs_dir": str(jobs_dir),
         "adapter_dir": str(adapter_dir),
         "merged_model_dir": str(output_dir),
+        "base_checkpoint_sha256": base_checkpoint_sha256,
+        "adapter_sha256": _directory_sha256(adapter_dir),
+        "merged_model_sha256": _directory_sha256(output_dir),
         "resume_policy": "restart-stage",
         "rollout_count": len(collector.records),
         "rollouts": collector.records,

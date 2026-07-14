@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import inspect
+import hashlib
 import json
 import os
 import shlex
@@ -43,6 +44,34 @@ def load_score(path: Path) -> float:
 def write_json(path: Path, value: Any) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(value, indent=2, sort_keys=True, default=str) + "\n")
+
+
+def file_sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def directory_sha256(path: Path) -> str:
+    if not path.is_dir():
+        raise FileNotFoundError(path)
+    files = sorted(
+        item
+        for item in path.rglob("*")
+        if item.is_file() and item.name != "train_metrics.json"
+    )
+    if not files:
+        raise ValueError(f"No checkpoint artifacts in {path}")
+    digest = hashlib.sha256()
+    for item in files:
+        digest.update(str(item.relative_to(path)).encode())
+        digest.update(b"\0")
+        with item.open("rb") as handle:
+            for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                digest.update(chunk)
+    return digest.hexdigest()
 
 
 def _resolved_command(command: list[str]) -> tuple[list[str], str | None]:

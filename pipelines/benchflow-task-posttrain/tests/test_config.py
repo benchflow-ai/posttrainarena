@@ -75,8 +75,31 @@ def test_qwen35_full_recipe_uses_all_tasks_and_one_epoch_lora() -> None:
     assert config.grpo.lora_r == 16
     assert config.grpo.lora_alpha == 32
     assert config.grpo.log_completions is False
-    assert config.grpo.generation_batch_size == 16
+    assert config.grpo.gradient_accumulation_steps == 1
+    assert config.grpo.generation_batch_size == 2
     assert config.tracking.report_to == "none"
+    assert config.evaluation.sync_base_to_vllm is True
+
+
+def test_qwen35_soccer_canary_is_domain_matched_and_disjoint() -> None:
+    config = load_config(ROOT / "configs/qwen3.5-9b-data-agent-soccer-canary.toml")
+    train_ids = config.train_dataset.task_list.read_text().splitlines()
+    eval_ids = config.eval_dataset.task_list.read_text().splitlines()
+
+    assert len(train_ids) == len(set(train_ids)) == 8
+    assert len(eval_ids) == len(set(eval_ids)) == 3
+    assert set(train_ids).isdisjoint(eval_ids)
+    assert config.teacher.min_verified == 4
+    assert config.teacher.require_all_tasks is False
+    assert config.sft.num_train_epochs == 1.0
+    assert config.sft.max_steps is None
+    assert config.grpo.run_policy == "always"
+    assert config.grpo.num_train_epochs == 1.0
+    assert config.grpo.max_steps is None
+    assert config.grpo.gradient_accumulation_steps == 1
+    assert config.grpo.generation_batch_size == 2
+    assert config.tracking.report_to == "none"
+    assert config.evaluation.sync_base_to_vllm is True
 
 
 def test_forced_grpo_smoke_config_bypasses_reward_gate() -> None:

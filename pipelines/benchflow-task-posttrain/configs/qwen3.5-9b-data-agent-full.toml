@@ -37,6 +37,7 @@ student_model_env = "BENCHFLOW_ADAPTER_MODEL"
 base_url_env = "BENCHFLOW_PROVIDER_BASE_URL"
 control_url_env = "BENCHFLOW_MODEL_BRIDGE_CONTROL_URL"
 api_key_env = "BENCHFLOW_PROVIDER_API_KEY"
+sync_base_to_vllm = true
 
 [teacher]
 enabled = true
@@ -68,13 +69,13 @@ threshold = 0.0
 gate_task_count = 64
 num_train_epochs = 1.0
 learning_rate = 0.000001
-gradient_accumulation_steps = 8
+gradient_accumulation_steps = 1
 gradient_checkpointing = true
 lora_r = 16
 lora_alpha = 32
 lora_dropout = 0.05
 log_completions = false
-generation_batch_size = 16
+generation_batch_size = 2
 rollout_attempts = 2
 vllm_server_base_url_env = "TRL_VLLM_SERVER_BASE_URL"
 

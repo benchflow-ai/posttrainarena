@@ -32,6 +32,8 @@ boundaries:
 - `opencode.py`: shared OpenCode baseline, gate, and final evaluation path
 - `grpo.py`: OpenCode rollout collection, token/action reconstruction, and TRL
   LoRA GRPO with adapter and merged checkpoint export
+- `model_bridge.py`: OpenAI-compatible Qwen tool-call and logprob bridge
+- `vllm_server.py`: TRL vLLM server with Qwen3.5 weight-name compatibility
 
 New recipes must pin dataset and model revisions, add explicit task lists,
 document expected compute, and keep tests no-spend. Before opening a PR:
@@ -80,9 +82,12 @@ baseline trained with the identical recipe, with paired bootstrap
 confidence intervals. Track 1 packages are evaluated by pass@1 of a
 frozen reference agent — no training, no internet.
 
-Qwen3.5-9B is the checked-in organizer recipe. The historical live smoke used
-Qwen3-4B; the Qwen3.5 canary and full recipe are the current validation target
-while the final competition compute budget is frozen. See
+Qwen3.5-9B is the checked-in organizer recipe. The current
+eight-train/three-eval Data Agent canary completed the orchestration path with
+held-out pass rate unchanged at `1/3`, but a post-run audit invalidated its old
+GRPO prompt reconstruction. A corrected matched-domain rerun and full-scale
+validation remain the current targets while the final competition compute
+budget is frozen. See
 [`docs/training-pipeline.md`](./docs/training-pipeline.md) for exact executable
 behavior and evidence boundaries.
 

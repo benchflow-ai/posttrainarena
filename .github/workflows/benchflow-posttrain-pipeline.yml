@@ -11,6 +11,7 @@ on:
       - "docs/opencode-grpo.md"
       - "docs/opencode-grpo-smoke.md"
       - "docs/qwen35-opencode-teacher-canary.md"
+      - "docs/qwen35-data-agent-e2e-canary.md"
       - "docs/README.md"
       - "README.md"
       - "CONTRIBUTING.md"
@@ -30,6 +31,7 @@ on:
       - "docs/opencode-grpo.md"
       - "docs/opencode-grpo-smoke.md"
       - "docs/qwen35-opencode-teacher-canary.md"
+      - "docs/qwen35-data-agent-e2e-canary.md"
       - "docs/README.md"
       - "README.md"
       - "CONTRIBUTING.md"
@@ -76,10 +78,12 @@ jobs:
               assert match, name
               return Version(match.group(1))
 
-          assert version("torch") == Version("2.11.0")
+          assert version("torch").base_version == "2.11.0"
           assert Version("5.6") <= version("transformers") < Version("5.14")
           assert version("trl") == Version("1.8.0")
-          assert Version("0.20") <= version("vllm") <= Version("0.23")
+          # CI checks dependency compatibility without downloading GPU wheels.
+          # The GPU bootstrap verifies the installed vLLM metadata is `+cu129`.
+          assert version("vllm").base_version == "0.23.0"
           assert Version("0.19") <= version("peft") < Version("0.20")
           PY
       - name: Compile
@@ -102,6 +106,8 @@ jobs:
             --config configs/qwen3-4b-skillsbench-e2e-smoke.toml
           posttrainarena-train validate \
             --config configs/qwen3.5-9b-data-agent-canary.toml
+          posttrainarena-train validate \
+            --config configs/qwen3.5-9b-data-agent-soccer-canary.toml
           posttrainarena-train validate \
             --config configs/qwen3.5-9b-data-agent-full.toml
           posttrainarena-train plan \
@@ -126,6 +132,7 @@ jobs:
           assert qwen35["eval_task_count"] == 366
           assert qwen35["teacher"]["model"] == "openrouter/qwen/qwen3.5-397b-a17b"
           assert qwen35["teacher"]["require_all_tasks"] is True
+          assert qwen35["evaluation"]["sync_base_to_vllm"] is True
           assert qwen35["sft"]["num_train_epochs"] == 1.0
           assert qwen35["sft"]["max_steps"] is None
           assert qwen35["grpo"]["num_train_epochs"] == 1.0

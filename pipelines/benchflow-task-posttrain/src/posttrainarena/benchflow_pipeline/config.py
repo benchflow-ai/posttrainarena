@@ -92,6 +92,7 @@ class EvaluationConfig:
     base_url_env: str = "BENCHFLOW_PROVIDER_BASE_URL"
     control_url_env: str = "BENCHFLOW_MODEL_BRIDGE_CONTROL_URL"
     api_key_env: str = "BENCHFLOW_PROVIDER_API_KEY"
+    sync_base_to_vllm: bool = False
 
 
 @dataclass(frozen=True)
@@ -218,6 +219,8 @@ class PipelineConfig:
         ):
             if not isinstance(value, str) or not value.strip():
                 errors.append(f"{label} must be a non-empty string")
+        if not isinstance(self.evaluation.sync_base_to_vllm, bool):
+            errors.append("evaluation.sync_base_to_vllm must be boolean")
         if self.sandbox not in {"docker", "daytona"}:
             errors.append("runtime.sandbox must be docker or daytona")
         if self.runtime.num_generations < 2:

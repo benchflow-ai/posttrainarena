@@ -9,6 +9,7 @@
 | [`hf-jobs.md`](hf-jobs.md) | Organizers and Hugging Face collaborators | Submission-to-recipe bridge, HF UV Jobs, artifact publication, multi-benchmark evaluation, and leaderboard hosting |
 | [`hf-jobs-validation.md`](hf-jobs-validation.md) | Reviewers and operators | H100 wrapper evidence, Hub outputs, live Space, and the current HF Jobs credit blocker |
 | [`qwen35-opencode-teacher-canary.md`](qwen35-opencode-teacher-canary.md) | Reviewers and operators | Real Qwen3.5-397B OpenCode rollout, trajectory, and TRL conversion evidence |
+| [`qwen35-data-agent-e2e-canary.md`](qwen35-data-agent-e2e-canary.md) | Reviewers and operators | Real Qwen3.5-9B LoRA SFT, OpenCode GRPO, synchronization, and held-out score evidence |
 | [`../starting-kit/README.md`](../starting-kit/README.md) | Environment authors | Task package template and worked examples |
 | [`../submissions/README.md`](../submissions/README.md) | Teams | Team-entry layout and submission manifest |
 | [`../SECURITY.md`](../SECURITY.md) | Security reporters | Private vulnerability reporting and secret-handling expectations |

@@ -47,6 +47,45 @@ def test_parse_qwen_tool_calls_returns_openai_shape() -> None:
     assert json.loads(calls[0]["function"]["arguments"]) == {"command": "pwd"}
 
 
+def test_parse_qwen35_function_tag_tool_calls() -> None:
+    content, calls = parse_qwen_tool_calls(
+        """
+thinking
+<tool_call>
+<function=bash>
+<parameter=command>
+sqlite3 database.sqlite ".tables"
+</parameter>
+<parameter=timeout>
+30
+</parameter>
+</function>
+</tool_call>
+"""
+    )
+
+    assert content == "thinking"
+    assert calls[0]["function"]["name"] == "bash"
+    assert json.loads(calls[0]["function"]["arguments"]) == {
+        "command": 'sqlite3 database.sqlite ".tables"',
+        "timeout": "30",
+    }
+
+
+def test_parse_qwen35_rejects_malformed_function_parameters() -> None:
+    with pytest.raises(RuntimeError, match="parameter block"):
+        parse_qwen_tool_calls(
+            """
+<tool_call>
+<function=bash>
+unexpected
+<parameter=command>pwd</parameter>
+</function>
+</tool_call>
+"""
+        )
+
+
 def test_translate_trl_chat_response_preserves_token_ids_and_logprobs() -> None:
     payload = translate_trl_chat_response(
         payload=_upstream("OK"),
@@ -65,6 +104,30 @@ def test_translate_trl_chat_response_preserves_token_ids_and_logprobs() -> None:
         "prompt_tokens": 3,
         "completion_tokens": 2,
         "total_tokens": 5,
+    }
+
+
+def test_translate_qwen35_function_tag_response_emits_tool_call() -> None:
+    payload = translate_trl_chat_response(
+        payload=_upstream(
+            """
+<tool_call>
+<function=bash>
+<parameter=command>pwd</parameter>
+</function>
+</tool_call>
+"""
+        ),
+        tokenizer=FakeTokenizer(),
+        model="Qwen/Qwen3.5-9B",
+    )
+
+    choice = payload["choices"][0]
+    assert choice["finish_reason"] == "tool_calls"
+    assert choice["message"]["content"] is None
+    assert choice["message"]["tool_calls"][0]["function"]["name"] == "bash"
+    assert json.loads(choice["message"]["tool_calls"][0]["function"]["arguments"]) == {
+        "command": "pwd"
     }
 
 
@@ -130,7 +193,16 @@ def test_model_bridge_serves_authenticated_streaming_tool_call() -> None:
         headers={"Authorization": "Bearer secret"},
     )
     assert sidecar.status_code == 200
+    assert sidecar.json()["prompt_ids"] == [1, 2, 3]
+    assert sidecar.json()["completion_ids"][:2] == [ord("<"), ord("t")]
     assert sidecar.json()["logprobs"]["content"]
+    assert (
+        client.get(
+            f"/v1/benchflow/logprobs/{completion_id}",
+            headers={"Authorization": "Bearer secret"},
+        ).status_code
+        == 404
+    )
     assert captured["payload"]["messages"] == [request["messages"]]
     assert captured["payload"]["tools"] == request["tools"]
     assert captured["payload"]["logprobs"] == 0
@@ -153,7 +225,8 @@ def test_model_bridge_caps_tokens_per_call() -> None:
         tokenizer=FakeTokenizer(),
         chat_call=fake_chat,
     )
-    response = TestClient(app).post(
+    client = TestClient(app)
+    response = client.post(
         "/v1/chat/completions",
         json={
             "model": "Qwen/Qwen3-4B",
@@ -164,6 +237,44 @@ def test_model_bridge_caps_tokens_per_call() -> None:
 
     assert response.status_code == 200
     assert captured["payload"]["max_tokens"] == 64
+    assert (
+        client.get(
+            f"/v1/benchflow/logprobs/{response.json()['id']}",
+        ).status_code
+        == 404
+    )
+
+
+def test_model_bridge_retains_eight_concurrent_sixty_five_turn_rollouts() -> None:
+    async def fake_chat(_payload: dict[str, Any]) -> dict[str, Any]:
+        return _upstream("A")
+
+    app = create_model_bridge_app(
+        ModelBridgeConfig(
+            upstream_url="http://127.0.0.1:8000",
+            tokenizer_id="Qwen/Qwen3-4B",
+        ),
+        tokenizer=FakeTokenizer(),
+        chat_call=fake_chat,
+    )
+    client = TestClient(app)
+    completion_ids = []
+    for _ in range(8 * 65):
+        response = client.post(
+            "/v1/chat/completions",
+            json={
+                "messages": [{"role": "user", "content": "inspect"}],
+                "logprobs": True,
+            },
+        )
+        completion_ids.append(response.json()["id"])
+
+    assert (
+        client.get(
+            f"/v1/benchflow/logprobs/{completion_ids[0]}",
+        ).status_code
+        == 200
+    )
 
 
 def test_model_bridge_rejects_invalid_token_cap() -> None:
@@ -172,4 +283,11 @@ def test_model_bridge_rejects_invalid_token_cap() -> None:
             upstream_url="http://127.0.0.1:8000",
             tokenizer_id="Qwen/Qwen3-4B",
             max_tokens_per_call=0,
+        )
+
+    with pytest.raises(ValueError, match="max_sidecar_entries"):
+        ModelBridgeConfig(
+            upstream_url="http://127.0.0.1:8000",
+            tokenizer_id="Qwen/Qwen3-4B",
+            max_sidecar_entries=0,
         )

@@ -13,6 +13,8 @@ implemented OpenEnv adapter boundary, see
 ```text
 training task list + held-out eval task list + pinned TOML recipe
     -> snapshot task packages from Hugging Face
+    -> reject canonical package-content overlap across train and eval
+    -> synchronize the pinned base checkpoint to the shared vLLM endpoint
     -> evaluate the served base model through OpenCode
     -> collect one verifier-approved teacher trajectory per training task through OpenCode
     -> convert and validate native TRL prompt/completion/tools SFT data
@@ -49,7 +51,9 @@ served `Environment` and typed `EnvClient`; it does not duplicate BenchFlow task
 loading, sandboxes, verifiers, rewards, or artifacts.
 
 SFT optimization consumes BenchFlow's native `trl-sft` prompt/completion/tools
-rows with completion-only and assistant-only loss. It does not call the
+rows into pre-tokenized `input_ids` and labels that begin at the exact
+prompt/full-conversation common prefix. This avoids Qwen3.5 chat-template mask
+drift while training only the intended completion suffix. It does not call the
 environment. Environment interaction occurs during teacher collection,
 evaluation, the reward gate, and GRPO rollouts.
 
@@ -108,6 +112,14 @@ source "$HOME/posttrainarena/activate-posttrain.sh"
 ```
 
 Set `REPO_REF` to a tag or commit SHA when reproducing a specific revision.
+The bootstrap installs Torch from its CUDA-specific index, then installs a
+content-addressed official vLLM `cu129` wheel directly because the plain PyPI
+vLLM 0.23.0 wheel targets CUDA 13 and cannot load on the CUDA 12.x H100 image
+used by the reference topology. This avoids unsafe cross-index dependency
+resolution. Override `VLLM_CUDA_VARIANT`, `VLLM_WHEEL_BUILD`, and
+`UV_TORCH_BACKEND` together for another reviewed wheel family.
+The host bootstrap also installs `ninja-build`, which FlashInfer requires when
+it JIT-compiles Qwen3.5 kernels on first use.
 
 ## Qwen3.5 organizer recipe
 
@@ -121,8 +133,10 @@ disabled and the full recipe does not export participant prompts to W&B. The
 canonical task runtime is Docker on a native Linux GPU host; Daytona remains an
 optional compatibility path.
 
-The matching 1x1 validation recipe is
+The minimal 1x1 validation recipe is
 [`configs/qwen3.5-9b-data-agent-canary.toml`](../pipelines/benchflow-task-posttrain/configs/qwen3.5-9b-data-agent-canary.toml).
+The domain-matched eight-train/three-eval recipe is
+[`configs/qwen3.5-9b-data-agent-soccer-canary.toml`](../pipelines/benchflow-task-posttrain/configs/qwen3.5-9b-data-agent-soccer-canary.toml).
 The current teacher/provider and TRL conversion evidence is recorded in
 [`qwen35-opencode-teacher-canary.md`](qwen35-opencode-teacher-canary.md).
 
@@ -193,7 +207,7 @@ The example Daytona recipe expects:
 
 TRL's server-mode weight synchronization requires the trainer and vLLM server
 to use different physical CUDA devices. On one two-GPU machine, launch the
-server with `CUDA_VISIBLE_DEVICES=1` and the pipeline with
+server with `CUDA_VISIBLE_DEVICES=1 posttrainarena-vllm-serve ...` and the pipeline with
 `CUDA_VISIBLE_DEVICES=0`. The public bridge can remain CPU-only.
 
 Provider credential values are not written to the run plan or score report.
@@ -215,16 +229,27 @@ posttrainarena-train run \
 ```
 
 Resume reuses snapshots, evaluation metrics, converted SFT data, and checkpoints
-when their expected marker artifacts exist. Use a new run name when changing a
-recipe or task list.
+only after validating the persisted run plan, exact task IDs, teacher
+selection, SFT-data digest, checkpoint digests, evaluation identity, and
+evaluation health artifacts. Use a new run name when changing a recipe or task
+list.
+
+The snapshot boundary also rejects byte-equivalent task packages under
+different task IDs after normalizing the package's declared task name. This is
+an exact-content leakage check; organizer review must still perform a separate
+semantic leakage audit before private competition evaluation.
 
 The configured student endpoint must expose `BENCHFLOW_ADAPTER_MODEL`.
-Post-SFT and post-GRPO weights are synchronized through
+The Qwen3.5 recipes synchronize the pinned base checkpoint before baseline
+evaluation so a server reused from an earlier run cannot contaminate the
+reference score. Post-SFT and post-GRPO weights are synchronized through
 `TRL_VLLM_SERVER_BASE_URL`; OpenCode reaches the same server through the public
 `model-bridge` URL in `BENCHFLOW_PROVIDER_BASE_URL`. Evaluation and GRPO fail closed on missing
 endpoint configuration, incomplete token telemetry, missing or malformed LLM
-trajectories, unscored rows, zero-tool rollouts, missing sampled logprobs,
-tokenizer drift, or action-token budget overflow.
+trajectories, unscored rows, missing sampled logprobs, tokenizer drift, or
+action-token budget overflow. A scored zero-tool completion is retained as
+model behavior, usually with reward `0`; verified teacher selection still
+requires at least one tool call.
 
 The evaluator itself has a real SkillsBench + Daytona canary with score `1.0`,
 complete provider telemetry, and healthy `results.jsonl` and
@@ -234,6 +259,8 @@ The GRPO rollout format and endpoint topology are documented in
 [`opencode-grpo.md`](opencode-grpo.md).
 The real OpenCode-only SFT-to-GRPO validation is documented in
 [`opencode-grpo-smoke.md`](opencode-grpo-smoke.md).
+The Qwen3.5 Data Agent eight-train/three-eval run is documented in
+[`qwen35-data-agent-e2e-canary.md`](qwen35-data-agent-e2e-canary.md).
 
 ## SFT, RL-only, and reward gating
 
@@ -299,6 +326,12 @@ The Qwen3.5 recipe requires separate physical devices for the trainer and TRL
 vLLM worker. Two H100 80 GB GPUs are the initial canary topology. Exact memory
 and runtime depend on completion length, generation count, sandbox latency,
 and task trajectory length. Run the 1x1 canary before the full 2,238-task run.
+The checked-in GRPO recipe trains one same-prompt pair at a time: two
+generations, generation batch two, and no gradient accumulation. This keeps
+long OpenCode trajectories within the 80 GB trainer GPU without reducing the
+one-epoch task coverage. The bootstrap also enables PyTorch expandable CUDA
+segments to reduce allocator fragmentation, and the GRPO trainer clears cached
+CUDA allocations between steps.
 
 Use W&B for spendful runs to track training loss and GPU utilization. Terminate
 GPU hosts after artifacts and checkpoints are backed up.
