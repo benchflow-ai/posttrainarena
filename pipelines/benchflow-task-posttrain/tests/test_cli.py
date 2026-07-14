@@ -46,7 +46,7 @@ def test_model_bridge_cli_contract() -> None:
             "--max-context-tokens",
             "32768",
             "--max-logprob-context-tokens",
-            "16384",
+            "12288",
             "--max-sidecar-entries",
             "256",
             "--port",
@@ -59,7 +59,7 @@ def test_model_bridge_cli_contract() -> None:
     assert args.api_key_env == "BENCHFLOW_PROVIDER_API_KEY"
     assert args.max_tokens == 2048
     assert args.max_context_tokens == 32768
-    assert args.max_logprob_context_tokens == 16384
+    assert args.max_logprob_context_tokens == 12288
     assert args.max_sidecar_entries == 256
     assert args.port == 9001
 

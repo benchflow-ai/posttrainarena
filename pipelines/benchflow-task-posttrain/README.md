@@ -168,6 +168,8 @@ The bridge normalizes OpenCode follow-up tool arguments and token-fits oversized
 tool results to the server context without truncating system or user messages.
 Its sampled-logprob path uses a stricter context cap for trainer memory while
 ordinary evaluation retains the full model context.
+CLI runs also enable expandable CUDA segments by default to reduce GRPO memory
+fragmentation.
 
 The final contract is:
 

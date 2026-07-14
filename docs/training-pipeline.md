@@ -222,6 +222,8 @@ The bridge fits each served prompt to the configured model context by truncating
 oldest tool outputs only; system and user instructions are never truncated.
 GRPO sampled-logprob requests use a smaller context cap than evaluation requests
 to keep trainer-side policy-logprob recomputation within GPU memory.
+The CLI enables PyTorch expandable CUDA segments unless the operator already
+supplied a custom allocator configuration.
 
 ## Execute and resume
 
