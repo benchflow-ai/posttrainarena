@@ -79,8 +79,9 @@ same normalization so served and trained token IDs stay aligned.
 Before forwarding, the bridge tokenizes the complete Qwen prompt against the
 configured 49,152-token context window. If tool output would overflow the
 prompt budget, it preserves system/user messages and truncates the oldest tool
-outputs with an explicit marker. Non-tool context overflow fails before calling
-the TRL server.
+outputs with an explicit marker. If the irreducible prompt exceeds the reserved
+prompt budget, the bridge reduces that turn's generation allowance;
+it fails only when the prompt leaves no token available for generation.
 Sampled-logprob GRPO requests use a stricter 16,384-token context cap so TRL can
 recompute policy logprobs on one H100 without materializing 49k-token logits.
 Ordinary baseline, SFT, and final evaluation keep the full context window.

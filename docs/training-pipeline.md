@@ -220,6 +220,8 @@ It also converts OpenCode's stringified follow-up tool arguments back to JSON
 objects before Qwen3.5 chat-template rendering.
 The bridge fits each served prompt to the configured model context by truncating
 oldest tool outputs only; system and user instructions are never truncated.
+It dynamically reduces the per-turn generation allowance when irreducible
+prompt overhead would otherwise exceed the reserved prompt budget.
 GRPO sampled-logprob requests use a smaller context cap than evaluation requests
 to keep trainer-side policy-logprob recomputation within GPU memory.
 The CLI enables PyTorch expandable CUDA segments unless the operator already
