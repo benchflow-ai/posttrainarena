@@ -251,6 +251,11 @@ action-token budget overflow. A scored zero-tool completion is retained as
 model behavior, usually with reward `0`; verified teacher selection still
 requires at least one tool call.
 
+Baseline, post-SFT, gate, and final evaluation default to greedy sampling with
+`seed=0`. GRPO rollout requests opt into sampled-token logprobs and remain
+stochastic, preserving within-group reward variance without making pass-rate
+comparisons depend on random decoding.
+
 The evaluator itself has a real SkillsBench + Daytona canary with score `1.0`,
 complete provider telemetry, and healthy `results.jsonl` and
 `llm_trajectory.jsonl` artifacts. See

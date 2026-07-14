@@ -207,6 +207,8 @@ def test_model_bridge_serves_authenticated_streaming_tool_call() -> None:
     assert captured["payload"]["tools"] == request["tools"]
     assert captured["payload"]["logprobs"] == 0
     assert captured["payload"]["max_tokens"] == 32
+    assert captured["payload"]["temperature"] == 1.0
+    assert "seed" not in captured["payload"]["generation_kwargs"]
 
 
 def test_model_bridge_caps_tokens_per_call() -> None:
@@ -237,6 +239,8 @@ def test_model_bridge_caps_tokens_per_call() -> None:
 
     assert response.status_code == 200
     assert captured["payload"]["max_tokens"] == 64
+    assert captured["payload"]["temperature"] == 0.0
+    assert captured["payload"]["generation_kwargs"]["seed"] == 0
     assert (
         client.get(
             f"/v1/benchflow/logprobs/{response.json()['id']}",
