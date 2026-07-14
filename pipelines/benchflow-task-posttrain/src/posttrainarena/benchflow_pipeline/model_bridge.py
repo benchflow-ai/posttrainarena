@@ -35,6 +35,7 @@ class ModelBridgeConfig:
     api_key: str | None = None
     max_tokens_per_call: int = 4096
     max_context_tokens: int = 49152
+    max_logprob_context_tokens: int = 24576
     timeout_seconds: float = 900.0
     max_sidecar_entries: int = 2048
 
@@ -52,6 +53,15 @@ class ModelBridgeConfig:
         ):
             raise ValueError(
                 "max_context_tokens must be an integer greater than max_tokens_per_call"
+            )
+        if (
+            not isinstance(self.max_logprob_context_tokens, int)
+            or isinstance(self.max_logprob_context_tokens, bool)
+            or self.max_logprob_context_tokens <= self.max_tokens_per_call
+        ):
+            raise ValueError(
+                "max_logprob_context_tokens must be an integer greater than "
+                "max_tokens_per_call"
             )
         if (
             not isinstance(self.max_sidecar_entries, int)
@@ -401,12 +411,15 @@ def _trl_request(
     )
     normalized_messages = normalize_tool_call_arguments(messages)
     tools = body.get("tools")
+    context_tokens = config.max_context_tokens
+    if capture_logprobs:
+        context_tokens = min(context_tokens, config.max_logprob_context_tokens)
     fitted_messages, original_tokens, fitted_tokens, truncated_messages = (
         fit_messages_to_context(
             tokenizer=tokenizer,
             messages=normalized_messages,
             tools=tools,
-            max_prompt_tokens=config.max_context_tokens - max_tokens,
+            max_prompt_tokens=context_tokens - max_tokens,
         )
     )
     if truncated_messages:
@@ -616,6 +629,7 @@ def serve_model_bridge(
     api_key: str | None,
     max_tokens_per_call: int,
     max_context_tokens: int,
+    max_logprob_context_tokens: int,
     max_sidecar_entries: int,
     host: str,
     port: int,
@@ -630,6 +644,7 @@ def serve_model_bridge(
             api_key=api_key,
             max_tokens_per_call=max_tokens_per_call,
             max_context_tokens=max_context_tokens,
+            max_logprob_context_tokens=max_logprob_context_tokens,
             max_sidecar_entries=max_sidecar_entries,
         )
     )

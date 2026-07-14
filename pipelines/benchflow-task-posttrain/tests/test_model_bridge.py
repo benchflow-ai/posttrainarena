@@ -473,6 +473,68 @@ def test_model_bridge_normalizes_followup_and_fits_context_for_trl() -> None:
     assert len(tool_content) < 1000
 
 
+def test_model_bridge_uses_stricter_context_for_logprob_requests() -> None:
+    captured: dict[str, Any] = {}
+
+    async def fake_chat(payload: dict[str, Any]) -> dict[str, Any]:
+        captured["payload"] = payload
+        return _upstream("OK")
+
+    tokenizer = FakeTokenizer()
+    app = create_model_bridge_app(
+        ModelBridgeConfig(
+            upstream_url="http://127.0.0.1:8000",
+            tokenizer_id="Qwen/Qwen3-4B",
+            max_tokens_per_call=64,
+            max_context_tokens=512,
+            max_logprob_context_tokens=448,
+        ),
+        tokenizer=tokenizer,
+        chat_call=fake_chat,
+    )
+    response = TestClient(app).post(
+        "/v1/chat/completions",
+        json={
+            "messages": [
+                {"role": "user", "content": "inspect"},
+                {
+                    "role": "assistant",
+                    "content": "",
+                    "tool_calls": [
+                        {
+                            "id": "call-1",
+                            "type": "function",
+                            "function": {
+                                "name": "read",
+                                "arguments": '{"filePath":"/tmp/data.csv"}',
+                            },
+                        }
+                    ],
+                },
+                {
+                    "role": "tool",
+                    "tool_call_id": "call-1",
+                    "content": "x" * 1000,
+                },
+            ],
+            "logprobs": True,
+        },
+    )
+
+    assert response.status_code == 200
+    payload = captured["payload"]
+    prompt_tokens = len(
+        tokenizer.apply_chat_template(
+            payload["messages"][0],
+            tools=payload["tools"],
+            tokenize=True,
+            add_generation_prompt=True,
+        )["input_ids"][0]
+    )
+    assert prompt_tokens <= 384
+    assert payload["messages"][0][2]["content"].endswith(TOOL_OUTPUT_TRUNCATION_MARKER)
+
+
 def test_model_bridge_caps_tokens_per_call() -> None:
     captured: dict[str, Any] = {}
 
@@ -597,4 +659,12 @@ def test_model_bridge_rejects_invalid_token_cap() -> None:
             tokenizer_id="Qwen/Qwen3-4B",
             max_tokens_per_call=64,
             max_context_tokens=64,
+        )
+
+    with pytest.raises(ValueError, match="max_logprob_context_tokens"):
+        ModelBridgeConfig(
+            upstream_url="http://127.0.0.1:8000",
+            tokenizer_id="Qwen/Qwen3-4B",
+            max_tokens_per_call=64,
+            max_logprob_context_tokens=64,
         )
