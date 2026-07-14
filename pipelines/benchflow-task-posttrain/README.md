@@ -159,6 +159,8 @@ forwards to the TRL server at `TRL_VLLM_SERVER_BASE_URL`. The pipeline
 synchronizes the pinned base weights before baseline evaluation, SFT weights
 before SFT evaluation, the current GRPO policy before each rollout batch, and
 final weights before the held-out evaluation.
+The bridge normalizes OpenCode follow-up tool arguments and token-fits oversized
+tool results to the server context without truncating system or user messages.
 
 The final contract is:
 

@@ -8,7 +8,9 @@ from fastapi.testclient import TestClient
 
 from posttrainarena.benchflow_pipeline.model_bridge import (
     ModelBridgeConfig,
+    TOOL_OUTPUT_TRUNCATION_MARKER,
     create_model_bridge_app,
+    fit_messages_to_context,
     normalize_tool_call_arguments,
     parse_qwen_tool_calls,
     translate_trl_chat_response,
@@ -25,6 +27,14 @@ class FakeTokenizer:
     ) -> str:
         del skip_special_tokens, clean_up_tokenization_spaces
         return bytes(token_ids).decode("utf-8")
+
+    def apply_chat_template(self, messages, **kwargs):
+        tools = kwargs.get("tools")
+        encoded = json.dumps(
+            {"messages": messages, "tools": tools},
+            sort_keys=True,
+        ).encode()
+        return {"input_ids": [list(encoded)]}
 
 
 def _upstream(text: str) -> dict[str, Any]:
@@ -140,6 +150,54 @@ def test_normalize_tool_call_arguments_rejects_invalid_values(arguments: str) ->
 
     with pytest.raises(RuntimeError, match="arguments"):
         normalize_tool_call_arguments(messages)
+
+
+def test_fit_messages_to_context_truncates_oldest_tool_output() -> None:
+    messages = [
+        {"role": "user", "content": "keep this instruction"},
+        {
+            "role": "assistant",
+            "content": "",
+            "tool_calls": [
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "read",
+                        "arguments": {"filePath": "/tmp/data.csv"},
+                    },
+                }
+            ],
+        },
+        {
+            "role": "tool",
+            "tool_call_id": "call-1",
+            "content": "x" * 1000,
+        },
+    ]
+
+    fitted, original_tokens, fitted_tokens, truncated = fit_messages_to_context(
+        tokenizer=FakeTokenizer(),
+        messages=messages,
+        tools=None,
+        max_prompt_tokens=400,
+    )
+
+    assert original_tokens > 400
+    assert fitted_tokens <= 400
+    assert truncated == 1
+    assert fitted[0] == messages[0]
+    assert fitted[2]["content"].endswith(TOOL_OUTPUT_TRUNCATION_MARKER)
+    assert messages[2]["content"] == "x" * 1000
+
+
+def test_fit_messages_to_context_rejects_oversized_user_prompt() -> None:
+    with pytest.raises(RuntimeError, match="exceeds the model context"):
+        fit_messages_to_context(
+            tokenizer=FakeTokenizer(),
+            messages=[{"role": "user", "content": "x" * 1000}],
+            tools=None,
+            max_prompt_tokens=100,
+        )
 
 
 def test_translate_trl_chat_response_preserves_token_ids_and_logprobs() -> None:
@@ -360,7 +418,7 @@ def test_model_bridge_does_not_intercept_tool_bearing_title_prompt() -> None:
     assert captured["payload"]["tools"]
 
 
-def test_model_bridge_normalizes_followup_tool_arguments_for_trl() -> None:
+def test_model_bridge_normalizes_followup_and_fits_context_for_trl() -> None:
     captured: dict[str, Any] = {}
 
     async def fake_chat(payload: dict[str, Any]) -> dict[str, Any]:
@@ -371,6 +429,8 @@ def test_model_bridge_normalizes_followup_tool_arguments_for_trl() -> None:
         ModelBridgeConfig(
             upstream_url="http://127.0.0.1:8000",
             tokenizer_id="Qwen/Qwen3-4B",
+            max_tokens_per_call=64,
+            max_context_tokens=512,
         ),
         tokenizer=FakeTokenizer(),
         chat_call=fake_chat,
@@ -397,7 +457,7 @@ def test_model_bridge_normalizes_followup_tool_arguments_for_trl() -> None:
                 {
                     "role": "tool",
                     "tool_call_id": "call-1",
-                    "content": "a,b\n1,2",
+                    "content": "x" * 1000,
                 },
             ],
         },
@@ -408,6 +468,9 @@ def test_model_bridge_normalizes_followup_tool_arguments_for_trl() -> None:
         "arguments"
     ]
     assert arguments == {"filePath": "/tmp/data.csv"}
+    tool_content = captured["payload"]["messages"][0][2]["content"]
+    assert tool_content.endswith(TOOL_OUTPUT_TRUNCATION_MARKER)
+    assert len(tool_content) < 1000
 
 
 def test_model_bridge_caps_tokens_per_call() -> None:
@@ -526,4 +589,12 @@ def test_model_bridge_rejects_invalid_token_cap() -> None:
             upstream_url="http://127.0.0.1:8000",
             tokenizer_id="Qwen/Qwen3-4B",
             max_sidecar_entries=0,
+        )
+
+    with pytest.raises(ValueError, match="max_context_tokens"):
+        ModelBridgeConfig(
+            upstream_url="http://127.0.0.1:8000",
+            tokenizer_id="Qwen/Qwen3-4B",
+            max_tokens_per_call=64,
+            max_context_tokens=64,
         )

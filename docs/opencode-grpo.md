@@ -46,6 +46,7 @@ posttrainarena-train model-bridge \
   --tokenizer Qwen/Qwen3.5-9B \
   --tokenizer-revision <immutable-sha> \
   --max-tokens 4096 \
+  --max-context-tokens 49152 \
   --max-sidecar-entries 2048 \
   --port 8001
 ```
@@ -67,13 +68,18 @@ does not retain choice-level logprobs, the bridge also keeps a bounded
 authenticated sidecar keyed by the OpenAI completion ID. The GRPO collector
 resolves the exact sampled token IDs/logprobs from that sidecar and writes
 `grpo_tokens.json` beside each rollout attempt. The bridge caps each model turn
-at 16,384 generated tokens while the pipeline separately enforces the
+at 4,096 generated tokens while the pipeline separately enforces the
 rollout-level completion budget.
 
 On follow-up turns, OpenCode sends function arguments as JSON strings while
 Qwen3.5's chat template expects mappings. The bridge normalizes those arguments
 before forwarding the conversation to TRL; GRPO prompt reconstruction uses the
 same normalization so served and trained token IDs stay aligned.
+Before forwarding, the bridge tokenizes the complete Qwen prompt against the
+configured 49,152-token context window. If tool output would overflow the
+prompt budget, it preserves system/user messages and truncates the oldest tool
+outputs with an explicit marker. Non-tool context overflow fails before calling
+the TRL server.
 
 ## Per-update lifecycle
 
