@@ -6,13 +6,13 @@ revision = "c202236235762e1c871ad0ccb60c8ee5ba337b9a"
 repo_id = "benchflow/data_agent_rl_environment_train"
 revision = "34ff63c91731df6b3670bfcd7e3d44e6790ddc48"
 path = "tasks"
-task_list = "../task-lists/data-agent-train-1.txt"
+task_list = "../task-lists/data-agent-soccer-train-8.txt"
 
 [eval_dataset]
 repo_id = "benchflow/data_agent_rl_environment_eval"
 revision = "0ea976c79e3248c85737c4f7363484e4d47ce287"
 path = "tasks"
-task_list = "../task-lists/data-agent-eval-1.txt"
+task_list = "../task-lists/data-agent-soccer-eval-3.txt"
 
 [runtime]
 sandbox = "docker"
@@ -26,7 +26,7 @@ skill_mode = "no-skill"
 usage_tracking = "required"
 external_directory_allow = ["/home/user/input/**"]
 deny_bash_patterns = ["*<<*"]
-concurrency = 1
+concurrency = 4
 sandbox_setup_timeout_sec = 300
 agent_idle_timeout_sec = 300
 agent_timeout_sec = 900
@@ -44,9 +44,9 @@ enabled = true
 model = "openrouter/qwen/qwen3.5-397b-a17b"
 source_model = "Qwen/Qwen3.5-397B-A17B"
 source_revision = "8472618112abcbd45acbcdc58436aff4233c23f7"
-max_attempts = 2
-min_verified = 1
-require_all_tasks = true
+max_attempts = 3
+min_verified = 4
+require_all_tasks = false
 min_reward = 1.0
 max_accepted_total_tokens = 200000
 max_accepted_tool_calls = 100
@@ -56,7 +56,7 @@ enabled = true
 num_train_epochs = 1.0
 learning_rate = 0.00002
 max_length = 40960
-gradient_accumulation_steps = 1
+gradient_accumulation_steps = 8
 gradient_checkpointing = true
 lora_r = 16
 lora_alpha = 32
@@ -66,8 +66,8 @@ lora_dropout = 0.05
 enabled = true
 run_policy = "always"
 threshold = 0.0
-gate_task_count = 1
-max_steps = 1
+gate_task_count = 8
+num_train_epochs = 1.0
 learning_rate = 0.000001
 gradient_accumulation_steps = 1
 gradient_checkpointing = true
@@ -81,7 +81,7 @@ vllm_server_base_url_env = "TRL_VLLM_SERVER_BASE_URL"
 
 [tracking]
 report_to = "none"
-project = "posttrainarena-qwen35-9b-canary"
+project = "posttrainarena-qwen35-9b-soccer-canary"
 
 [output]
 root = "../runs"

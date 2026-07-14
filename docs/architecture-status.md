@@ -30,6 +30,7 @@ The supported executable reference is the Qwen3.5-9B pipeline under
 ```text
 PostTrain task lists and pinned HF snapshots
     -> BenchFlow task loading and sandbox lifecycle
+    -> pinned Qwen3.5-9B synchronization and OpenCode baseline evaluation
     -> OpenCode teacher rollouts through BenchFlow
     -> one verifier-approved Qwen3.5-397B-A17B trajectory per training task
     -> one-epoch TRL LoRA SFT, adapter, and merged checkpoint
@@ -46,8 +47,9 @@ harness with required provider telemetry and BenchFlow artifact-health gates.
 GRPO uses TRL 1.8's custom rollout function, not `environment_factory`.
 Evaluation resolves the base and student model aliases plus the
 OpenAI-compatible endpoint from named environment variables. TRL synchronizes
-the SFT policy before its evaluation, the current GRPO policy before each
-rollout batch, and the final policy before held-out evaluation.
+the pinned base policy before baseline evaluation, the SFT policy before its
+evaluation, the current GRPO policy before each rollout batch, and the final
+policy before held-out evaluation.
 
 The final machine-readable contract is:
 
@@ -56,8 +58,9 @@ runs/<run-name>/reports/score.json
 ```
 
 The full checked-in recipe covers all 2,238 public training tasks and all 366
-held-out public evaluation tasks. Historical Qwen3-4B smokes validate the
-orchestration, but measured `0.0 -> 0.0`; Qwen3.5 model-quality lift and
+held-out public evaluation tasks. Historical Qwen3-4B smokes and the current
+Qwen3.5 Data Agent eight-train/three-eval canary validate the orchestration,
+but the latest held-out pass rate remained `1/3 -> 1/3`; model-quality lift and
 competition-scale readiness remain unproven.
 
 ## Ownership boundaries
@@ -76,24 +79,24 @@ competition-scale readiness remain unproven.
 | Surface | Status | Evidence or boundary |
 |---|---|---|
 | PostTrain `task.md` packages | Implemented | Starting-kit examples, structural CI, local Docker harness, and the public 2,238-train/366-eval data-agent datasets |
-| BenchFlow task-list training/eval | Implemented | Public pipeline, tests, CLI dry-run, and completed H100 smoke |
+| BenchFlow task-list training/eval | Implemented | Public pipeline, exact-ID and package-content isolation checks, content-addressed resume validation, CLI dry-run, and completed H100 orchestration smoke |
 | Docker runtime | Implemented | Local author harness and BenchFlow runtime option |
 | Daytona runtime | Implemented in pipeline | BenchFlow runtime option; credentials required for real execution |
-| TRL SFT | Implemented | BenchFlow `trl-sft` prompt/completion/tools conversion, tokenizer-aware message windows, completion-only and assistant-only LoRA loss, and merged checkpoint path |
+| TRL SFT | Implemented | BenchFlow `trl-sft` prompt/completion/tools conversion, tokenizer-aware message windows, exact common-prefix token labels for Qwen3.5, and merged checkpoint path |
 | TRL GRPO | Implemented | Qwen3.5 full recipe always runs one epoch over all training tasks; the custom OpenCode rollout function returns token IDs, sampled logprobs, action mask, and BenchFlow verifier reward; optimization is LoRA without quantization |
 | OpenCode teacher collection | Implemented | Provider-qualified Qwen3.5-397B-A17B teacher, required usage tracking, adaptive retries, and fail-closed one-training-ready-rollout-per-task coverage |
-| OpenCode evaluation | Implemented | Baseline, post-SFT, training gate, final, and multi-benchmark evaluation all use `bench eval run --agent opencode`; the real SkillsBench + Daytona canary passed with complete telemetry and healthy trajectories |
-| OpenCode GRPO | Implemented and live GPU validated | TRL custom rollout function invokes OpenCode/BenchFlow, reconstructs masked causal token sequences, consumes provider logprobs, forwards verifier reward, and resynchronizes the vLLM endpoint; the SkillsBench + Daytona smoke completed two rollouts and one optimizer step |
+| OpenCode evaluation | Implemented and live Qwen3.5 validated | Baseline, post-SFT, training gate, final, and multi-benchmark evaluation all use `bench eval run --agent opencode`; real SkillsBench and Qwen3.5 Data Agent canaries produced complete telemetry and healthy trajectories |
+| OpenCode GRPO | Corrected; live rerun pending | TRL custom rollout function invokes OpenCode/BenchFlow, consumes exact served prompt/completion IDs plus sampled logprobs, forwards verifier reward, and resynchronizes the vLLM endpoint; post-run audit found the older Qwen3.5 canary had `0/321` prompt-token-count matches, so it is not valid optimization evidence |
 | Harbor | Not a dependency | No Harbor adapter or trajectory translation is used |
 | OpenEnv client/server lifecycle | Implemented | Pinned dependency, served adapter, typed client, real lifecycle tests, finalization, state, and session isolation |
 | OpenEnv/BenchFlow Docker parity | Manually validated | Checked-in security task produced identical output and reward `1.0` through both integrations; CI uses a no-spend fake BenchFlow boundary |
-| Native dataset OpenEnv pipeline | Prior end-to-end smoke validated | One train and one held-out native `task.md` package completed the earlier OpenEnv/TRL eval path; rerun the current OpenCode-eval path after a student endpoint is configured |
+| Native Data Agent pipeline | Orchestration live validated; corrected GRPO rerun pending | Eight training and three disjoint held-out native `task.md` packages completed the full stage sequence, but the historical GRPO prompt reconstruction was not token-aligned with serving |
 | Submission-to-recipe bridge | Implemented | Environment entries become pinned Hub datasets and portable recipes |
 | HF Jobs execution | Canary handoff implemented; scheduler credit blocked | UV job bundle and historical H100 runner validated; the Docker-based Qwen3.5 full recipe currently targets a persistent native Linux GPU host |
 | Hub artifact publishing | Implemented | Run reports, checkpoint provenance, logs, and failures publish to Hub datasets/models |
 | Continuous leaderboard | Implemented | Atomic dataset records plus a deployable Gradio Space |
 | Multi-benchmark evaluation | Implemented | One base/final checkpoint pair is evaluated across pinned suites with macro delta |
-| Qwen3.5-9B competition recipe | Implemented; live validation pending | Immutable base/data revisions, declared Qwen3.5-397B teacher provenance, all-task teacher coverage, one-epoch LoRA SFT, and one-epoch LoRA GRPO are checked in |
+| Qwen3.5-9B competition recipe | Implemented; corrected live rerun pending | Immutable base/data revisions, declared Qwen3.5-397B teacher provenance, all-task teacher coverage, one-epoch LoRA SFT, one-epoch LoRA GRPO, exact served token IDs, and endpoint attestation are checked in; full-scale execution remains pending |
 | Demonstrated model-quality lift | Not yet | Reproduced smoke measured zero lift |
 
 The OpenCode evaluation evidence is recorded in
@@ -102,6 +105,8 @@ The GRPO rollout and endpoint contract is documented in
 [`opencode-grpo.md`](opencode-grpo.md).
 The real two-H100 SkillsBench + Daytona run is recorded in
 [`opencode-grpo-smoke.md`](opencode-grpo-smoke.md).
+The real Qwen3.5 Data Agent run is recorded in
+[`qwen35-data-agent-e2e-canary.md`](qwen35-data-agent-e2e-canary.md).
 
 ## OpenEnv integration
 

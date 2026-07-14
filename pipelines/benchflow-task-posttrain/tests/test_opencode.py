@@ -221,7 +221,6 @@ def test_load_summary_fails_closed(
         ({"total_rows": 2}, "expected 1"),
         ({"scored_rows": 0}, "scored_rows=0"),
         ({"unscored_rows": 1}, "unscored_rows=1"),
-        ({"zero_tool_rows": 1}, "zero_tool_rows=1"),
         ({"missing_llm_trajectory": 1}, "missing_llm_trajectory=1"),
         ({"malformed_llm_trajectory": 1}, "malformed_llm_trajectory=1"),
     ],
@@ -253,6 +252,95 @@ def test_load_summary_rejects_unhealthy_artifacts(
             health_path=health_path,
             expected_tasks=1,
         )
+
+
+def test_load_summary_accepts_scored_zero_tool_failure(tmp_path: Path) -> None:
+    jobs_dir = tmp_path / "jobs"
+    jobs_dir.mkdir()
+    (jobs_dir / "summary.json").write_text(
+        json.dumps(
+            {
+                "total": 1,
+                "errored": 0,
+                "verifier_errored": 0,
+                "telemetry_coverage": 1.0,
+                "score_excl_errors_ratio": 0.0,
+            }
+        )
+    )
+    health_path = tmp_path / "health.json"
+    _write_health(
+        health_path,
+        rows_with_tool_calls=0,
+        zero_tool_rows=1,
+    )
+
+    payload = load_summary(
+        jobs_dir=jobs_dir,
+        health_path=health_path,
+        expected_tasks=1,
+    )
+
+    assert payload["score"] == 0.0
+    assert payload["health"]["zero_tool_rows"] == 1
+
+
+def test_load_summary_accepts_failed_attempt_followed_by_scored_retry(
+    tmp_path: Path,
+) -> None:
+    jobs_dir = tmp_path / "jobs"
+    jobs_dir.mkdir()
+    (jobs_dir / "summary.json").write_text(
+        json.dumps(
+            {
+                "total": 2,
+                "errored": 0,
+                "verifier_errored": 0,
+                "telemetry_coverage": 1.0,
+                "score_excl_errors_ratio": 0.5,
+            }
+        )
+    )
+    health_path = tmp_path / "health.json"
+    _write_health(
+        health_path,
+        total_rows=3,
+        scored_rows=2,
+        unscored_rows=1,
+        rows=[
+            {
+                "task_id": "task-a",
+                "scored": True,
+                "error": None,
+                "verifier_error": None,
+                "valid_llm_trajectory": True,
+            },
+            {
+                "task_id": "task-b",
+                "scored": False,
+                "error": "process exited",
+                "verifier_error": None,
+                "valid_llm_trajectory": True,
+            },
+            {
+                "task_id": "task-b",
+                "scored": True,
+                "error": None,
+                "verifier_error": None,
+                "valid_llm_trajectory": True,
+            },
+        ],
+    )
+
+    payload = load_summary(
+        jobs_dir=jobs_dir,
+        health_path=health_path,
+        expected_tasks=2,
+        expected_task_ids=["task-a", "task-b"],
+    )
+
+    assert payload["score"] == 0.5
+    assert payload["health"]["total_rows"] == 3
 
 
 def test_evaluate_dry_run_records_only_environment_key_names(
@@ -305,7 +393,18 @@ def test_evaluate_writes_metrics_from_healthy_summary(tmp_path: Path) -> None:
     )
     runner = FakeRunner(ROOT)
     metrics_path = tmp_path / "metrics.json"
-    _write_health(tmp_path / "metrics_health.json")
+    _write_health(
+        tmp_path / "metrics_health.json",
+        rows=[
+            {
+                "task_id": "task-a",
+                "scored": True,
+                "error": None,
+                "verifier_error": None,
+                "valid_llm_trajectory": True,
+            }
+        ],
+    )
 
     payload = evaluate(
         config=config,

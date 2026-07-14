@@ -12,8 +12,13 @@ from typing import Any
 from uuid import uuid4
 
 
-TOOL_CALL_PATTERN = re.compile(
-    r"<tool_call>\s*(\{.*?\})\s*</tool_call>",
+TOOL_CALL_PATTERN = re.compile(r"<tool_call>\s*(.*?)\s*</tool_call>", re.DOTALL)
+FUNCTION_CALL_PATTERN = re.compile(
+    r"<function=([^>\n]+)>\s*(.*?)\s*</function>",
+    re.DOTALL,
+)
+FUNCTION_PARAMETER_PATTERN = re.compile(
+    r"<parameter=([^>\n]+)>\s*(.*?)\s*</parameter>",
     re.DOTALL,
 )
 
@@ -26,7 +31,7 @@ class ModelBridgeConfig:
     api_key: str | None = None
     max_tokens_per_call: int = 4096
     timeout_seconds: float = 900.0
-    max_sidecar_entries: int = 4096
+    max_sidecar_entries: int = 2048
 
     def __post_init__(self) -> None:
         if (
@@ -35,15 +40,44 @@ class ModelBridgeConfig:
             or self.max_tokens_per_call < 1
         ):
             raise ValueError("max_tokens_per_call must be a positive integer")
+        if (
+            not isinstance(self.max_sidecar_entries, int)
+            or isinstance(self.max_sidecar_entries, bool)
+            or self.max_sidecar_entries < 1
+        ):
+            raise ValueError("max_sidecar_entries must be a positive integer")
 
 
 def parse_qwen_tool_calls(text: str) -> tuple[str | None, list[dict[str, Any]]]:
     calls: list[dict[str, Any]] = []
     for match in TOOL_CALL_PATTERN.finditer(text):
-        try:
-            payload = json.loads(match.group(1))
-        except json.JSONDecodeError as exc:
-            raise RuntimeError(f"Malformed Qwen tool call: {exc}") from exc
+        body = match.group(1).strip()
+        if body.startswith("{"):
+            try:
+                payload = json.loads(body)
+            except json.JSONDecodeError as exc:
+                raise RuntimeError(f"Malformed Qwen tool call: {exc}") from exc
+        else:
+            function = FUNCTION_CALL_PATTERN.fullmatch(body)
+            if function is None:
+                raise RuntimeError("Malformed Qwen function-tag tool call")
+            name = function.group(1).strip()
+            arguments: dict[str, str] = {}
+            parameters = function.group(2)
+            consumed = 0
+            for parameter in FUNCTION_PARAMETER_PATTERN.finditer(parameters):
+                if parameters[consumed : parameter.start()].strip():
+                    raise RuntimeError("Malformed Qwen function parameter block")
+                parameter_name = parameter.group(1).strip()
+                if not parameter_name or parameter_name in arguments:
+                    raise RuntimeError(
+                        f"Invalid Qwen function parameter: {parameter_name!r}"
+                    )
+                arguments[parameter_name] = parameter.group(2).strip()
+                consumed = parameter.end()
+            if parameters[consumed:].strip():
+                raise RuntimeError("Malformed Qwen function parameter block")
+            payload = {"name": name, "arguments": arguments}
         name = payload.get("name")
         arguments = payload.get("arguments", {})
         if not isinstance(name, str) or not name:
@@ -306,7 +340,7 @@ def create_model_bridge_app(
         authorization: str | None = Header(default=None),
     ) -> dict[str, Any]:
         authorize(authorization)
-        payload = logprob_store.get(completion_id)
+        payload = logprob_store.pop(completion_id, None)
         if payload is None:
             raise HTTPException(status_code=404, detail="unknown completion id")
         return payload
@@ -325,13 +359,16 @@ def create_model_bridge_app(
             model=model,
         )
         completion_id = str(translated["id"])
-        logprob_store[completion_id] = {
-            "id": completion_id,
-            "logprobs": translated["choices"][0]["logprobs"],
-        }
-        logprob_store.move_to_end(completion_id)
-        while len(logprob_store) > config.max_sidecar_entries:
-            logprob_store.popitem(last=False)
+        if body.get("logprobs") is True:
+            logprob_store[completion_id] = {
+                "id": completion_id,
+                "prompt_ids": upstream["prompt_ids"][0],
+                "completion_ids": upstream["completion_ids"][0],
+                "logprobs": translated["choices"][0]["logprobs"],
+            }
+            logprob_store.move_to_end(completion_id)
+            while len(logprob_store) > config.max_sidecar_entries:
+                logprob_store.popitem(last=False)
         if body.get("stream") is True:
             return _streaming_response(translated)
         return translated
@@ -346,6 +383,7 @@ def serve_model_bridge(
     tokenizer_revision: str | None,
     api_key: str | None,
     max_tokens_per_call: int,
+    max_sidecar_entries: int,
     host: str,
     port: int,
 ) -> None:
@@ -358,6 +396,7 @@ def serve_model_bridge(
             tokenizer_revision=tokenizer_revision,
             api_key=api_key,
             max_tokens_per_call=max_tokens_per_call,
+            max_sidecar_entries=max_sidecar_entries,
         )
     )
     uvicorn.run(app, host=host, port=port)

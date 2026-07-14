@@ -10,8 +10,11 @@ from typing import Any
 import pytest
 
 from posttrainarena.benchflow_pipeline.config import load_config
-from posttrainarena.benchflow_pipeline.sft import load_trl_rows
-from posttrainarena.benchflow_pipeline.sft import train_sft
+from posttrainarena.benchflow_pipeline.sft import (
+    build_tokenized_sft_rows,
+    load_trl_rows,
+    train_sft,
+)
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -56,8 +59,28 @@ def test_train_sft_uses_native_trl_rows_and_masked_loss(
     captured: dict[str, Any] = {}
 
     class FakeTokenizer:
+        def apply_chat_template(
+            self,
+            messages,
+            *,
+            tokenize,
+            tools,
+            add_generation_prompt=False,
+        ):
+            assert tokenize is True
+            assert isinstance(tools, list)
+            text = "".join(
+                f"{message['role']}:{message.get('content') or ''}|"
+                for message in messages
+            )
+            if add_generation_prompt:
+                text += "assistant:"
+            return list(text.encode())
+
         def save_pretrained(self, path):
             captured.setdefault("tokenizer_paths", []).append(path)
+            Path(path).mkdir(parents=True, exist_ok=True)
+            (Path(path) / "tokenizer.json").write_text("{}")
 
     class FakeModel:
         pass
@@ -65,6 +88,8 @@ def test_train_sft_uses_native_trl_rows_and_masked_loss(
     class FakeMerged:
         def save_pretrained(self, path, **kwargs):
             captured["merged_save"] = (path, kwargs)
+            Path(path).mkdir(parents=True, exist_ok=True)
+            (Path(path) / "model.safetensors").write_bytes(b"merged")
 
     class FakePeftModel:
         @classmethod
@@ -88,6 +113,8 @@ def test_train_sft_uses_native_trl_rows_and_masked_loss(
 
         def save_model(self, path):
             captured["adapter_save"] = path
+            Path(path).mkdir(parents=True, exist_ok=True)
+            (Path(path) / "adapter_model.safetensors").write_bytes(b"adapter")
 
     fake_peft = ModuleType("peft")
     fake_peft.__spec__ = ModuleSpec("peft", loader=None)
@@ -131,12 +158,11 @@ def test_train_sft_uses_native_trl_rows_and_masked_loss(
     trainer_kwargs = captured["trainer_kwargs"]
     args = trainer_kwargs["args"].values
     assert trainer_kwargs["train_dataset"] == captured["dataset_rows"]
-    assert trainer_kwargs["train_dataset"][0]["prompt"][0]["content"] == "solve"
-    assert trainer_kwargs["train_dataset"][0]["tools"][0]["function"]["name"] == (
-        "submit"
-    )
-    assert args["completion_only_loss"] is True
-    assert args["assistant_only_loss"] is True
+    assert trainer_kwargs["train_dataset"][0]["input_ids"]
+    assert -100 in trainer_kwargs["train_dataset"][0]["labels"]
+    assert any(label != -100 for label in trainer_kwargs["train_dataset"][0]["labels"])
+    assert args["completion_only_loss"] is False
+    assert args["assistant_only_loss"] is False
     assert args["max_steps"] == config.sft.max_steps
     assert "num_train_epochs" not in args
     assert args["gradient_checkpointing"] is True
@@ -147,6 +173,10 @@ def test_train_sft_uses_native_trl_rows_and_masked_loss(
     dependency = json.loads((tmp_path / "adapter/adapter_dependency.json").read_text())
     assert dependency["base_model"] == config.model
     assert dependency["base_revision"] == config.model_revision
+    metrics = json.loads((tmp_path / "merged/train_metrics.json").read_text())
+    assert metrics["train_jsonl_sha256"]
+    assert metrics["adapter_sha256"]
+    assert metrics["merged_model_sha256"]
 
 
 def test_full_recipe_sft_uses_one_epoch_instead_of_max_steps(
@@ -167,15 +197,35 @@ def test_full_recipe_sft_uses_one_epoch_instead_of_max_steps(
     captured: dict[str, Any] = {}
 
     class FakeTokenizer:
-        def save_pretrained(self, _path):
-            return None
+        def apply_chat_template(
+            self,
+            messages,
+            *,
+            tokenize,
+            tools,
+            add_generation_prompt=False,
+        ):
+            assert tokenize is True
+            assert isinstance(tools, list)
+            text = "".join(
+                f"{message['role']}:{message.get('content') or ''}|"
+                for message in messages
+            )
+            if add_generation_prompt:
+                text += "assistant:"
+            return list(text.encode())
+
+        def save_pretrained(self, path):
+            Path(path).mkdir(parents=True, exist_ok=True)
+            (Path(path) / "tokenizer.json").write_text("{}")
 
     class FakeModel:
         pass
 
     class FakeMerged:
-        def save_pretrained(self, _path, **_kwargs):
-            return None
+        def save_pretrained(self, path, **_kwargs):
+            Path(path).mkdir(parents=True, exist_ok=True)
+            (Path(path) / "model.safetensors").write_bytes(b"merged")
 
     class FakePeftModel:
         @classmethod
@@ -196,8 +246,9 @@ def test_full_recipe_sft_uses_one_epoch_instead_of_max_steps(
         def train(self):
             return SimpleNamespace(metrics={"loss": 0.1})
 
-        def save_model(self, _path):
-            return None
+        def save_model(self, path):
+            Path(path).mkdir(parents=True, exist_ok=True)
+            (Path(path) / "adapter_model.safetensors").write_bytes(b"adapter")
 
     monkeypatch.setattr(
         datasets.Dataset,
@@ -234,3 +285,46 @@ def test_full_recipe_sft_uses_one_epoch_instead_of_max_steps(
 
     assert captured["args"]["num_train_epochs"] == 1.0
     assert "max_steps" not in captured["args"]
+    assert json.loads((tmp_path / "merged/train_metrics.json").read_text())[
+        "merged_model_sha256"
+    ]
+
+
+def test_tokenized_sft_labels_start_at_exact_common_prefix() -> None:
+    class PrefixMismatchTokenizer:
+        def apply_chat_template(
+            self,
+            messages,
+            *,
+            tokenize,
+            tools,
+            add_generation_prompt=False,
+        ):
+            del tokenize, tools
+            if add_generation_prompt:
+                return [1, 2, 9]
+            assert len(messages) == 2
+            return [1, 2, 8, 3, 4]
+
+    rows, stats = build_tokenized_sft_rows(
+        [
+            {
+                "prompt": [{"role": "user", "content": "solve"}],
+                "completion": [{"role": "assistant", "content": "done"}],
+                "tools": [],
+            }
+        ],
+        PrefixMismatchTokenizer(),
+        max_length=16,
+    )
+
+    assert rows == [
+        {
+            "input_ids": [1, 2, 8, 3, 4],
+            "labels": [-100, -100, 8, 3, 4],
+        }
+    ]
+    assert stats == {
+        "max_prompt_prefix_mismatch": 1,
+        "trained_tokens": 3,
+    }

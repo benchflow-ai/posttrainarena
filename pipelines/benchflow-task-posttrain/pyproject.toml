@@ -46,6 +46,7 @@ test = [
 
 [project.scripts]
 posttrainarena-train = "posttrainarena.benchflow_pipeline.cli:main"
+posttrainarena-vllm-serve = "posttrainarena.benchflow_pipeline.vllm_server:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/posttrainarena"]

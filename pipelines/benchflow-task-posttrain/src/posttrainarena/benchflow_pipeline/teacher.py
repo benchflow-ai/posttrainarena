@@ -343,6 +343,7 @@ def collect_verified_teacher_rollouts(
             "teacher_source_revision": config.teacher.source_revision,
             "teacher_source_identity_enforced": False,
             "requested_task_count": len(task_ids),
+            "requested_task_ids": task_ids,
             "required_verified_count": (
                 len(task_ids)
                 if config.teacher.require_all_tasks
@@ -377,6 +378,7 @@ def collect_verified_teacher_rollouts(
         "teacher_source_identity_enforced": False,
         "harness": config.harness.agent,
         "requested_task_count": len(task_ids),
+        "requested_task_ids": task_ids,
         "required_verified_count": (
             len(task_ids)
             if config.teacher.require_all_tasks
