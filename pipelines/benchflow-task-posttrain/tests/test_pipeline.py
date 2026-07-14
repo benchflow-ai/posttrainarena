@@ -450,7 +450,7 @@ def test_resumed_grpo_restarts_stage_instead_of_reusing_rollouts(
     assert pipeline.runner.commands[-1]["resume_policy"] == "restart-stage"
 
 
-def test_resume_rejects_insufficient_teacher_manifest(tmp_path: Path) -> None:
+def test_resume_recollects_insufficient_teacher_manifest(tmp_path: Path) -> None:
     config = load_config(ROOT / "configs/qwen3-4b-data-agent-smoke.toml")
     config = replace(config, output_root=tmp_path)
     pipeline = Pipeline(
@@ -479,8 +479,12 @@ def test_resume_rejects_insufficient_teacher_manifest(tmp_path: Path) -> None:
         json.dumps({"selected_count": len(pipeline.train_task_ids) - 1})
     )
 
-    with pytest.raises(RuntimeError, match="verified_count"):
-        pipeline._collect_and_convert_teacher_data()
+    pipeline._collect_and_convert_teacher_data()
+
+    assert any(
+        command["name"] == "collect_verified_teacher_rollouts"
+        for command in pipeline.runner.commands
+    )
 
 
 def test_resume_rejects_fabricated_teacher_selection_count(tmp_path: Path) -> None:
@@ -641,7 +645,7 @@ def test_resume_checkpoint_digests_detect_tampering(tmp_path: Path) -> None:
     )
 
 
-def test_resume_rejects_changed_run_plan_before_overwriting_it(
+def test_resume_allows_increased_teacher_retry_budget(
     tmp_path: Path,
 ) -> None:
     config = load_config(ROOT / "configs/qwen3-4b-data-agent-smoke.toml")
@@ -657,6 +661,33 @@ def test_resume_rejects_changed_run_plan_before_overwriting_it(
             ),
         ),
         run_name="resume-plan",
+        dry_run=True,
+        resume=True,
+    )
+
+    changed._prepare_run_plan()
+
+    updated = json.loads((changed.layout.reports / "plan.json").read_text())
+    assert updated["teacher"]["max_attempts"] == (
+        original_plan["teacher"]["max_attempts"] + 1
+    )
+
+
+def test_resume_rejects_other_teacher_plan_changes(tmp_path: Path) -> None:
+    config = load_config(ROOT / "configs/qwen3-4b-data-agent-smoke.toml")
+    config = replace(config, output_root=tmp_path)
+    original = Pipeline(config, run_name="resume-plan-drift", dry_run=True)
+    original._prepare_run_plan()
+    original_plan = json.loads((original.layout.reports / "plan.json").read_text())
+    changed = Pipeline(
+        replace(
+            config,
+            teacher=replace(
+                config.teacher,
+                min_reward=config.teacher.min_reward - 0.1,
+            ),
+        ),
+        run_name="resume-plan-drift",
         dry_run=True,
         resume=True,
     )

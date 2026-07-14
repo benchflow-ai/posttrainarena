@@ -265,6 +265,35 @@ def _select_from_attempts(
     return selected
 
 
+def _selection_state(
+    *,
+    config: PipelineConfig,
+    attempts: list[dict[str, Any]],
+    task_ids: list[str],
+) -> tuple[list[dict[str, Any]], list[str]]:
+    selected = _select_from_attempts(attempts, task_ids)
+    selected_task_ids = {str(row["task_id"]) for row in selected}
+    over_budget_task_ids = {
+        str(row["task_id"])
+        for row in attempts
+        if (
+            isinstance(row.get("total_tokens"), int | float)
+            and float(row["total_tokens"]) > config.teacher.max_accepted_total_tokens
+        )
+        or int(row.get("tool_calls") or 0) > config.teacher.max_accepted_tool_calls
+    }
+    remaining = [
+        task_id
+        for task_id in task_ids
+        if task_id not in selected_task_ids and task_id not in over_budget_task_ids
+    ]
+    return selected, remaining
+
+
+def _has_completed_attempt(path: Path, health_path: Path) -> bool:
+    return path.is_dir() and health_path.is_file() and any(path.rglob("result.json"))
+
+
 def collect_verified_teacher_rollouts(
     *,
     config: PipelineConfig,
@@ -277,8 +306,33 @@ def collect_verified_teacher_rollouts(
 ) -> dict[str, Any]:
     remaining = list(task_ids)
     attempts_so_far: list[dict[str, Any]] = []
-    selected_so_far: list[dict[str, Any]] = []
-    for attempt in range(1, config.teacher.max_attempts + 1):
+    first_pending_attempt = 1
+    if not runner.dry_run:
+        for attempt in range(1, config.teacher.max_attempts + 1):
+            attempt_name = f"attempt-{attempt:02d}"
+            attempt_jobs = jobs_dir / attempt_name
+            health_path = manifest_path.with_name(f"teacher_health_{attempt_name}.json")
+            if not _has_completed_attempt(attempt_jobs, health_path):
+                first_pending_attempt = attempt
+                break
+            existing_attempts, _ = _select_verified(
+                config=config,
+                jobs_dir=attempt_jobs,
+                task_ids=task_ids,
+            )
+            attempts_so_far.extend(existing_attempts)
+            _, remaining = _selection_state(
+                config=config,
+                attempts=attempts_so_far,
+                task_ids=task_ids,
+            )
+            first_pending_attempt = attempt + 1
+            if not remaining:
+                break
+
+    for attempt in range(first_pending_attempt, config.teacher.max_attempts + 1):
+        if not remaining:
+            break
         attempt_name = f"attempt-{attempt:02d}"
         attempt_jobs = jobs_dir / attempt_name
         returncode = runner.run(
@@ -314,28 +368,14 @@ def collect_verified_teacher_rollouts(
         new_attempts, _ = _select_verified(
             config=config,
             jobs_dir=attempt_jobs,
-            task_ids=remaining,
+            task_ids=task_ids,
         )
         attempts_so_far.extend(new_attempts)
-        selected_so_far = _select_from_attempts(attempts_so_far, task_ids)
-        selected_task_ids = {str(row["task_id"]) for row in selected_so_far}
-        over_budget_task_ids = {
-            str(row["task_id"])
-            for row in attempts_so_far
-            if (
-                isinstance(row.get("total_tokens"), int | float)
-                and float(row["total_tokens"])
-                > config.teacher.max_accepted_total_tokens
-            )
-            or int(row.get("tool_calls") or 0) > config.teacher.max_accepted_tool_calls
-        }
-        remaining = [
-            task_id
-            for task_id in task_ids
-            if task_id not in selected_task_ids and task_id not in over_budget_task_ids
-        ]
-        if not remaining:
-            break
+        _, remaining = _selection_state(
+            config=config,
+            attempts=attempts_so_far,
+            task_ids=task_ids,
+        )
     if runner.dry_run:
         return {
             "teacher_model": config.teacher.model,
