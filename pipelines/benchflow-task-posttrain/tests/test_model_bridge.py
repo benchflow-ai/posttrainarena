@@ -211,6 +211,99 @@ def test_model_bridge_serves_authenticated_streaming_tool_call() -> None:
     assert "seed" not in captured["payload"]["generation_kwargs"]
 
 
+def test_model_bridge_short_circuits_title_helper_without_provider_call() -> None:
+    async def fail_chat(_payload: dict[str, Any]) -> dict[str, Any]:
+        raise AssertionError("title helper must not call the model")
+
+    app = create_model_bridge_app(
+        ModelBridgeConfig(
+            upstream_url="http://127.0.0.1:8000",
+            tokenizer_id="Qwen/Qwen3-4B",
+        ),
+        tokenizer=FakeTokenizer(),
+        chat_call=fail_chat,
+    )
+    response = TestClient(app).post(
+        "/v1/chat/completions",
+        json={
+            "model": "Qwen/Qwen3-4B",
+            "messages": [
+                {
+                    "role": "system",
+                    "content": (
+                        "You are a title generator. You output ONLY a thread title."
+                    ),
+                },
+                {
+                    "role": "user",
+                    "content": "Generate a title for this conversation:\n",
+                },
+                {"role": "user", "content": "Analyze red wine quality."},
+            ],
+            "stream": True,
+            "logprobs": True,
+        },
+    )
+
+    assert response.status_code == 200
+    chunk = next(
+        json.loads(line.removeprefix("data: "))
+        for line in response.text.splitlines()
+        if line.startswith("data: ") and line != "data: [DONE]"
+    )
+    assert chunk["choices"][0]["delta"]["content"] == "Data analysis task"
+    assert chunk["choices"][0]["finish_reason"] == "stop"
+    assert (
+        TestClient(app)
+        .get(
+            f"/v1/benchflow/logprobs/{chunk['id']}",
+        )
+        .status_code
+        == 404
+    )
+
+
+def test_model_bridge_does_not_intercept_tool_bearing_title_prompt() -> None:
+    captured: dict[str, Any] = {}
+
+    async def fake_chat(payload: dict[str, Any]) -> dict[str, Any]:
+        captured["payload"] = payload
+        return _upstream("OK")
+
+    app = create_model_bridge_app(
+        ModelBridgeConfig(
+            upstream_url="http://127.0.0.1:8000",
+            tokenizer_id="Qwen/Qwen3-4B",
+        ),
+        tokenizer=FakeTokenizer(),
+        chat_call=fake_chat,
+    )
+    response = TestClient(app).post(
+        "/v1/chat/completions",
+        json={
+            "messages": [
+                {
+                    "role": "system",
+                    "content": "You are a title generator.",
+                },
+                {
+                    "role": "user",
+                    "content": "Generate a title for this conversation:",
+                },
+            ],
+            "tools": [
+                {
+                    "type": "function",
+                    "function": {"name": "bash", "parameters": {"type": "object"}},
+                }
+            ],
+        },
+    )
+
+    assert response.status_code == 200
+    assert captured["payload"]["tools"]
+
+
 def test_model_bridge_caps_tokens_per_call() -> None:
     captured: dict[str, Any] = {}
 
@@ -240,13 +333,46 @@ def test_model_bridge_caps_tokens_per_call() -> None:
     assert response.status_code == 200
     assert captured["payload"]["max_tokens"] == 64
     assert captured["payload"]["temperature"] == 1.0
-    assert captured["payload"]["generation_kwargs"]["seed"] == 0
+    assert "seed" not in captured["payload"]["generation_kwargs"]
     assert (
         client.get(
             f"/v1/benchflow/logprobs/{response.json()['id']}",
         ).status_code
         == 404
     )
+
+
+def test_model_bridge_fixes_seed_for_tool_evaluation_only() -> None:
+    captured: dict[str, Any] = {}
+
+    async def fake_chat(payload: dict[str, Any]) -> dict[str, Any]:
+        captured["payload"] = payload
+        return _upstream("OK")
+
+    app = create_model_bridge_app(
+        ModelBridgeConfig(
+            upstream_url="http://127.0.0.1:8000",
+            tokenizer_id="Qwen/Qwen3-4B",
+        ),
+        tokenizer=FakeTokenizer(),
+        chat_call=fake_chat,
+    )
+    response = TestClient(app).post(
+        "/v1/chat/completions",
+        json={
+            "messages": [{"role": "user", "content": "inspect"}],
+            "tools": [
+                {
+                    "type": "function",
+                    "function": {"name": "bash", "parameters": {"type": "object"}},
+                }
+            ],
+        },
+    )
+
+    assert response.status_code == 200
+    assert captured["payload"]["temperature"] == 1.0
+    assert captured["payload"]["generation_kwargs"]["seed"] == 0
 
 
 def test_model_bridge_retains_eight_concurrent_sixty_five_turn_rollouts() -> None:

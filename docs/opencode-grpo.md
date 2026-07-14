@@ -57,9 +57,10 @@ Qwen3.5's native `<function=...><parameter=...>` syntax, and emits
 OpenAI-compatible streaming responses. The 4,096-token per-call cap keeps the
 non-streaming TRL server response below OpenCode's idle window; the GRPO
 trajectory can still span multiple calls up to the recipe's aggregate
-completion-token limit. Requests without explicit logprob capture default to
-`temperature=1.0` with `seed=0`, preserving Qwen3.5's tool-use behavior while
-making baseline/SFT/final decoding reproducible. GRPO logprob-capture requests
+completion-token limit. Tool-bearing requests without explicit logprob capture
+default to `temperature=1.0` with `seed=0`, preserving Qwen3.5's tool-use
+behavior while making baseline/SFT/final agent decoding reproducible. OpenCode
+helper requests without tools are not seeded, and GRPO logprob-capture requests
 use the same temperature without a forced seed unless the caller explicitly
 overrides it. Because LiteLLM's stream aggregation
 does not retain choice-level logprobs, the bridge also keeps a bounded
@@ -137,6 +138,9 @@ weights and leaves the frozen visual weights unchanged.
 This removes the former TRL `environment_factory` agent loop. OpenEnv remains a
 standalone protocol compatibility service, but it is not part of teacher
 collection, evaluation, or GRPO rollout generation.
+The bridge short-circuits OpenCode's title-generator prompt to a fixed local
+title without a provider call, avoiding helper failures before the first tool
+action.
 
 ## Validation boundary
 

@@ -226,7 +226,7 @@ def _trl_request(body: dict[str, Any], config: ModelBridgeConfig) -> dict[str, A
     if isinstance(extra_body, dict):
         generation_kwargs.update(extra_body)
     capture_logprobs = body.get("logprobs") is True
-    if not capture_logprobs and body.get("seed") is None:
+    if not capture_logprobs and body.get("tools") and body.get("seed") is None:
         generation_kwargs["seed"] = 0
     temperature = body.get("temperature")
     if temperature is None:
@@ -277,6 +277,50 @@ def _streaming_response(payload: dict[str, Any]) -> Any:
         yield "data: [DONE]\n\n"
 
     return StreamingResponse(events(), media_type="text/event-stream")
+
+
+def _is_title_request(body: dict[str, Any]) -> bool:
+    messages = body.get("messages")
+    if body.get("tools") or not isinstance(messages, list) or len(messages) < 2:
+        return False
+    first = messages[0]
+    second = messages[1]
+    return (
+        isinstance(first, dict)
+        and first.get("role") == "system"
+        and isinstance(first.get("content"), str)
+        and first["content"].startswith("You are a title generator.")
+        and isinstance(second, dict)
+        and second.get("role") == "user"
+        and isinstance(second.get("content"), str)
+        and second["content"].startswith("Generate a title for this conversation:")
+    )
+
+
+def _title_response(*, model: str) -> dict[str, Any]:
+    content = "Data analysis task"
+    return {
+        "id": f"chatcmpl-{uuid4().hex}",
+        "object": "chat.completion",
+        "created": int(time.time()),
+        "model": model,
+        "choices": [
+            {
+                "index": 0,
+                "message": {
+                    "role": "assistant",
+                    "content": content,
+                },
+                "logprobs": {"content": []},
+                "finish_reason": "stop",
+            }
+        ],
+        "usage": {
+            "prompt_tokens": 0,
+            "completion_tokens": 0,
+            "total_tokens": 0,
+        },
+    }
 
 
 def create_model_bridge_app(
@@ -358,14 +402,18 @@ def create_model_bridge_app(
     ) -> Any:
         authorize(authorization)
         model = str(body.get("model") or config.tokenizer_id)
-        upstream = await chat_call(_trl_request(body, config))
-        translated = translate_trl_chat_response(
-            payload=upstream,
-            tokenizer=tokenizer,
-            model=model,
-        )
+        if _is_title_request(body):
+            upstream = None
+            translated = _title_response(model=model)
+        else:
+            upstream = await chat_call(_trl_request(body, config))
+            translated = translate_trl_chat_response(
+                payload=upstream,
+                tokenizer=tokenizer,
+                model=model,
+            )
         completion_id = str(translated["id"])
-        if body.get("logprobs") is True:
+        if body.get("logprobs") is True and upstream is not None:
             logprob_store[completion_id] = {
                 "id": completion_id,
                 "prompt_ids": upstream["prompt_ids"][0],

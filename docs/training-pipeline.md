@@ -214,6 +214,8 @@ Provider credential values are not written to the run plan or score report.
 BenchFlow removes upstream provider keys from the OpenCode environment and
 replaces them with a per-run LiteLLM proxy token. Do not pass raw provider keys
 through `--agent-env`; participant tasks must only see the scoped proxy route.
+The model bridge answers OpenCode's title-generator prompt locally with a fixed
+title, so that helper cannot consume model traffic or block task solving.
 
 ## Execute and resume
 
@@ -251,13 +253,13 @@ action-token budget overflow. A scored zero-tool completion is retained as
 model behavior, usually with reward `0`; verified teacher selection still
 requires at least one tool call.
 
-Baseline, post-SFT, gate, and final evaluation default to
-`temperature=1.0, seed=0`. The fixed seed makes evaluation reproducible while
-preserving Qwen3.5 tool use; lower-temperature and greedy decoding can stall
-before the first tool call. GRPO rollout requests opt into sampled-token
-logprobs and do not receive a forced seed, preserving within-group reward
-variance without making pass-rate comparisons depend on uncontrolled random
-decoding.
+Tool-bearing baseline, post-SFT, gate, and final agent requests default to
+`temperature=1.0, seed=0`. The fixed seed makes task behavior reproducible
+while preserving Qwen3.5 tool use; lower-temperature and greedy decoding can
+stall before the first tool call. OpenCode title/summary helpers are not seeded.
+GRPO rollout requests opt into sampled-token logprobs and do not receive a
+forced seed, preserving within-group reward variance without making pass-rate
+comparisons depend on uncontrolled random decoding.
 
 The evaluator itself has a real SkillsBench + Daytona canary with score `1.0`,
 complete provider telemetry, and healthy `results.jsonl` and
