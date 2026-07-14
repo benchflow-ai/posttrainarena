@@ -37,6 +37,15 @@ class FakeTokenizer:
         return {"input_ids": [list(encoded)]}
 
 
+class FixedPromptTokenizer(FakeTokenizer):
+    def __init__(self, prompt_tokens: int) -> None:
+        self.prompt_tokens = prompt_tokens
+
+    def apply_chat_template(self, messages, **kwargs):
+        del messages, kwargs
+        return {"input_ids": [[0] * self.prompt_tokens]}
+
+
 def _upstream(text: str) -> dict[str, Any]:
     token_ids = list(text.encode("utf-8"))
     return {
@@ -533,6 +542,104 @@ def test_model_bridge_uses_stricter_context_for_logprob_requests() -> None:
     )
     assert prompt_tokens <= 384
     assert payload["messages"][0][2]["content"].endswith(TOOL_OUTPUT_TRUNCATION_MARKER)
+
+
+@pytest.mark.parametrize(
+    ("prompt_tokens", "expected_max_tokens"),
+    [
+        (12288, 4096),
+        (12289, 4095),
+        (12306, 4078),
+        (16383, 1),
+    ],
+)
+def test_model_bridge_fits_irreducible_prompt_generation_budget(
+    prompt_tokens: int,
+    expected_max_tokens: int,
+) -> None:
+    captured: dict[str, Any] = {}
+
+    async def fake_chat(payload: dict[str, Any]) -> dict[str, Any]:
+        captured["payload"] = payload
+        return _upstream("OK")
+
+    app = create_model_bridge_app(
+        ModelBridgeConfig(
+            upstream_url="http://127.0.0.1:8000",
+            tokenizer_id="Qwen/Qwen3.5-9B",
+            max_tokens_per_call=4096,
+            max_context_tokens=49152,
+            max_logprob_context_tokens=16384,
+        ),
+        tokenizer=FixedPromptTokenizer(prompt_tokens=prompt_tokens),
+        chat_call=fake_chat,
+    )
+    response = TestClient(app).post(
+        "/v1/chat/completions",
+        json={
+            "messages": [{"role": "user", "content": "irreducible OpenCode prompt"}],
+            "logprobs": True,
+            "extra_body": {"max_tokens": 4096, "top_k": 42},
+        },
+    )
+
+    assert response.status_code == 200
+    assert captured["payload"]["max_tokens"] == expected_max_tokens
+    assert captured["payload"]["generation_kwargs"] == {"top_k": 42}
+
+
+def test_model_bridge_keeps_full_context_for_non_logprob_requests() -> None:
+    captured: dict[str, Any] = {}
+
+    async def fake_chat(payload: dict[str, Any]) -> dict[str, Any]:
+        captured["payload"] = payload
+        return _upstream("OK")
+
+    app = create_model_bridge_app(
+        ModelBridgeConfig(
+            upstream_url="http://127.0.0.1:8000",
+            tokenizer_id="Qwen/Qwen3.5-9B",
+            max_tokens_per_call=4096,
+            max_context_tokens=49152,
+            max_logprob_context_tokens=16384,
+        ),
+        tokenizer=FixedPromptTokenizer(prompt_tokens=45000),
+        chat_call=fake_chat,
+    )
+    response = TestClient(app).post(
+        "/v1/chat/completions",
+        json={"messages": [{"role": "user", "content": "evaluation prompt"}]},
+    )
+
+    assert response.status_code == 200
+    assert captured["payload"]["max_tokens"] == 4096
+
+
+def test_model_bridge_rejects_prompt_with_no_generation_capacity() -> None:
+    async def fake_chat(payload: dict[str, Any]) -> dict[str, Any]:
+        del payload
+        return _upstream("OK")
+
+    app = create_model_bridge_app(
+        ModelBridgeConfig(
+            upstream_url="http://127.0.0.1:8000",
+            tokenizer_id="Qwen/Qwen3.5-9B",
+            max_tokens_per_call=4096,
+            max_context_tokens=49152,
+            max_logprob_context_tokens=16384,
+        ),
+        tokenizer=FixedPromptTokenizer(prompt_tokens=16384),
+        chat_call=fake_chat,
+    )
+
+    with pytest.raises(RuntimeError, match="no generation capacity"):
+        TestClient(app).post(
+            "/v1/chat/completions",
+            json={
+                "messages": [{"role": "user", "content": "irreducible OpenCode prompt"}],
+                "logprobs": True,
+            },
+        )
 
 
 def test_model_bridge_caps_tokens_per_call() -> None:

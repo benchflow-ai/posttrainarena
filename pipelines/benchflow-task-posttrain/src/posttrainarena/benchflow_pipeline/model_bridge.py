@@ -24,6 +24,7 @@ FUNCTION_PARAMETER_PATTERN = re.compile(
     re.DOTALL,
 )
 TOOL_OUTPUT_TRUNCATION_MARKER = "\n...[tool output truncated]"
+RESERVED_GENERATION_KWARGS = frozenset({"logprobs", "max_tokens", "n"})
 logger = logging.getLogger(__name__)
 
 
@@ -185,6 +186,34 @@ def _prompt_token_count(
     return len(_token_ids(tokenizer.apply_chat_template(messages, **kwargs)))
 
 
+def _truncatable_tool_output(message: dict[str, Any]) -> str | None:
+    content = message.get("content")
+    if (
+        message.get("role") == "tool"
+        and isinstance(content, str)
+        and len(content) > len(TOOL_OUTPUT_TRUNCATION_MARKER)
+    ):
+        return content
+    return None
+
+
+def _minimal_prompt_token_count(
+    *,
+    tokenizer: Any,
+    messages: list[dict[str, Any]],
+    tools: list[dict[str, Any]] | None,
+) -> int:
+    minimal_messages = copy.deepcopy(messages)
+    for message in minimal_messages:
+        if _truncatable_tool_output(message) is not None:
+            message["content"] = TOOL_OUTPUT_TRUNCATION_MARKER
+    return _prompt_token_count(
+        tokenizer=tokenizer,
+        messages=minimal_messages,
+        tools=tools,
+    )
+
+
 def fit_messages_to_context(
     *,
     tokenizer: Any,
@@ -206,12 +235,8 @@ def fit_messages_to_context(
 
     truncated_messages = 0
     for index, message in enumerate(fitted):
-        content = message.get("content")
-        if (
-            message.get("role") != "tool"
-            or not isinstance(content, str)
-            or len(content) <= len(TOOL_OUTPUT_TRUNCATION_MARKER)
-        ):
+        content = _truncatable_tool_output(message)
+        if content is None:
             continue
         message["content"] = TOOL_OUTPUT_TRUNCATION_MARKER
         truncated_messages += 1
@@ -394,7 +419,13 @@ def _trl_request(
             generation_kwargs[key] = body[key]
     extra_body = body.get("extra_body")
     if isinstance(extra_body, dict):
-        generation_kwargs.update(extra_body)
+        generation_kwargs.update(
+            {
+                key: value
+                for key, value in extra_body.items()
+                if key not in RESERVED_GENERATION_KWARGS
+            }
+        )
     capture_logprobs = body.get("logprobs") is True
     if not capture_logprobs and body.get("tools") and body.get("seed") is None:
         generation_kwargs["seed"] = 0
@@ -414,6 +445,27 @@ def _trl_request(
     context_tokens = config.max_context_tokens
     if capture_logprobs:
         context_tokens = min(context_tokens, config.max_logprob_context_tokens)
+    minimal_prompt_tokens = _minimal_prompt_token_count(
+        tokenizer=tokenizer,
+        messages=normalized_messages,
+        tools=tools,
+    )
+    if minimal_prompt_tokens >= context_tokens:
+        raise RuntimeError(
+            "OpenCode prompt leaves no generation capacity after truncating all "
+            f"tool outputs ({minimal_prompt_tokens} >= {context_tokens} tokens)"
+        )
+    requested_generation_tokens = max_tokens
+    max_tokens = min(max_tokens, context_tokens - minimal_prompt_tokens)
+    if max_tokens < requested_generation_tokens:
+        logger.warning(
+            "Reduced OpenCode generation budget to fit irreducible prompt "
+            "(%d -> %d max tokens; %d prompt tokens; %d context tokens)",
+            requested_generation_tokens,
+            max_tokens,
+            minimal_prompt_tokens,
+            context_tokens,
+        )
     fitted_messages, original_tokens, fitted_tokens, truncated_messages = (
         fit_messages_to_context(
             tokenizer=tokenizer,
