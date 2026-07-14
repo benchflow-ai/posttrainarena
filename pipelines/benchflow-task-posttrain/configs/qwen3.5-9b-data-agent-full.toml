@@ -17,7 +17,7 @@ task_list = "../task-lists/data-agent-eval-all.txt"
 [runtime]
 sandbox = "docker"
 sandbox_user = "agent"
-max_completion_length = 16384
+max_completion_length = 40960
 num_generations = 2
 
 [harness]

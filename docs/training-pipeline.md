@@ -241,8 +241,8 @@ evaluation health artifacts. Use a new run name when changing a recipe or task
 list.
 Incomplete strict teacher collection reuses finished `attempt-*` directories
 and continues with only tasks that still lack an eligible rollout. Resume may
-increase `[teacher].max_attempts`; all dataset, model, reward, and training
-semantics remain immutable.
+increase `[teacher].max_attempts` or `[runtime].max_completion_length`; all
+dataset, model, reward, and optimizer semantics remain immutable.
 
 The snapshot boundary also rejects byte-equivalent task packages under
 different task IDs after normalizing the package's declared task name. This is

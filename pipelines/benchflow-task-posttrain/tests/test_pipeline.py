@@ -673,6 +673,33 @@ def test_resume_allows_increased_teacher_retry_budget(
     )
 
 
+def test_resume_allows_increased_grpo_completion_budget(tmp_path: Path) -> None:
+    config = load_config(ROOT / "configs/qwen3-4b-data-agent-smoke.toml")
+    config = replace(config, output_root=tmp_path)
+    original = Pipeline(config, run_name="resume-grpo-budget", dry_run=True)
+    original._prepare_run_plan()
+    original_plan = json.loads((original.layout.reports / "plan.json").read_text())
+    changed = Pipeline(
+        replace(
+            config,
+            runtime=replace(
+                config.runtime,
+                max_completion_length=config.runtime.max_completion_length * 2,
+            ),
+        ),
+        run_name="resume-grpo-budget",
+        dry_run=True,
+        resume=True,
+    )
+
+    changed._prepare_run_plan()
+
+    updated = json.loads((changed.layout.reports / "plan.json").read_text())
+    assert updated["runtime"]["max_completion_length"] == (
+        original_plan["runtime"]["max_completion_length"] * 2
+    )
+
+
 def test_resume_rejects_other_teacher_plan_changes(tmp_path: Path) -> None:
     config = load_config(ROOT / "configs/qwen3-4b-data-agent-smoke.toml")
     config = replace(config, output_root=tmp_path)

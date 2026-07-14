@@ -156,6 +156,8 @@ can be reused.
 If strict teacher coverage is incomplete, resume reuses completed attempts and
 continues only missing tasks. The retry budget may be increased without
 changing the rest of the persisted run plan.
+An interrupted GRPO stage also permits increasing only the aggregate completion
+budget, then restarts cleanly from the saved SFT checkpoint.
 
 The public OpenCode endpoint is `posttrainarena-train model-bridge`, which
 forwards to the TRL server at `TRL_VLLM_SERVER_BASE_URL`. The pipeline
