@@ -487,6 +487,105 @@ def test_collect_teacher_retries_only_tasks_without_verified_rollout(
     assert selection["selected_count"] == 2
 
 
+def test_collect_teacher_reuses_existing_attempts_before_continuing(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config = load_config(ROOT / "configs/qwen3-4b-data-agent-smoke.toml")
+    config = replace(
+        config,
+        teacher=replace(config.teacher, max_attempts=2, min_verified=2),
+    )
+    existing_rollout = tmp_path / "jobs" / "attempt-01" / "task-a__existing"
+    existing_rollout.mkdir(parents=True)
+    (existing_rollout / "result.json").write_text("{}")
+    reports = tmp_path / "reports"
+    reports.mkdir()
+    (reports / "teacher_health_attempt-01.json").write_text("{}")
+    runner = FakeRunner(ROOT, dry_run=False)
+    task_a = {
+        "task_id": "task-a",
+        "rollout_dir": str(existing_rollout),
+        "reward": 1.0,
+        "eligible": True,
+    }
+    task_b = {
+        "task_id": "task-b",
+        "rollout_dir": str(tmp_path / "task-b"),
+        "reward": 1.0,
+        "eligible": True,
+    }
+    responses = iter(
+        [
+            ([task_a], [task_a]),
+            ([task_b], [task_b]),
+        ]
+    )
+    monkeypatch.setattr(
+        "posttrainarena.benchflow_pipeline.teacher._select_verified",
+        lambda **_kwargs: next(responses),
+    )
+
+    manifest = collect_verified_teacher_rollouts(
+        config=config,
+        runner=runner,
+        tasks_dir=tmp_path / "tasks",
+        task_ids=["task-a", "task-b"],
+        jobs_dir=tmp_path / "jobs",
+        manifest_path=reports / "teacher.json",
+        selection_path=reports / "selection.json",
+    )
+
+    assert manifest["verified_count"] == 2
+    assert [record["name"] for record in runner.commands] == [
+        "collect_verified_teacher_rollouts_attempt-02"
+    ]
+    command = runner.commands[0]["command"]
+    assert command.count("--include") == 1
+    assert "task-b" in command
+    assert "task-a" not in command
+
+
+def test_collect_teacher_restarts_incomplete_existing_attempt(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config = load_config(ROOT / "configs/qwen3-4b-data-agent-smoke.toml")
+    config = replace(
+        config,
+        teacher=replace(config.teacher, max_attempts=1, min_verified=1),
+    )
+    stale_rollout = tmp_path / "jobs" / "attempt-01" / "task-a__stale"
+    stale_rollout.mkdir(parents=True)
+    (stale_rollout / "result.json").write_text("{}")
+    runner = FakeRunner(ROOT, dry_run=False)
+    selected = {
+        "task_id": "task-a",
+        "rollout_dir": str(tmp_path / "task-a"),
+        "reward": 1.0,
+        "eligible": True,
+    }
+    monkeypatch.setattr(
+        "posttrainarena.benchflow_pipeline.teacher._select_verified",
+        lambda **_kwargs: ([selected], [selected]),
+    )
+
+    manifest = collect_verified_teacher_rollouts(
+        config=config,
+        runner=runner,
+        tasks_dir=tmp_path / "tasks",
+        task_ids=["task-a"],
+        jobs_dir=tmp_path / "jobs",
+        manifest_path=tmp_path / "reports" / "teacher.json",
+        selection_path=tmp_path / "reports" / "selection.json",
+    )
+
+    assert manifest["verified_count"] == 1
+    assert [record["name"] for record in runner.commands] == [
+        "collect_verified_teacher_rollouts"
+    ]
+
+
 def test_collect_teacher_retries_after_rollout_exit_one(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

@@ -153,6 +153,9 @@ current model, datasets, task lists, harness, and training recipe; any drift
 requires a new run name. Teacher selections, converted SFT bytes, model
 checkpoints, and evaluation health artifacts are content-validated before they
 can be reused.
+If strict teacher coverage is incomplete, resume reuses completed attempts and
+continues only missing tasks. The retry budget may be increased without
+changing the rest of the persisted run plan.
 
 The public OpenCode endpoint is `posttrainarena-train model-bridge`, which
 forwards to the TRL server at `TRL_VLLM_SERVER_BASE_URL`. The pipeline

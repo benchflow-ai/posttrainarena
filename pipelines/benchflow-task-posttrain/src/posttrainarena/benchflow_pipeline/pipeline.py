@@ -38,6 +38,28 @@ def _json_normalized(value: Any) -> Any:
     return json.loads(json.dumps(value, default=str))
 
 
+def _resume_plan_compatible(existing: dict[str, Any], current: dict[str, Any]) -> bool:
+    if existing == current:
+        return True
+    normalized_current = _json_normalized(current)
+    existing_teacher = existing.get("teacher")
+    current_teacher = normalized_current.get("teacher")
+    if not isinstance(existing_teacher, dict) or not isinstance(current_teacher, dict):
+        return False
+    existing_attempts = existing_teacher.get("max_attempts")
+    current_attempts = current_teacher.get("max_attempts")
+    if (
+        not isinstance(existing_attempts, int)
+        or isinstance(existing_attempts, bool)
+        or not isinstance(current_attempts, int)
+        or isinstance(current_attempts, bool)
+        or current_attempts < existing_attempts
+    ):
+        return False
+    current_teacher["max_attempts"] = existing_attempts
+    return existing == normalized_current
+
+
 def _sha256(path: Path) -> str:
     return file_sha256(path)
 
@@ -285,7 +307,7 @@ class Pipeline:
                     "name or restore the original plan"
                 )
             existing = load_json(plan_path)
-            if existing != current:
+            if not _resume_plan_compatible(existing, current):
                 changed = [
                     key
                     for key in sorted(set(existing) | set(current))
@@ -628,6 +650,7 @@ class Pipeline:
             self.resume
             and manifest_path.is_file()
             and self.layout.teacher_selection.is_file()
+            and self._teacher_state_has_required_count(manifest_path)
         )
         if reuse_teacher:
             self._validate_resumed_teacher_state(manifest_path)
@@ -734,6 +757,24 @@ class Pipeline:
                 "--max-length",
                 str(self.config.sft.max_length),
             ],
+        )
+
+    def _teacher_state_has_required_count(self, manifest_path: Path) -> bool:
+        try:
+            manifest = load_json(manifest_path)
+            selection = load_json(self.layout.teacher_selection)
+        except (OSError, ValueError):
+            return False
+        required = (
+            len(self.train_task_ids)
+            if self.config.teacher.require_all_tasks
+            else self.config.teacher.min_verified
+        )
+        return (
+            isinstance(manifest.get("verified_count"), int)
+            and manifest["verified_count"] >= required
+            and isinstance(selection.get("selected_count"), int)
+            and selection["selected_count"] >= required
         )
 
     def _conversion_matches_selection(
