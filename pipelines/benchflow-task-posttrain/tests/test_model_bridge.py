@@ -9,6 +9,7 @@ from fastapi.testclient import TestClient
 from posttrainarena.benchflow_pipeline.model_bridge import (
     ModelBridgeConfig,
     create_model_bridge_app,
+    normalize_tool_call_arguments,
     parse_qwen_tool_calls,
     translate_trl_chat_response,
 )
@@ -84,6 +85,61 @@ unexpected
 </tool_call>
 """
         )
+
+
+def test_normalize_tool_call_arguments_for_qwen_chat_template() -> None:
+    messages = [
+        {"role": "user", "content": "inspect"},
+        {
+            "role": "assistant",
+            "content": "",
+            "tool_calls": [
+                {
+                    "id": "call-1",
+                    "type": "function",
+                    "function": {
+                        "name": "read",
+                        "arguments": '{"filePath":"/home/user/input/data.csv"}',
+                    },
+                }
+            ],
+        },
+        {
+            "role": "tool",
+            "tool_call_id": "call-1",
+            "content": "a,b\n1,2",
+        },
+    ]
+
+    normalized = normalize_tool_call_arguments(messages)
+
+    assert normalized[1]["tool_calls"][0]["function"]["arguments"] == {
+        "filePath": "/home/user/input/data.csv"
+    }
+    assert messages[1]["tool_calls"][0]["function"]["arguments"] == (
+        '{"filePath":"/home/user/input/data.csv"}'
+    )
+
+
+@pytest.mark.parametrize("arguments", ["not-json", "[]"])
+def test_normalize_tool_call_arguments_rejects_invalid_values(arguments: str) -> None:
+    messages = [
+        {
+            "role": "assistant",
+            "tool_calls": [
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "read",
+                        "arguments": arguments,
+                    },
+                }
+            ],
+        }
+    ]
+
+    with pytest.raises(RuntimeError, match="arguments"):
+        normalize_tool_call_arguments(messages)
 
 
 def test_translate_trl_chat_response_preserves_token_ids_and_logprobs() -> None:
@@ -302,6 +358,56 @@ def test_model_bridge_does_not_intercept_tool_bearing_title_prompt() -> None:
 
     assert response.status_code == 200
     assert captured["payload"]["tools"]
+
+
+def test_model_bridge_normalizes_followup_tool_arguments_for_trl() -> None:
+    captured: dict[str, Any] = {}
+
+    async def fake_chat(payload: dict[str, Any]) -> dict[str, Any]:
+        captured["payload"] = payload
+        return _upstream("OK")
+
+    app = create_model_bridge_app(
+        ModelBridgeConfig(
+            upstream_url="http://127.0.0.1:8000",
+            tokenizer_id="Qwen/Qwen3-4B",
+        ),
+        tokenizer=FakeTokenizer(),
+        chat_call=fake_chat,
+    )
+    response = TestClient(app).post(
+        "/v1/chat/completions",
+        json={
+            "messages": [
+                {"role": "user", "content": "inspect"},
+                {
+                    "role": "assistant",
+                    "content": "",
+                    "tool_calls": [
+                        {
+                            "id": "call-1",
+                            "type": "function",
+                            "function": {
+                                "name": "read",
+                                "arguments": '{"filePath":"/tmp/data.csv"}',
+                            },
+                        }
+                    ],
+                },
+                {
+                    "role": "tool",
+                    "tool_call_id": "call-1",
+                    "content": "a,b\n1,2",
+                },
+            ],
+        },
+    )
+
+    assert response.status_code == 200
+    arguments = captured["payload"]["messages"][0][1]["tool_calls"][0]["function"][
+        "arguments"
+    ]
+    assert arguments == {"filePath": "/tmp/data.csv"}
 
 
 def test_model_bridge_caps_tokens_per_call() -> None:

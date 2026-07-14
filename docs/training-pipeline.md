@@ -216,6 +216,8 @@ replaces them with a per-run LiteLLM proxy token. Do not pass raw provider keys
 through `--agent-env`; participant tasks must only see the scoped proxy route.
 The model bridge answers OpenCode's title-generator prompt locally with a fixed
 title, so that helper cannot consume model traffic or block task solving.
+It also converts OpenCode's stringified follow-up tool arguments back to JSON
+objects before Qwen3.5 chat-template rendering.
 
 ## Execute and resume
 

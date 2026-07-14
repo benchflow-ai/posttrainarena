@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import json
 import re
 import time
@@ -99,6 +100,38 @@ def parse_qwen_tool_calls(text: str) -> tuple[str | None, list[dict[str, Any]]]:
         )
     remaining = TOOL_CALL_PATTERN.sub("", text).strip()
     return remaining or None, calls
+
+
+def normalize_tool_call_arguments(
+    messages: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Convert OpenAI string arguments to the mapping Qwen's template expects."""
+    normalized_messages = copy.deepcopy(messages)
+    for message in normalized_messages:
+        tool_calls = message.get("tool_calls")
+        if not isinstance(tool_calls, list):
+            continue
+        for tool_call in tool_calls:
+            function = (
+                tool_call.get("function") if isinstance(tool_call, dict) else None
+            )
+            if not isinstance(function, dict):
+                continue
+            arguments = function.get("arguments")
+            if not isinstance(arguments, str):
+                continue
+            try:
+                parsed = json.loads(arguments)
+            except json.JSONDecodeError as exc:
+                raise RuntimeError(
+                    "OpenCode tool-call arguments are not valid JSON"
+                ) from exc
+            if not isinstance(parsed, dict):
+                raise RuntimeError(
+                    "OpenCode tool-call arguments must decode to an object"
+                )
+            function["arguments"] = parsed
+    return normalized_messages
 
 
 def _sampled_logprob_rows(
@@ -218,6 +251,8 @@ def _trl_request(body: dict[str, Any], config: ModelBridgeConfig) -> dict[str, A
     messages = body.get("messages")
     if not isinstance(messages, list) or not messages:
         raise ValueError("messages must be a non-empty list")
+    if any(not isinstance(message, dict) for message in messages):
+        raise ValueError("messages must contain objects")
     generation_kwargs = {}
     for key in ("stop", "seed", "frequency_penalty", "presence_penalty"):
         if body.get(key) is not None:
@@ -240,7 +275,7 @@ def _trl_request(body: dict[str, Any], config: ModelBridgeConfig) -> dict[str, A
         else min(int(requested_max_tokens), config.max_tokens_per_call)
     )
     return {
-        "messages": [messages],
+        "messages": [normalize_tool_call_arguments(messages)],
         "n": 1,
         "repetition_penalty": float(body.get("repetition_penalty", 1.0)),
         "temperature": float(temperature),

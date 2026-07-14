@@ -70,6 +70,11 @@ resolves the exact sampled token IDs/logprobs from that sidecar and writes
 at 16,384 generated tokens while the pipeline separately enforces the
 rollout-level completion budget.
 
+On follow-up turns, OpenCode sends function arguments as JSON strings while
+Qwen3.5's chat template expects mappings. The bridge normalizes those arguments
+before forwarding the conversation to TRL; GRPO prompt reconstruction uses the
+same normalization so served and trained token IDs stay aligned.
+
 ## Per-update lifecycle
 
 ```text
