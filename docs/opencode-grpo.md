@@ -47,6 +47,7 @@ posttrainarena-train model-bridge \
   --tokenizer-revision <immutable-sha> \
   --max-tokens 4096 \
   --max-context-tokens 49152 \
+  --max-logprob-context-tokens 24576 \
   --max-sidecar-entries 2048 \
   --port 8001
 ```
@@ -80,6 +81,9 @@ configured 49,152-token context window. If tool output would overflow the
 prompt budget, it preserves system/user messages and truncates the oldest tool
 outputs with an explicit marker. Non-tool context overflow fails before calling
 the TRL server.
+Sampled-logprob GRPO requests use a stricter 24,576-token context cap so TRL can
+recompute policy logprobs on one H100 without materializing 49k-token logits.
+Ordinary baseline, SFT, and final evaluation keep the full context window.
 
 ## Per-update lifecycle
 

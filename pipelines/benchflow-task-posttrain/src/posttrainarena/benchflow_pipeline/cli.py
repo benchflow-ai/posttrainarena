@@ -179,6 +179,7 @@ def build_parser() -> argparse.ArgumentParser:
     bridge.add_argument("--api-key-env", default="BENCHFLOW_PROVIDER_API_KEY")
     bridge.add_argument("--max-tokens", type=int, default=4096)
     bridge.add_argument("--max-context-tokens", type=int, default=49152)
+    bridge.add_argument("--max-logprob-context-tokens", type=int, default=24576)
     bridge.add_argument("--max-sidecar-entries", type=int, default=2048)
     bridge.add_argument("--host", default="0.0.0.0")
     bridge.add_argument("--port", type=int, default=8001)
@@ -402,6 +403,7 @@ def main(argv: list[str] | None = None) -> int:
             api_key=os.environ.get(args.api_key_env),
             max_tokens_per_call=args.max_tokens,
             max_context_tokens=args.max_context_tokens,
+            max_logprob_context_tokens=args.max_logprob_context_tokens,
             max_sidecar_entries=args.max_sidecar_entries,
             host=args.host,
             port=args.port,

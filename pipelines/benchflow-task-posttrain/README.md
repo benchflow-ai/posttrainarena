@@ -166,6 +166,8 @@ before SFT evaluation, the current GRPO policy before each rollout batch, and
 final weights before the held-out evaluation.
 The bridge normalizes OpenCode follow-up tool arguments and token-fits oversized
 tool results to the server context without truncating system or user messages.
+Its sampled-logprob path uses a stricter context cap for trainer memory while
+ordinary evaluation retains the full model context.
 
 The final contract is:
 
