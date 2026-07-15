@@ -370,6 +370,21 @@ GPU hosts after artifacts and checkpoints are backed up.
 
 ## Historical validation evidence and limits
 
+The clean Qwen3.5-9B run
+`qwen35-9b-redwine-full-v3-main-69e37ed7` is the current end-to-end quality
+proof:
+
+- 16/16 verified Qwen3.5-397B-A17B teacher tasks
+- 63 tool-calling SFT rows and one LoRA SFT epoch
+- 128 OpenCode GRPO rollouts and one LoRA GRPO epoch
+- four mixed-reward groups and 30 nonzero-gradient steps
+- all 248 LoRA-B tensors updated with finite values
+- held-out pass rate `8/14 -> 11/14`, with zero task regressions
+
+This is a valid paired lift on a small canary slice. The bootstrap 95% interval
+includes zero, so competition-scale claims still require the full private eval
+set and repeated or larger-sample evidence.
+
 The retained Qwen3-4B recipe mirrors a completed H100 smoke with:
 
 - 15 training tasks and two held-out eval tasks

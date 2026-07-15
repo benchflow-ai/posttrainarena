@@ -1,6 +1,47 @@
-# Qwen3.5 Data Agent SFT-to-GRPO canary
+# Qwen3.5 Data Agent SFT-to-GRPO validation
 
-On July 14, 2026, the Qwen3.5 organizer pipeline completed a real
+This document retains the historical July 14 soccer canary and the clean
+July 15, 2026 lift run that supersedes its GRPO claim boundary.
+
+## Clean exact-ID lift run
+
+The run `qwen35-9b-redwine-full-v3-main-69e37ed7` used 16 red-wine training
+tasks and 14 disjoint held-out tasks on two H100 80 GB GPUs. OpenCode was the
+agent harness for teacher collection, baseline/SFT/final evaluation, and every
+GRPO rollout.
+
+The path completed with:
+
+- strict `16/16` verifier-approved Qwen3.5-397B-A17B teacher coverage
+- 63 validated tool-calling TRL SFT rows
+- one bf16 LoRA SFT epoch, loss `0.142529`
+- 128 OpenCode GRPO rollouts: 16 tasks × 8 generations
+- four mixed-reward groups and 30 nonzero-gradient optimizer steps
+- finite GRPO loss `-0.000946`
+- all 248 LoRA-B tensors updated, with no non-finite tensors
+- 14/14 healthy paired baseline/final evaluation artifacts
+
+| Stage | Held-out pass rate |
+| --- | ---: |
+| Baseline | `8/14` (`57.1%`) |
+| After SFT | `8/14` (`57.1%`) |
+| After SFT + GRPO | `11/14` (`78.6%`) |
+| Paired delta | `+3/14` (`+21.4` percentage points) |
+
+The final pass set was a strict superset of the baseline pass set: tasks
+`0047_164_47164651_qa_1`, `0060_546_60546361_qa_2`, and
+`0095_395_95395894_qa_2` improved, with zero regressions. The paired bootstrap
+95% interval for pass-rate lift was `[0.0%, 42.9%]`; this is real single-run
+evidence on the 14-task canary, not a competition-scale statistical claim.
+
+PostTrainArena commit
+`cf824b214e5ae08d6fc21becbcba7aae55e5109e` produced the run. The runtime used
+BenchFlow commit `6d6d2ee0965bdc7fe1e38555d1f7c4c21ee8a840`, whose OpenCode
+`1.17.20` pin is tracked in BenchFlow PR #931.
+
+## Historical soccer canary
+
+On July 14, 2026, the earlier Qwen3.5 organizer pipeline completed a real
 eight-training-task/three-held-out-task run on two H100 80 GB GPUs with Docker
 and OpenCode.
 
@@ -91,8 +132,9 @@ and adapter change therefore do not establish a valid policy update.
   conversational history.
 - Evaluation and GRPO materialization retain healthy scored retries instead of
   rejecting the whole task because an earlier attempt failed.
-- GRPO uses one two-generation prompt pair at a time, expandable CUDA segments,
-  and per-step cache clearing so long trajectories fit on the 80 GB trainer GPU.
+- The historical canary used two-generation prompt pairs. The production recipe
+  now uses eight generations per task, expandable CUDA segments, and per-step
+  cache clearing so long trajectories fit on the 80 GB trainer GPU.
 - The final Qwen3.5 recipes synchronize the pinned base checkpoint before
   baseline evaluation so a reused vLLM server cannot contaminate the reference.
 - Deterministic policy attestation compares the direct TRL server with the
@@ -102,15 +144,12 @@ and adapter change therefore do not establish a valid policy update.
 
 ## Claim boundary
 
-This run proves the Qwen3.5 model, teacher, OpenCode harness, native BenchFlow
-tasks, LoRA SFT, checkpoint transport, retry handling, and final pass-rate
-reporting components execute together. Because the teacher stage crossed a
-recipe change during resume and the old GRPO path used mismatched reconstructed
-prompt IDs, it is orchestration evidence rather than a valid reproduction of
-the final training contract.
+The historical soccer run proves orchestration only. Its teacher stage crossed
+a recipe change during resume and its old rollout parser reconstructed prompt
+IDs incorrectly, so its `1/3 -> 1/3` result is not valid GRPO-learning
+evidence.
 
-It does **not** demonstrate model-quality lift. Held-out score remained
-`1/3 -> 1/3`, and the single-run training-task check decreased from `4/8` after
-SFT to `3/8` after GRPO. The next quality experiment must use a denser
-domain-matched train/eval slice with more verified teacher coverage and the
-corrected exact-ID rollout path.
+The clean red-wine run above closes that gap: exact served prompt IDs,
+provider-sampled logprobs, OpenCode-only rollouts, finite nonzero LoRA updates,
+and healthy held-out evaluation jointly establish a valid `8/14 -> 11/14`
+post-training lift on the canary slice.
