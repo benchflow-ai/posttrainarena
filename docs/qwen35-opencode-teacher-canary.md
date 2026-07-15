@@ -48,7 +48,10 @@ With that fix applied, the real rollout produced and validated:
 
 ## Claim boundary
 
-This proves the Qwen3.5 teacher, OpenCode tool loop, BenchFlow telemetry, raw
-trajectory capture, and Qwen3.5-aware TRL conversion on a real task. It does
-not prove the 2,238-task Data Agent run, Qwen3.5-9B SFT/GRPO optimization, or
-held-out model lift. Those require the native Linux GPU canary.
+This historical canary proves the Qwen3.5 teacher, OpenCode tool loop,
+BenchFlow telemetry, raw trajectory capture, and Qwen3.5-aware TRL conversion
+on one real task. The later native Linux GPU canary validates Qwen3.5-9B
+SFT/GRPO and exploratory same-domain uplift on a 16-train/14-eval slice.
+Neither run is the full 2,238-task public-reference execution or a
+participant-corpus/private-eval competition run. See
+[`qwen35-data-agent-e2e-canary.md`](qwen35-data-agent-e2e-canary.md).

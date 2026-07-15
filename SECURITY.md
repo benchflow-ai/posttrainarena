@@ -24,16 +24,20 @@ Security-sensitive surfaces include:
 - provider and Hugging Face credentials
 - private held-out evaluation data
 - generated trajectories, checkpoints, and model artifacts
-- future protocol adapters, including any OpenEnv server/client boundary
+- protocol adapters, including the implemented OpenEnv server/client boundary
 
 Never commit secrets, raw provider responses containing secrets, checkpoints,
 private eval tasks, or unreviewed job dumps. Use environment variables or a
 secret manager, pin external revisions, and keep generated runs in ignored
 directories.
 
-The current repository has no OpenEnv server. Any future adapter must preserve
-sandbox isolation across resets, avoid exposing verifier secrets or private
-evaluation data through observations/state, and include an end-to-end security
-test before compatibility is claimed.
+The repository includes `posttrainarena-train openenv-serve`, which wraps
+BenchFlow-backed tasks behind the OpenEnv client/server protocol. Operators
+must keep private task snapshots and verifier credentials server-side, bind the
+raw service to loopback or a private network, and place any remote access behind
+encrypted authenticated ingress plus network allowlisting. The command has no
+built-in authentication and must never be exposed directly to the public
+internet. Preserve sandbox isolation across resets and run the lifecycle plus
+Docker-parity tests before changing this boundary.
 
 The competition is a proposal and does not currently provide a production SLA.

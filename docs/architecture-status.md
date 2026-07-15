@@ -1,5 +1,7 @@
 # Architecture and implementation status
 
+<!-- markdownlint-disable MD013 MD060 -->
+
 This document separates the PostTrain Arena vision from what is implemented in
 the public repository today. It is the source of truth for compatibility and
 roadmap claims.
@@ -18,9 +20,10 @@ team task corpus
     -> lift over a fixed reference checkpoint
 ```
 
-The organizer implementation now targets Qwen3.5-9B with a private BenchFlow
-Signals evaluation suite. The competition rules and final compute budget remain
-draft until the Qwen3.5 recipe is validated at scale.
+The organizer implementation targets Qwen3.5-9B with a private BenchFlow
+Signals evaluation suite. The exploratory public 16-train/14-eval same-domain
+canary validates the recipe and model update path; the competition rules, final
+compute budget, and private-suite scale remain draft.
 
 ## Current public implementation
 
@@ -57,11 +60,14 @@ The final machine-readable contract is:
 runs/<run-name>/reports/score.json
 ```
 
-The full checked-in recipe covers all 2,238 public training tasks and all 366
-held-out public evaluation tasks. Historical Qwen3-4B smokes and the current
-Qwen3.5 Data Agent eight-train/three-eval canary validate the orchestration,
-but the latest held-out pass rate remained `1/3 -> 1/3`; model-quality lift and
-competition-scale readiness remain unproven.
+The full checked-in public reference recipe covers all 2,238 training tasks and
+all 366 held-out evaluation tasks at immutable pinned Hub revisions.
+Competition recipes keep the model and optimizer contract fixed while
+replacing the training dataset/task list with one participant corpus and the
+eval dataset/task list with the organizer's sealed internal tasks. The
+exploratory 16-train/14-eval public canary completed the corrected path and
+observed a same-domain pass-rate increase from `8/14` to `11/14`; the full
+public-reference run and private competition readiness remain unproven.
 
 ## Ownership boundaries
 
@@ -86,18 +92,18 @@ competition-scale readiness remain unproven.
 | TRL GRPO | Implemented | Qwen3.5 full recipe always runs one epoch over all training tasks; the custom OpenCode rollout function returns token IDs, sampled logprobs, action mask, and BenchFlow verifier reward; optimization is LoRA without quantization |
 | OpenCode teacher collection | Implemented | Provider-qualified Qwen3.5-397B-A17B teacher, required usage tracking, adaptive retries, and fail-closed one-training-ready-rollout-per-task coverage |
 | OpenCode evaluation | Implemented and live Qwen3.5 validated | Baseline, post-SFT, training gate, final, and multi-benchmark evaluation all use `bench eval run --agent opencode`; real SkillsBench and Qwen3.5 Data Agent canaries produced complete telemetry and healthy trajectories |
-| OpenCode GRPO | Corrected; live rerun pending | TRL custom rollout function invokes OpenCode/BenchFlow, consumes exact served prompt/completion IDs plus sampled logprobs, forwards verifier reward, and resynchronizes the vLLM endpoint; post-run audit found the older Qwen3.5 canary had `0/321` prompt-token-count matches, so it is not valid optimization evidence |
+| OpenCode GRPO | Implemented and live Qwen3.5 validated | TRL custom rollout function invokes OpenCode/BenchFlow, consumes exact served prompt/completion IDs plus sampled logprobs, forwards verifier reward, rejects zero-variance/no-update adapters, and resynchronizes the vLLM endpoint; the corrected run completed 128 rollouts and updated all 248 LoRA-B tensors |
 | Harbor | Not a dependency | No Harbor adapter or trajectory translation is used |
 | OpenEnv client/server lifecycle | Implemented | Pinned dependency, served adapter, typed client, real lifecycle tests, finalization, state, and session isolation |
 | OpenEnv/BenchFlow Docker parity | Manually validated | Checked-in security task produced identical output and reward `1.0` through both integrations; CI uses a no-spend fake BenchFlow boundary |
-| Native Data Agent pipeline | Orchestration live validated; corrected GRPO rerun pending | Eight training and three disjoint held-out native `task.md` packages completed the full stage sequence, but the historical GRPO prompt reconstruction was not token-aligned with serving |
+| Native Data Agent pipeline | Live canary validated | Sixteen training and 14 disjoint evaluation task IDs from the same source dataset completed strict teacher collection, LoRA SFT, 128 OpenCode GRPO rollouts, synchronization, and paired evaluation with an exploratory `8/14 -> 11/14` increase |
 | Submission-to-recipe bridge | Implemented | Environment entries become pinned Hub datasets and portable recipes |
-| HF Jobs execution | Canary handoff implemented; scheduler credit blocked | UV job bundle and historical H100 runner validated; the Docker-based Qwen3.5 full recipe currently targets a persistent native Linux GPU host |
+| HF Jobs execution | Canary handoff implemented; current allocation unverified | UV job bundle and historical H100 runner validated; July 11 scheduler requests were credit-blocked, and no paid scheduler launch was submitted during the July 15 documentation audit; the Docker-based Qwen3.5 full recipe currently targets a persistent native Linux GPU host |
 | Hub artifact publishing | Implemented | Run reports, checkpoint provenance, logs, and failures publish to Hub datasets/models |
 | Continuous leaderboard | Implemented | Atomic dataset records plus a deployable Gradio Space |
 | Multi-benchmark evaluation | Implemented | One base/final checkpoint pair is evaluated across pinned suites with macro delta |
-| Qwen3.5-9B competition recipe | Implemented; corrected live rerun pending | Immutable base/data revisions, declared Qwen3.5-397B teacher provenance, all-task teacher coverage, one-epoch LoRA SFT, one-epoch LoRA GRPO, exact served token IDs, and endpoint attestation are checked in; full-scale execution remains pending |
-| Demonstrated model-quality lift | Not yet | Reproduced smoke measured zero lift |
+| Qwen3.5-9B public reference recipe | Implemented and canary validated | Immutable base/data revisions, declared Qwen3.5-397B-A17B teacher provenance, all-task teacher coverage, one-epoch LoRA SFT, one-epoch LoRA GRPO, exact served token IDs, effective-update gates, and endpoint attestation are checked in; full 2,238/366 and private competition execution remain pending |
+| Observed canary uplift | Exploratory same-domain evidence only | Corrected run increased `8/14 -> 11/14` with zero regressions; the diagnostic slice was not a pre-registered generalization benchmark and the paired 95% interval includes zero |
 
 The OpenCode evaluation evidence is recorded in
 [`opencode-evaluation-canary.md`](opencode-evaluation-canary.md).

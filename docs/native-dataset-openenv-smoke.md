@@ -46,7 +46,8 @@ not model-quality lift.
 - W&B run:
   `benchflow-ai/posttrainarena-native-dataset-e2e/cf7o84cb`
 
-The checkpoint PRs remain open and unmerged.
+At the time of this historical smoke, the checkpoint discussions were still
+open and unmerged; they are not part of the current Qwen3.5 organizer recipe.
 
 ## Cleanup
 

@@ -1,14 +1,66 @@
 # Qwen3.5 Data Agent SFT-to-GRPO validation
 
-This document retains the historical July 14 soccer canary and the clean
-July 15, 2026 lift run that supersedes its GRPO claim boundary.
+This document retains the historical July 14 soccer canary and the exploratory
+July 15, 2026 same-domain run that supersedes its GRPO claim boundary.
 
 ## Clean exact-ID lift run
 
+This is an exploratory same-domain canary, not a generalization benchmark.
+
 The run `qwen35-9b-redwine-full-v3-main-69e37ed7` used 16 red-wine training
-tasks and 14 disjoint held-out tasks on two H100 80 GB GPUs. OpenCode was the
-agent harness for teacher collection, baseline/SFT/final evaluation, and every
-GRPO rollout.
+task IDs and 14 disjoint evaluation task IDs on two H100 80 GB GPUs. All 30
+tasks use the same `winequality-red.csv` source domain. The slice was selected
+as a pipeline diagnostic rather than a pre-registered generalization
+benchmark, so the result is evidence about the update path and same-domain
+behavior only. OpenCode was the agent harness for teacher collection,
+baseline/SFT/final evaluation, and every GRPO rollout.
+
+### Pinned data and exact task lists
+
+- Train dataset:
+  `benchflow/data_agent_rl_environment_train@34ff63c91731df6b3670bfcd7e3d44e6790ddc48`
+- Eval dataset:
+  `benchflow/data_agent_rl_environment_eval@0ea976c79e3248c85737c4f7363484e4d47ce287`
+
+#### 16 training task IDs
+
+```text
+0013_408_13408860_qa_5
+0017_291_17291057_qa_5
+0023_772_23772737_qa_1
+0033_273_33273125_qa_1
+0039_655_39655291_qa_2
+0039_873_39873778_qa_5
+0040_785_40785152_qa_2
+0040_785_40785152_qa_5
+0043_419_43419580_qa_2
+0050_854_50854581_qa_3
+0053_603_53603838_qa_2
+0053_603_53603838_qa_3
+0054_269_54269608_qa_3
+0057_632_57632820_qa_1
+0057_712_57712524_qa_4
+0067_118_67118977_qa_5
+```
+
+#### 14 held-out evaluation task IDs
+
+```text
+0019_309_19309067_qa_5
+0043_774_43774308_qa_2
+0047_164_47164651_qa_1
+0054_900_54900562_qa_1
+0060_546_60546361_qa_2
+0069_624_69624642_qa_5
+0077_266_77266642_qa_2
+0084_727_84727795_qa_4
+0086_400_86400737_qa_5
+0095_395_95395894_qa_2
+0119_351_119351337_qa_3
+0124_418_124418283_qa_2
+0055_115_55115812_qa_1
+0116_195_116195791_qa_2
+```
 
 The path completed with:
 
@@ -31,14 +83,17 @@ The path completed with:
 The final pass set was a strict superset of the baseline pass set: tasks
 `0047_164_47164651_qa_1`, `0060_546_60546361_qa_2`, and
 `0095_395_95395894_qa_2` improved, with zero regressions. The paired bootstrap
-95% interval for pass-rate lift was `[0.0%, 42.9%]`; this is real single-run
-evidence on the 14-task canary, not a competition-scale statistical claim.
+95% interval for pass-rate lift was `[0.0%, 42.9%]`; this is an observed
+single-run increase on a same-domain diagnostic slice, not evidence of broad
+generalization or a competition-scale statistical claim.
 
 PostTrainArena commit
-`cf824b214e5ae08d6fc21becbcba7aae55e5109e` produced the run. The runtime used
-BenchFlow commit `6d6d2ee0965bdc7fe1e38555d1f7c4c21ee8a840`, whose OpenCode
-`1.17.20` pin was merged from BenchFlow PR #931 as
-`2a97db55947d6742b765ad34ddd91d74c20d625f`.
+`cf824b214e5ae08d6fc21becbcba7aae55e5109e` produced the run. Its embedded
+`plan.json` and `score.json` retained that commit's older static BenchFlow
+metadata, `cbc295464e62aa39f84e0daa675aa939c0e72f00`. Archived agent install logs
+record `opencode-ai@1.17.20`, the only behavior change in direct child commit
+`6d6d2ee0965bdc7fe1e38555d1f7c4c21ee8a840`; that commit later merged from
+BenchFlow PR #931 as `2a97db55947d6742b765ad34ddd91d74c20d625f`.
 
 ## Historical soccer canary
 
@@ -67,11 +122,11 @@ every selected training task.
 
 The run was resumed while this canary threshold was being debugged: its first
 teacher manifest still declared strict `8/8` coverage, while the effective
-continued recipe accepted the four verified trajectories. The same branch now
+continued recipe accepted the four verified trajectories. Current resume code
 validates the exact task IDs, teacher provenance, threshold, and coverage mode
 before reusing teacher state, so this kind of recipe drift fails closed. A
-clean run from the final checked-in recipe remains part of the next
-matched-domain quality experiment.
+clean rerun of that exact soccer slice was not performed; the red-wine run
+above supersedes it as validation of the current GRPO contract.
 
 ## Completed path
 
@@ -150,7 +205,9 @@ a recipe change during resume and its old rollout parser reconstructed prompt
 IDs incorrectly, so its `1/3 -> 1/3` result is not valid GRPO-learning
 evidence.
 
-The clean red-wine run above closes that gap: exact served prompt IDs,
+The exploratory red-wine run above closes that mechanics gap: exact served
+prompt IDs,
 provider-sampled logprobs, OpenCode-only rollouts, finite nonzero LoRA updates,
-and healthy held-out evaluation jointly establish a valid `8/14 -> 11/14`
-post-training lift on the canary slice.
+and healthy evaluation jointly establish a real `8/14 -> 11/14` same-domain
+pass-rate increase on the canary slice. They do not establish broad
+model-quality or competition generalization.

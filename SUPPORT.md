@@ -4,13 +4,17 @@ Use the channel that matches the request:
 
 - **Environment authoring and task-contract questions:** open a GitHub issue
   with a minimal task-package example, or ask in the project Discord.
-- **Training-pipeline bugs:** open a GitHub issue with the recipe revision, task
-  IDs, command, sanitized logs, and whether the failure reproduces with
-  `--dry-run`.
+- **Training-pipeline bugs:** open a GitHub issue with the recipe revision,
+  redacted or public task IDs, command, sanitized logs, and whether the failure
+  reproduces with `--dry-run`. Never include sealed-eval IDs or private task
+  contents.
 - **OpenEnv integration:** first check
-  [`docs/architecture-status.md`](docs/architecture-status.md). Compatibility is
-  not currently implemented; proposals should include a real OpenEnv
-  client/server lifecycle and isolation test rather than only format conversion.
+  [`docs/architecture-status.md`](docs/architecture-status.md). The served
+  adapter, typed client, lifecycle tests, and Docker parity path are
+  implemented. Public bug reports may include the sanitized `openenv-serve`
+  command and environment backend, but must redact private task IDs, state
+  contents, credentials, and artifact paths. Report any possible private-data
+  exposure through the security channel below.
 - **Competition rules or private submission questions:** email
   `labs@benchflow.ai`.
 - **Security, leaked credentials, sandbox escapes, or private eval exposure:**

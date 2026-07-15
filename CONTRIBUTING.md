@@ -1,5 +1,7 @@
 # Contributing to PostTrain Arena
 
+<!-- markdownlint-disable MD013 MD060 -->
+
 PostTrain Arena is a proposed NeurIPS 2026 competition: teams
 contribute containerized RL environments, the organizers run a managed
 SFT→GRPO post-training pipeline on **each team's corpus**, and entries
@@ -82,12 +84,13 @@ baseline trained with the identical recipe, with paired bootstrap
 confidence intervals. Track 1 packages are evaluated by pass@1 of a
 frozen reference agent — no training, no internet.
 
-Qwen3.5-9B is the checked-in organizer recipe. The current
-eight-train/three-eval Data Agent canary completed the orchestration path with
-held-out pass rate unchanged at `1/3`, but a post-run audit invalidated its old
-GRPO prompt reconstruction. A corrected matched-domain rerun and full-scale
-validation remain the current targets while the final competition compute
-budget is frozen. See
+Qwen3.5-9B is the checked-in organizer recipe. The corrected 16-train/14-eval
+Data Agent canary completed strict teacher coverage, one-epoch LoRA SFT,
+128 OpenCode GRPO rollouts, and healthy held-out evaluation. Pass rate improved
+from `8/14` to `11/14` with zero regressions. This validates the executable
+recipe and records exploratory same-domain uplift; it does not establish
+generalization. The participant-scale run and sealed private suite remain
+organizer-only competition stages. See
 [`docs/training-pipeline.md`](./docs/training-pipeline.md) for exact executable
 behavior and evidence boundaries.
 
@@ -116,9 +119,11 @@ part of the contract.
 ### Step-by-step
 
 1. **Copy the template** into your team entry:
+
    ```bash
    cp -R starting-kit/template submissions/your-team/envs/your-env-name
    ```
+
    Pick a name following `<env-or-domain>-<short-description>` — for
    example `gmail-workflow-delegation`. Category, modality, and any
    safety qualifier belong in the frontmatter, not the directory name.
@@ -128,6 +133,7 @@ part of the contract.
    layouts.
 3. **Validate locally** — everything runs with just python3 and
    docker, no benchflow install:
+
    ```bash
    # Structural — fast, no Docker required
    python3 scripts/check_task.py submissions/your-team/envs
@@ -139,6 +145,7 @@ part of the contract.
    # Empty trial — prove the verifier rejects a do-nothing run
    scripts/run_local.sh submissions/your-team/envs/your-env-name --skip-oracle
    ```
+
    Get all four green before opening a PR: the oracle replay must
    score 1.0 and the empty trial must not.
 4. **Open a pull request** adding or updating your team entry. In the

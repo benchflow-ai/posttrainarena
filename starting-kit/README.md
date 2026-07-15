@@ -1,12 +1,15 @@
 # PostTrain Arena — starting kit
 
+<!-- markdownlint-disable MD060 -->
+
 This directory defines the participant-facing **PostTrain task package** format.
 It is intentionally runnable with Python and Docker and does not require
 BenchFlow, TRL, or OpenEnv for authoring checks.
 
 Organizer training later consumes selected task packages through the public
-BenchFlow + TRL pipeline. The repository does **not** currently expose these
-packages as OpenEnv client/server environments. See
+BenchFlow + TRL pipeline. Authors do not implement OpenEnv in their packages;
+the organizer can expose snapshotted BenchFlow tasks through the separate
+`openenv-serve` compatibility service. See
 [`docs/architecture-status.md`](../docs/architecture-status.md) for the exact
 boundary.
 

@@ -1,5 +1,7 @@
 # BenchFlow task-list post-training pipeline
 
+<!-- markdownlint-disable MD013 MD060 -->
+
 This is the canonical operator guide for the public organizer-side training
 implementation under
 [`pipelines/benchflow-task-posttrain/`](../pipelines/benchflow-task-posttrain).
@@ -28,17 +30,24 @@ training task list + held-out eval task list + pinned TOML recipe
 ```
 
 BenchFlow owns task snapshots, Daytona or Docker sandboxes, verifiers, reward
-extraction, rollout artifacts, and paired evaluation. OpenCode owns the teacher
-evaluation, and GRPO agent loops. TRL owns SFT and GRPO optimization plus vLLM
-weight synchronization. The pipeline is Harbor-free and does not translate
-Harbor trajectories.
+extraction, rollout artifacts, and paired evaluation. OpenCode owns teacher
+collection, evaluation, and GRPO agent loops. TRL owns SFT and GRPO
+optimization plus vLLM weight synchronization. The pipeline is Harbor-free and
+does not translate Harbor trajectories.
 
-The organizer recipe pins the public BenchFlow-native conversions:
+The public reference recipe pins the BenchFlow-native datasets:
 
 - `benchflow/data_agent_rl_environment_train` (`2,238` training tasks)
 - `benchflow/data_agent_rl_environment_eval` (`366` held-out tasks)
 
-Both repositories use `task.md`, `environment/`, and `verifier/` directly.
+Both repositories use `task.md`, `environment/`, and `verifier/` directly. On
+July 15, 2026, their `main` revisions matched the checked-in immutable pins:
+train `34ff63c91731df6b3670bfcd7e3d44e6790ddc48` with 2,238 unique tasks and
+eval `0ea976c79e3248c85737c4f7363484e4d47ce287` with 366 unique tasks; neither
+contained legacy `task.toml` files. For competition runs,
+`prepare-submission` replaces the training repository/list with the participant
+corpus; organizers start from a private base recipe whose eval repository/list
+points at the sealed internal suite.
 
 A real one-train/one-held-out OpenEnv run completed the full snapshot, teacher,
 SFT, forced-GRPO, final-eval, and publication path on these revisions. See
@@ -137,8 +146,10 @@ The minimal 1x1 validation recipe is
 [`configs/qwen3.5-9b-data-agent-canary.toml`](../pipelines/benchflow-task-posttrain/configs/qwen3.5-9b-data-agent-canary.toml).
 The domain-matched eight-train/three-eval recipe is
 [`configs/qwen3.5-9b-data-agent-soccer-canary.toml`](../pipelines/benchflow-task-posttrain/configs/qwen3.5-9b-data-agent-soccer-canary.toml).
-The current teacher/provider and TRL conversion evidence is recorded in
-[`qwen35-opencode-teacher-canary.md`](qwen35-opencode-teacher-canary.md).
+Historical single-task teacher/provider and TRL conversion evidence is recorded
+in [`qwen35-opencode-teacher-canary.md`](qwen35-opencode-teacher-canary.md).
+The current end-to-end update-path evidence is recorded in
+[`qwen35-data-agent-e2e-canary.md`](qwen35-data-agent-e2e-canary.md).
 
 ## No-spend validation
 
@@ -172,7 +183,7 @@ Dry-run records the full possible path, including conditional GRPO. Therefore
 | `[train_dataset]` | HF task repository, revision, path, and training task-list file |
 | `[eval_dataset]` | Separate HF repository/revision and held-out task-list file |
 | `[runtime]` | Daytona/Docker sandbox, GRPO completion-token budget, and generation count |
-| `[harness]` | Required OpenCode contract, skill mode, telemetry, concurrency, and setup/idle/wall-clock timeouts for teacher collection and evaluation |
+| `[harness]` | Required OpenCode contract, skill mode, telemetry, concurrency, and setup/idle/wall-clock timeouts for teacher collection, evaluation, and GRPO rollouts |
 | `[evaluation]` | Environment-variable names for the served base/student model aliases and OpenAI-compatible endpoint credentials |
 | `[teacher]` | Provider-qualified teacher route, declared source identity/revision, adaptive attempts, reward threshold, post-run token/tool acceptance ceilings, and all-task coverage policy |
 | `[sft]` | Enable flag, epoch or smoke-step schedule, optimizer settings, tokenizer-aware message-window length, and LoRA dimensions |
@@ -290,7 +301,8 @@ The GRPO rollout format and endpoint topology are documented in
 [`opencode-grpo.md`](opencode-grpo.md).
 The real OpenCode-only SFT-to-GRPO validation is documented in
 [`opencode-grpo-smoke.md`](opencode-grpo-smoke.md).
-The Qwen3.5 Data Agent eight-train/three-eval run is documented in
+The exploratory same-domain Qwen3.5 Data Agent 16-train/14-eval run and the
+historical eight-train/three-eval soccer canary are documented in
 [`qwen35-data-agent-e2e-canary.md`](qwen35-data-agent-e2e-canary.md).
 
 ## SFT, RL-only, and reward gating
@@ -361,18 +373,17 @@ The checked-in production GRPO recipe trains one same-prompt group at a time:
 eight generations, generation batch eight, and no gradient accumulation. The
 trainer still recomputes policy logprobs with a per-device microbatch of one to
 fit long OpenCode trajectories on the 80 GB trainer GPU. The bootstrap also
-enables PyTorch expandable CUDA
-segments to reduce allocator fragmentation, and the GRPO trainer clears cached
-CUDA allocations between steps.
+enables PyTorch expandable CUDA segments to reduce allocator fragmentation, and
+the GRPO trainer clears cached CUDA allocations between steps.
 
 Use W&B for spendful runs to track training loss and GPU utilization. Terminate
 GPU hosts after artifacts and checkpoints are backed up.
 
 ## Historical validation evidence and limits
 
-The clean Qwen3.5-9B run
-`qwen35-9b-redwine-full-v3-main-69e37ed7` is the current end-to-end quality
-proof:
+The exploratory Qwen3.5-9B run
+`qwen35-9b-redwine-full-v3-main-69e37ed7` is the current end-to-end
+update-path proof:
 
 - 16/16 verified Qwen3.5-397B-A17B teacher tasks
 - 63 tool-calling SFT rows and one LoRA SFT epoch
@@ -381,9 +392,10 @@ proof:
 - all 248 LoRA-B tensors updated with finite values
 - held-out pass rate `8/14 -> 11/14`, with zero task regressions
 
-This is a valid paired lift on a small canary slice. The bootstrap 95% interval
-includes zero, so competition-scale claims still require the full private eval
-set and repeated or larger-sample evidence.
+This is an observed paired pass-rate increase on disjoint task IDs from the
+same source dataset. The slice was diagnostic rather than pre-registered and
+the bootstrap 95% interval includes zero, so generalization claims still
+require the sealed private eval set and repeated or larger-sample evidence.
 
 The retained Qwen3-4B recipe mirrors a completed H100 smoke with:
 
@@ -396,10 +408,10 @@ The retained Qwen3-4B recipe mirrors a completed H100 smoke with:
 - GRPO correctly skipped
 - final paired delta `0.0`
 
-This validates task loading, sandbox/tool execution, verification, SFT data
-conversion, training, reward gating, reporting, and the skip path. It does not
-demonstrate model-quality lift. Quality claims require larger training and
-held-out sets with non-zero reward signal.
+This historical smoke validates task loading, sandbox/tool execution,
+verification, SFT data conversion, training, reward gating, reporting, and the
+skip path. It does not add update evidence beyond the exploratory Qwen3.5
+canary above.
 
 ## Development checks
 
