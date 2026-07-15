@@ -202,22 +202,20 @@ the canary and smoke recipes for cost control.
 Do not use held-out eval tasks to tune this gate. Production recipes should use
 separate training, gate/development, and final evaluation lists.
 
-## Qwen3.5 Data Agent Canary Result
+## Qwen3.5 Data Agent Lift Result
 
-The July 14, 2026 soccer-domain canary completed the current Docker + OpenCode
-path on two H100 80 GB GPUs:
+The clean July 15, 2026 Docker + OpenCode run on two H100 80 GB GPUs completed:
 
-- four verifier-approved teacher trajectories from eight attempted tasks
-- 30 validated TRL SFT rows and one bf16 LoRA SFT epoch
-- held-out baseline and post-SFT pass rate `1/3`
-- post-SFT training-task gate `4/8`
-- 16 OpenCode GRPO rollouts and one LoRA GRPO epoch
-- final held-out pass rate `1/3`, for delta `0.0`
+- strict `16/16` verifier-approved Qwen3.5-397B-A17B teacher coverage
+- 63 validated tool-calling TRL SFT rows and one bf16 LoRA SFT epoch
+- 128 OpenCode GRPO rollouts, using eight generations for each of 16 tasks
+- four mixed-reward groups and 30 nonzero-gradient optimizer steps
+- all 248 LoRA-B tensors updated with finite values
+- held-out baseline/SFT/final pass rates `8/14`, `8/14`, and `11/14`
+- paired lift `+3/14` (`+21.4` percentage points), with zero regressions
 
-The historical adapter file changed during GRPO, but a post-run audit found
-that its reconstructed prompt IDs did not match the serving endpoint. Treat it
-as orchestration evidence, not valid GRPO learning evidence; the corrected
-exact-ID path is awaiting a clean live rerun.
+The earlier July 14 soccer canary remains historical orchestration evidence
+because it predated exact served-prompt-ID reconstruction.
 See
 [`docs/qwen35-data-agent-e2e-canary.md`](../../docs/qwen35-data-agent-e2e-canary.md)
 for the evidence and claim boundary.
