@@ -27,6 +27,7 @@ def test_build_run_record_reads_score_and_removes_contact_data(tmp_path: Path) -
                 "score_after_posttrain": 0.25,
                 "delta_score": 0.15,
                 "grpo_ran": True,
+                "grpo_effective_update": True,
                 "train_task_ids": ["a", "b"],
                 "eval_task_ids": ["c"],
             }
@@ -42,6 +43,7 @@ def test_build_run_record_reads_score_and_removes_contact_data(tmp_path: Path) -
     )
 
     assert record["delta_score"] == 0.15
+    assert record["grpo_effective_update"] is True
     assert record["train_task_count"] == 2
     assert record["eval_task_count"] == 1
     assert "contact_email" not in record

@@ -45,6 +45,8 @@ def _resume_plan_compatible(existing: dict[str, Any], current: dict[str, Any]) -
     for section, field in (
         ("teacher", "max_attempts"),
         ("runtime", "max_completion_length"),
+        ("runtime", "num_generations"),
+        ("grpo", "generation_batch_size"),
     ):
         existing_section = existing.get(section)
         current_section = normalized_current.get(section)
@@ -54,6 +56,33 @@ def _resume_plan_compatible(existing: dict[str, Any], current: dict[str, Any]) -
             return False
         existing_value = existing_section.get(field)
         current_value = current_section.get(field)
+        if existing_value == current_value:
+            continue
+        if (
+            section == "grpo"
+            and field == "generation_batch_size"
+            and existing_value is None
+            and isinstance(current_value, int)
+            and not isinstance(current_value, bool)
+        ):
+            existing_runtime = existing.get("runtime")
+            existing_harness = existing.get("harness")
+            if not isinstance(existing_runtime, dict) or not isinstance(
+                existing_harness, dict
+            ):
+                return False
+            existing_generations = existing_runtime.get("num_generations")
+            existing_concurrency = existing_harness.get("concurrency")
+            if (
+                not isinstance(existing_generations, int)
+                or isinstance(existing_generations, bool)
+                or not isinstance(existing_concurrency, int)
+                or isinstance(existing_concurrency, bool)
+                or current_value < existing_generations * existing_concurrency
+            ):
+                return False
+            current_section[field] = None
+            continue
         if (
             not isinstance(existing_value, int)
             or isinstance(existing_value, bool)
@@ -63,6 +92,22 @@ def _resume_plan_compatible(existing: dict[str, Any], current: dict[str, Any]) -
         ):
             return False
         current_section[field] = existing_value
+    existing_grpo = existing.get("grpo")
+    current_grpo = normalized_current.get("grpo")
+    if not isinstance(existing_grpo, dict) or not isinstance(current_grpo, dict):
+        return False
+    existing_variance = existing_grpo.get("require_reward_variance", False)
+    current_variance = current_grpo.get("require_reward_variance", False)
+    if not isinstance(existing_variance, bool) or not isinstance(
+        current_variance, bool
+    ):
+        return False
+    if existing_variance and not current_variance:
+        return False
+    if "require_reward_variance" in existing_grpo:
+        current_grpo["require_reward_variance"] = existing_variance
+    else:
+        current_grpo.pop("require_reward_variance", None)
     return existing == normalized_current
 
 
@@ -926,10 +971,6 @@ class Pipeline:
             )
         ):
             return
-        if self.resume:
-            for path in (self.layout.sft_adapter, Path(output_model)):
-                if path.exists():
-                    shutil.rmtree(path)
         if self.dry_run:
             self.runner.commands.append(
                 {
@@ -940,6 +981,40 @@ class Pipeline:
                 }
             )
             return
+        if self.resume:
+            for path in (
+                self.layout.jobs / "sft",
+                self.layout.jobs / "grpo-gate",
+                self.layout.jobs / "grpo-train",
+                self.layout.jobs / "posttrain",
+                self.layout.sft_adapter,
+                Path(output_model),
+                self.layout.grpo_adapter,
+                self.layout.grpo_merged,
+            ):
+                if path.exists():
+                    shutil.rmtree(path)
+            for artifact in (
+                self.layout.results / "sft_endpoint_sync.json",
+                self.layout.results / "sft_eval.json",
+                self.layout.results / "sft_eval_health.json",
+                self.layout.results / "sft_eval_task_manifest.json",
+                self.layout.results / "sft_eval_run_config.json",
+                self.layout.results / "grpo_gate_eval.json",
+                self.layout.results / "grpo_gate_eval_health.json",
+                self.layout.results / "grpo_gate_eval_task_manifest.json",
+                self.layout.results / "grpo_gate_eval_run_config.json",
+                self.layout.results / "grpo_endpoint_sync.json",
+                self.layout.results / "posttrain_eval.json",
+                self.layout.results / "posttrain_eval_health.json",
+                self.layout.results / "posttrain_eval_task_manifest.json",
+                self.layout.results / "posttrain_eval_run_config.json",
+                self.layout.reports / "EVAL_LIFT.md",
+                self.layout.reports / "eval_lift.json",
+                self.layout.reports / "SCORE.md",
+                self.layout.reports / "score.json",
+            ):
+                artifact.unlink(missing_ok=True)
         from .sft import train_sft
 
         train_sft(
@@ -985,10 +1060,6 @@ class Pipeline:
         ):
             return
         jobs_dir = self.layout.jobs / "grpo-train"
-        if self.resume:
-            for path in (jobs_dir, self.layout.grpo_adapter, Path(output_model)):
-                if path.exists():
-                    shutil.rmtree(path)
         if self.dry_run:
             self.runner.commands.append(
                 {
@@ -1000,6 +1071,27 @@ class Pipeline:
                 }
             )
             return
+        if self.resume:
+            for path in (
+                jobs_dir,
+                self.layout.jobs / "posttrain",
+                self.layout.grpo_adapter,
+                Path(output_model),
+            ):
+                if path.exists():
+                    shutil.rmtree(path)
+            for artifact in (
+                self.layout.results / "grpo_endpoint_sync.json",
+                self.layout.results / "posttrain_eval.json",
+                self.layout.results / "posttrain_eval_health.json",
+                self.layout.results / "posttrain_eval_task_manifest.json",
+                self.layout.results / "posttrain_eval_run_config.json",
+                self.layout.reports / "EVAL_LIFT.md",
+                self.layout.reports / "eval_lift.json",
+                self.layout.reports / "SCORE.md",
+                self.layout.reports / "score.json",
+            ):
+                artifact.unlink(missing_ok=True)
         from .grpo import train_grpo
 
         train_grpo(
@@ -1020,6 +1112,8 @@ class Pipeline:
         input_model: str,
         output_model: Path,
     ) -> bool:
+        from .grpo import grpo_training_recipe
+
         revision = (
             self.config.model_revision if input_model == self.config.model else None
         )
@@ -1029,6 +1123,7 @@ class Pipeline:
                 metrics.get("mode") == "grpo"
                 and metrics.get("model") == input_model
                 and metrics.get("task_ids") == self.train_task_ids
+                and metrics.get("training_recipe") == grpo_training_recipe(self.config)
                 and metrics.get("adapter_dir") == str(self.layout.grpo_adapter)
                 and metrics.get("merged_model_dir") == str(output_model)
                 and metrics.get("base_checkpoint_sha256")
@@ -1122,6 +1217,25 @@ class Pipeline:
             if baseline_score is None or final_score is None
             else final_score - baseline_score
         )
+        grpo_training = None
+        grpo_effective_update = None
+        grpo_metrics_path = self.layout.grpo_merged / "train_metrics.json"
+        if grpo_ran and grpo_metrics_path.is_file():
+            grpo_metrics = load_json(grpo_metrics_path)
+            reward_groups = dict(grpo_metrics.get("reward_group_diagnostics") or {})
+            reward_groups.pop("groups", None)
+            lora_b_update = dict(grpo_metrics.get("lora_b_update_diagnostics") or {})
+            grpo_training = {
+                "training_recipe": grpo_metrics.get("training_recipe"),
+                "metrics": grpo_metrics.get("metrics"),
+                "reward_groups": reward_groups,
+                "lora_b_update": lora_b_update,
+            }
+            grpo_effective_update = bool(
+                reward_groups.get("nonzero_variance_group_count")
+                and lora_b_update.get("available")
+                and lora_b_update.get("nonzero_tensor_count")
+            )
         summary = {
             "schema_version": 1,
             "run_name": self.run_name,
@@ -1139,6 +1253,8 @@ class Pipeline:
             "grpo_run_policy": self.config.grpo.run_policy,
             "grpo_planned": grpo_planned,
             "grpo_ran": grpo_ran,
+            "grpo_effective_update": grpo_effective_update,
+            "grpo_training": grpo_training,
             "checkpoints": {
                 "sft_adapter": (
                     str(self.layout.sft_adapter) if self.config.sft.enabled else None
@@ -1182,6 +1298,7 @@ class Pipeline:
                     f"- Delta: `{delta}`",
                     f"- GRPO planned: `{grpo_planned}`",
                     f"- GRPO ran: `{grpo_ran}`",
+                    f"- GRPO effective update: `{grpo_effective_update}`",
                     f"- Training tasks: `{len(self.train_task_ids)}`",
                     f"- Eval tasks: `{len(self.eval_task_ids)}`",
                     "",

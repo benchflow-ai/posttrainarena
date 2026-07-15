@@ -18,6 +18,8 @@ from posttrainarena.benchflow_pipeline.grpo import (
     _chat_prompt_ids,
     attest_served_policy,
     build_grpo_rows,
+    grpo_training_recipe,
+    reward_group_diagnostics,
     sync_checkpoint_to_vllm,
     sync_model_to_vllm,
     sync_reference_to_vllm,
@@ -387,6 +389,53 @@ def test_verifier_reward_uses_rollout_metadata() -> None:
         verifier_reward(["a"], rollout_reward=None)
 
 
+def test_reward_group_diagnostics_detects_mixed_and_constant_groups() -> None:
+    records = [
+        {
+            "group_index": 0,
+            "global_step": 0,
+            "task_id": "task-a",
+            "reward": reward,
+        }
+        for reward in (0.0, 1.0, 1.0, 1.0)
+    ] + [
+        {
+            "group_index": 1,
+            "global_step": 4,
+            "task_id": "task-b",
+            "reward": 1.0,
+        }
+        for _ in range(4)
+    ]
+
+    diagnostics = reward_group_diagnostics(records, num_generations=4)
+
+    assert diagnostics["rollout_count"] == 8
+    assert diagnostics["complete_group_count"] == 2
+    assert diagnostics["nonzero_variance_group_count"] == 1
+    assert diagnostics["zero_variance_group_count"] == 1
+    assert diagnostics["zero_variance_fraction"] == 0.5
+
+
+def test_reward_group_diagnostics_rejects_invalid_records() -> None:
+    with pytest.raises(RuntimeError, match="rollout record is invalid"):
+        reward_group_diagnostics(
+            [
+                {
+                    "group_index": 0,
+                    "global_step": 0,
+                    "task_id": "task-a",
+                    "reward": float("nan"),
+                }
+            ],
+            num_generations=2,
+        )
+
+    diagnostics = reward_group_diagnostics([], num_generations=2)
+    assert diagnostics["group_count"] == 0
+    assert diagnostics["zero_variance_fraction"] is None
+
+
 def test_collector_runs_one_opencode_rollout_per_prompt(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -742,7 +791,16 @@ def test_train_grpo_wires_custom_rollout_and_vllm_sync(
             self.values = kwargs
 
     class FakeModel:
-        pass
+        def named_parameters(self):
+            import torch
+
+            if captured.get("hide_lora"):
+                return
+            if captured.get("force_nonfinite_lora"):
+                value = float("inf")
+            else:
+                value = 0.0 if captured.get("force_zero_lora") else 1.0
+            yield "layer.lora_B.default.weight", torch.tensor([value])
 
     class FakeMerged:
         def save_pretrained(self, path, **kwargs):
@@ -775,9 +833,33 @@ def test_train_grpo_wires_custom_rollout_and_vllm_sync(
             self.model = FakeModel()
             self.processing_class = FakeProcessor()
             self.vllm_generation = SimpleNamespace(vllm_client=FakeVllmClient())
+            self.state = SimpleNamespace(log_history=[{"loss": 0.5, "grad_norm": 1.0}])
+            self.args = kwargs["args"].values
+            self.rollout_func = kwargs["rollout_func"]
 
         def train(self):
-            return SimpleNamespace(metrics={"loss": 0.5})
+            rewards = [1.0] * self.args["num_generations"]
+            if not captured.get("force_zero_variance"):
+                rewards[0] = 0.0
+            if captured.get("force_incomplete_group"):
+                rewards.pop()
+            self.rollout_func.records = [
+                {
+                    "rollout_index": index,
+                    "group_index": 0,
+                    "global_step": 0,
+                    "task_id": "task-a",
+                    "reward": reward,
+                }
+                for index, reward in enumerate(rewards)
+            ]
+            return SimpleNamespace(
+                metrics={
+                    "train_loss": (
+                        float("inf") if captured.get("force_nonfinite_loss") else 0.5
+                    )
+                }
+            )
 
         def save_model(self, path):
             captured["model_path"] = path
@@ -842,8 +924,11 @@ def test_train_grpo_wires_custom_rollout_and_vllm_sync(
     assert args["vllm_mode"] == "server"
     assert args["vllm_server_base_url"] == "http://127.0.0.1:8000"
     assert args["vllm_importance_sampling_correction"] is True
+    assert args["loss_type"] == "dapo"
+    assert args["scale_rewards"] == "group"
     assert args["log_completions"] is False
     assert args["generation_batch_size"] == 2
+    assert args["num_generations"] == 2
     assert args["max_steps"] == config.grpo.max_steps
     assert "num_train_epochs" not in args
     assert args["gradient_checkpointing"] is True
@@ -861,6 +946,15 @@ def test_train_grpo_wires_custom_rollout_and_vllm_sync(
     assert payload["base_checkpoint_sha256"]
     assert payload["adapter_sha256"]
     assert payload["merged_model_sha256"]
+    assert payload["training_recipe"] == grpo_training_recipe(config)
+    assert payload["reward_group_diagnostics"]["nonzero_variance_group_count"] == 1
+    assert payload["lora_b_update_diagnostics"]["nonzero_tensor_count"] == 1
+    assert payload["training_log"] == [{"loss": 0.5, "grad_norm": 1.0}]
+    diagnostics = json.loads((tmp_path / "jobs/training_diagnostics.json").read_text())
+    assert diagnostics["training_recipe"] == grpo_training_recipe(config)
+    assert diagnostics["reward_groups"]["groups"][0]["has_variance"] is True
+    assert diagnostics["lora_b_update"]["nonzero_tensor_count"] == 1
+    assert diagnostics["metrics"] == {"train_loss": 0.5}
     dependency = json.loads((adapter_dir / "adapter_dependency.json").read_text())
     assert dependency["base_checkpoint"] == config.model
     assert dependency["published_base_sibling"] == "../sft-merged"
@@ -881,10 +975,96 @@ def test_train_grpo_wires_custom_rollout_and_vllm_sync(
 
     assert full_args["num_train_epochs"] == 1.0
     assert "max_steps" not in full_args
-    assert full_args["generation_batch_size"] == 2
+    assert full_args["generation_batch_size"] == 8
+    assert full_args["num_generations"] == 8
     assert full_payload["num_train_epochs"] == 1.0
     assert full_payload["max_steps"] is None
-    assert full_payload["generation_batch_size"] == 2
+    assert full_payload["generation_batch_size"] == 8
+    assert full_payload["reward_group_diagnostics"]["nonzero_variance_group_count"] == 1
+
+    captured["force_zero_variance"] = True
+    with pytest.raises(RuntimeError, match="zero within-group reward variance"):
+        train_grpo(
+            config=full_config,
+            model=full_config.model,
+            tasks_dir=tasks_dir,
+            task_ids=["task-a"],
+            jobs_dir=tmp_path / "zero-variance-jobs",
+            adapter_dir=tmp_path / "zero-variance-adapter",
+            output_dir=tmp_path / "zero-variance-checkpoint",
+            run_name="zero-variance-run",
+        )
+    assert (tmp_path / "zero-variance-jobs/training_diagnostics.json").is_file()
+
+    captured["force_zero_variance"] = False
+    captured["force_zero_lora"] = True
+    with pytest.raises(RuntimeError, match="every LoRA-B tensor remained zero"):
+        train_grpo(
+            config=full_config,
+            model=full_config.model,
+            tasks_dir=tasks_dir,
+            task_ids=["task-a"],
+            jobs_dir=tmp_path / "zero-update-jobs",
+            adapter_dir=tmp_path / "zero-update-adapter",
+            output_dir=tmp_path / "zero-update-checkpoint",
+            run_name="zero-update-run",
+        )
+
+    captured["force_zero_lora"] = False
+    captured["force_incomplete_group"] = True
+    with pytest.raises(RuntimeError, match="incomplete reward groups"):
+        train_grpo(
+            config=full_config,
+            model=full_config.model,
+            tasks_dir=tasks_dir,
+            task_ids=["task-a"],
+            jobs_dir=tmp_path / "incomplete-group-jobs",
+            adapter_dir=tmp_path / "incomplete-group-adapter",
+            output_dir=tmp_path / "incomplete-group-checkpoint",
+            run_name="incomplete-group-run",
+        )
+
+    captured["force_incomplete_group"] = False
+    captured["hide_lora"] = True
+    with pytest.raises(RuntimeError, match="could not inspect LoRA-B"):
+        train_grpo(
+            config=full_config,
+            model=full_config.model,
+            tasks_dir=tasks_dir,
+            task_ids=["task-a"],
+            jobs_dir=tmp_path / "missing-update-jobs",
+            adapter_dir=tmp_path / "missing-update-adapter",
+            output_dir=tmp_path / "missing-update-checkpoint",
+            run_name="missing-update-run",
+        )
+
+    captured["hide_lora"] = False
+    captured["force_nonfinite_lora"] = True
+    with pytest.raises(RuntimeError, match="non-finite LoRA-B"):
+        train_grpo(
+            config=full_config,
+            model=full_config.model,
+            tasks_dir=tasks_dir,
+            task_ids=["task-a"],
+            jobs_dir=tmp_path / "nonfinite-update-jobs",
+            adapter_dir=tmp_path / "nonfinite-update-adapter",
+            output_dir=tmp_path / "nonfinite-update-checkpoint",
+            run_name="nonfinite-update-run",
+        )
+
+    captured["force_nonfinite_lora"] = False
+    captured["force_nonfinite_loss"] = True
+    with pytest.raises(RuntimeError, match="finite train_loss"):
+        train_grpo(
+            config=full_config,
+            model=full_config.model,
+            tasks_dir=tasks_dir,
+            task_ids=["task-a"],
+            jobs_dir=tmp_path / "nonfinite-loss-jobs",
+            adapter_dir=tmp_path / "nonfinite-loss-adapter",
+            output_dir=tmp_path / "nonfinite-loss-checkpoint",
+            run_name="nonfinite-loss-run",
+        )
 
 
 def test_sync_model_to_vllm_closes_weight_communicator(

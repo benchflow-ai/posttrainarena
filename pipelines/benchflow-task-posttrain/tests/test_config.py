@@ -66,6 +66,7 @@ def test_qwen35_full_recipe_uses_all_tasks_and_one_epoch_lora() -> None:
     assert config.teacher.require_all_tasks is True
     assert config.teacher.min_verified == 2238
     assert config.runtime.max_completion_length == 40960
+    assert config.runtime.num_generations == 8
     assert config.sft.num_train_epochs == 1.0
     assert config.sft.max_steps is None
     assert config.sft.lora_r == 16
@@ -77,7 +78,8 @@ def test_qwen35_full_recipe_uses_all_tasks_and_one_epoch_lora() -> None:
     assert config.grpo.lora_alpha == 32
     assert config.grpo.log_completions is False
     assert config.grpo.gradient_accumulation_steps == 1
-    assert config.grpo.generation_batch_size == 2
+    assert config.grpo.generation_batch_size == 8
+    assert config.grpo.require_reward_variance is True
     assert config.tracking.report_to == "none"
     assert config.evaluation.sync_base_to_vllm is True
 
@@ -164,6 +166,7 @@ def test_config_rejects_unknown_grpo_run_policy() -> None:
         ("lora_dropout", 1.0, "grpo.lora_dropout"),
         ("log_completions", "yes", "grpo.log_completions"),
         ("generation_batch_size", 3, "grpo.generation_batch_size"),
+        ("require_reward_variance", "yes", "grpo.require_reward_variance"),
         (
             "vllm_server_base_url_env",
             "",
