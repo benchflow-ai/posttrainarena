@@ -1,15 +1,33 @@
 from __future__ import annotations
 
 import hashlib
+import tomllib
 from dataclasses import replace
 from pathlib import Path
 
 import pytest
+from benchflow.agents.registry import AGENTS
 
-from posttrainarena.benchflow_pipeline.config import load_config
+from posttrainarena.benchflow_pipeline.config import BENCHFLOW_COMMIT, load_config
 
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+def test_benchflow_dependency_pins_match_runtime_commit() -> None:
+    project = tomllib.loads((ROOT / "pyproject.toml").read_text())["project"]
+    optional = project["optional-dependencies"]
+    benchflow_dependencies = [
+        dependency
+        for extra in ("train", "test")
+        for dependency in optional[extra]
+        if dependency.startswith("benchflow[")
+    ]
+
+    assert len(benchflow_dependencies) == 2
+    assert all(f"@{BENCHFLOW_COMMIT}" in item for item in benchflow_dependencies)
+    assert "opencode-ai@1.17.20" in AGENTS["opencode"].install_cmd
+    assert "opencode-ai@latest" not in AGENTS["opencode"].install_cmd
 
 
 def test_example_config_is_valid_and_pinned() -> None:

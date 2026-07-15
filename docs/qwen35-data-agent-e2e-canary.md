@@ -37,7 +37,8 @@ evidence on the 14-task canary, not a competition-scale statistical claim.
 PostTrainArena commit
 `cf824b214e5ae08d6fc21becbcba7aae55e5109e` produced the run. The runtime used
 BenchFlow commit `6d6d2ee0965bdc7fe1e38555d1f7c4c21ee8a840`, whose OpenCode
-`1.17.20` pin is tracked in BenchFlow PR #931.
+`1.17.20` pin was merged from BenchFlow PR #931 as
+`2a97db55947d6742b765ad34ddd91d74c20d625f`.
 
 ## Historical soccer canary
 

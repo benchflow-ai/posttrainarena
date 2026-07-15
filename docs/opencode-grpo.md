@@ -118,9 +118,9 @@ containing the exact prompt IDs, completion IDs, and sampled logprobs returned
 by the TRL server. Ordinary evaluation requests do not create sidecars.
 
 The executable pipeline pins BenchFlow
-`cbc295464e62aa39f84e0daa675aa939c0e72f00`, which includes sampled-token
-logprob capture, the native TRL SFT converter, and Qwen3.5 generation-prefix
-validation.
+`2a97db55947d6742b765ad34ddd91d74c20d625f`, which includes sampled-token
+logprob capture, the native TRL SFT converter, Qwen3.5 generation-prefix
+validation, and the reproducible OpenCode `1.17.20` harness pin.
 
 The rollout parser reconstructs one causal sequence across all model turns
 using the exact served prompt IDs from the bridge sidecar rather than
