@@ -9,7 +9,13 @@ The open arena for post-training: contribute agentic RL environments, then measu
 **[Website](https://posttrain.com)** · **[Authoring spec](https://posttrain.com/docs/spec)** · **[Training pipeline](./docs/training-pipeline.md)** · **[Architecture status](./docs/architecture-status.md)** · **[Contributing](./CONTRIBUTING.md)** · **[Discord](https://discord.gg/mZ9Rc8q8W3)**
 
 > [!IMPORTANT]
-> PostTrain Arena is a proposed NeurIPS 2026 competition. The checked-in organizer recipe now targets `Qwen/Qwen3.5-9B`, uses `Qwen/Qwen3.5-397B-A17B` teacher rollouts, and runs one-epoch LoRA SFT followed by LoRA GRPO. Both the older Qwen3-4B path and a Qwen3.5 Data Agent canary have end-to-end execution evidence; neither has yet demonstrated held-out model-quality lift.
+> PostTrain Arena is a proposed NeurIPS 2026 competition. The checked-in
+> organizer recipe targets `Qwen/Qwen3.5-9B`, uses
+> `Qwen/Qwen3.5-397B-A17B` teacher rollouts, and runs one-epoch LoRA SFT
+> followed by LoRA GRPO through OpenCode. An exploratory same-domain public
+> canary observed a pass-rate increase from `8/14` to `11/14`;
+> competition-scale generalization and sealed-suite claims still require the
+> private organizer run.
 
 ## How it works
 
@@ -38,9 +44,13 @@ The headline track rewards environments that teach capabilities which transfer b
 
 ## Public implementation status
 
-The checked-in implementation now includes the full public-data organizer
-recipe plus a live Qwen3.5 eight-train/three-eval canary. Competition-scale
-execution, measured lift, and the sealed evaluation remain pending.
+The checked-in implementation now includes the full public-data reference
+recipe plus an exploratory Qwen3.5 16-train/14-eval canary. The same pipeline
+is used for competition entries by replacing the training dataset/task list
+with the participant corpus and the public eval dataset/task list with the
+organizer's sealed internal set. Competition-scale execution and sealed
+evaluation remain pending; the public canary records a same-domain pass-rate
+increase, not a generalization result.
 
 | Surface | Current public status |
 | --- | --- |
@@ -49,24 +59,23 @@ execution, measured lift, and the sealed evaluation remain pending.
 | OpenCode agent harness | **Implemented end to end** — teacher collection, baseline/gate/final eval, benchmark matrices, and TRL custom GRPO rollouts use OpenCode; TRL synchronizes the pinned base and each trained policy to the shared vLLM endpoint |
 | Public data | **Available** — [2,238 training tasks](https://huggingface.co/datasets/benchflow/data_agent_rl_environment_train) and [366 held-out evaluation tasks](https://huggingface.co/datasets/benchflow/data_agent_rl_environment_eval) in native `task.md` format |
 | OpenEnv protocol path | **Implemented** — served adapter, typed client, lifecycle tests, Docker parity validation, and a native-dataset end-to-end smoke |
-| HF Jobs execution | **Implemented** — portable UV job bundles, pinned code refs, named-secret boundaries, status inspection, and Hub publishing; live scheduler allocation currently awaits HF credits |
+| HF Jobs handoff | **Implemented; current topology not scheduler-validated** — portable UV job bundles, pinned code refs, named-secret boundaries, status inspection, and Hub publishing are implemented; July 11 scheduler attempts were credit-blocked, and the Qwen3.5/OpenCode topology still needs a paid HF Jobs run |
 | Continuous leaderboard | **Implemented** — atomic Hub dataset records and a deployable Gradio Space |
 | Multi-benchmark evaluation | **Implemented** — one base/final checkpoint pair can be scored across pinned Data Agent and SkillsBench suites |
-| Qwen3.5-9B organizer recipe | **Implemented; corrected live rerun in progress** — full 2,238-train/366-eval config is checked in; the 8x3 run proved orchestration but exposed a GRPO prompt-ID mismatch that this branch fixes |
-| Demonstrated model-quality lift | **Not yet** — completed smokes validated system mechanics, not learning gains |
+| Qwen3.5-9B organizer recipe | **Implemented and live canary validated** — full 2,238-train/366-eval public config is checked in; the corrected exact-ID 16x14 run completed SFT, 128 GRPO rollouts, final synchronization, and evaluation |
+| Observed canary uplift | **Exploratory same-domain evidence** — `8/14 → 11/14` (`+21.4` percentage points), with zero task regressions; the slice was diagnostic rather than pre-registered and the paired 95% interval includes zero |
 
 > [!NOTE]
-> On July 10, 2026, a real one-train/one-held-out run completed snapshotting, baseline evaluation, verifier-approved teacher collection, LoRA SFT, a forced GRPO step, final evaluation, and artifact publication through the earlier OpenEnv/TRL evaluation path. Scores remained `0.0 → 0.0`, so this is evidence of end-to-end operability—not quality improvement and not validation of the newer OpenCode evaluation path. See the [native-dataset OpenEnv smoke report](https://github.com/benchflow-ai/posttrainarena/blob/main/docs/native-dataset-openenv-smoke.md).
+> On July 10, 2026, a real one-train/one-held-out run completed snapshotting, baseline evaluation, verifier-approved teacher collection, LoRA SFT, a forced GRPO step, final evaluation, and artifact publication through the earlier OpenEnv/TRL evaluation path. Scores remained `0.0 → 0.0`, so this is evidence of end-to-end operability—not quality improvement and not validation of the newer OpenCode evaluation path. See the [native-dataset OpenEnv smoke report](./docs/native-dataset-openenv-smoke.md).
 >
-> On July 14, 2026, an eight-training-task/three-held-out-task Qwen3.5-9B
-> canary completed the current Docker + OpenCode path, including four verified
-> teacher trajectories, one-epoch LoRA SFT, 16 OpenCode GRPO rollouts,
-> checkpoint synchronization, and final held-out evaluation. Baseline, SFT,
-> and final held-out pass rate each measured `1/3`, so delta remained `0.0`.
-> A post-run audit found that the historical GRPO parser retokenized prompts
-> differently from the serving endpoint, so this run is not valid GRPO
-> learning evidence. The corrected path uses exact served IDs and policy
-> attestation.
+> On July 15, 2026, the corrected Qwen3.5-9B Docker + OpenCode run used 16
+> training task IDs and 14 disjoint evaluation task IDs from the same red-wine
+> source dataset. It completed strict `16/16` teacher coverage, 63 SFT rows,
+> one LoRA SFT epoch, 128 OpenCode GRPO rollouts, finite nonzero LoRA updates,
+> and a healthy final evaluation. Pass rate increased `8/14 → 11/14`, with zero
+> regressions. This diagnostic slice validates the update path but is not
+> evidence of broad generalization. The earlier July 14 soccer canary is
+> retained in the evidence report as historical orchestration-only data.
 > See the
 > [Qwen3.5 Data Agent canary](./docs/qwen35-data-agent-e2e-canary.md).
 
@@ -79,7 +88,7 @@ For compatibility details and evidence boundaries, use [Architecture and impleme
 | [`starting-kit/`](./starting-kit) | Task template and organizer-authored examples |
 | [`submissions/`](./submissions) | Team entries and `submission.yaml` contract |
 | [`scripts/`](./scripts) | Self-contained structural checks and local Docker harness |
-| [`pipelines/benchflow-task-posttrain/`](./pipelines/benchflow-task-posttrain) | Public BenchFlow + OpenEnv + TRL training implementation |
+| [`pipelines/benchflow-task-posttrain/`](./pipelines/benchflow-task-posttrain) | Public BenchFlow + OpenCode + TRL training implementation and standalone OpenEnv adapter |
 | [`docs/`](./docs) | Architecture, operator guide, and validation evidence |
 
 The examples under `starting-kit/` are reference material, not competition entries.
@@ -110,17 +119,18 @@ See [CONTRIBUTING.md](./CONTRIBUTING.md) for the submission workflow, validation
 
 ## Documentation
 
+- [Documentation map](./docs/README.md)
 - [Task authoring specification](https://posttrain.com/docs/spec)
 - [Architecture and implementation status](./docs/architecture-status.md)
 - [Training pipeline operator guide](./docs/training-pipeline.md)
 - [OpenCode GRPO rollout contract](./docs/opencode-grpo.md)
 - [OpenCode SFT-to-GRPO smoke](./docs/opencode-grpo-smoke.md)
 - [Qwen3.5 OpenCode teacher canary](./docs/qwen35-opencode-teacher-canary.md)
-- [Qwen3.5 Data Agent SFT-to-GRPO canary](./docs/qwen35-data-agent-e2e-canary.md)
+- [Qwen3.5 Data Agent SFT-to-GRPO validation](./docs/qwen35-data-agent-e2e-canary.md)
 - [OpenCode evaluation canary](./docs/opencode-evaluation-canary.md)
 - [Hugging Face Jobs and leaderboard handoff](./docs/hf-jobs.md)
 - [HF handoff validation report](./docs/hf-jobs-validation.md)
-- [Native-dataset OpenEnv smoke report](https://github.com/benchflow-ai/posttrainarena/blob/main/docs/native-dataset-openenv-smoke.md)
+- [Native-dataset OpenEnv smoke report](./docs/native-dataset-openenv-smoke.md)
 - [Starting-kit guide](./starting-kit/README.md)
 - [Team submission guide](./submissions/README.md)
 - [Security](./SECURITY.md) · [Support](./SUPPORT.md) · [Code of conduct](./CODE_OF_CONDUCT.md)

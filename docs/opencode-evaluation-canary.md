@@ -33,7 +33,6 @@ were supplied only through process environment variables.
 
 This proves the OpenCode evaluation command, endpoint environment mapping,
 Daytona execution, verifier scoring, and fail-closed artifact-health checks.
-It does not prove evaluation of a newly trained checkpoint; that requires the
-student endpoint to load the checkpoint before evaluation. The current pipeline
-implements that synchronization through TRL's vLLM weight-transfer path; a live
-GPU training smoke remains separate.
+The later Qwen3.5 Data Agent run additionally validates synchronized SFT and
+GRPO checkpoints plus final held-out evaluation; see
+[`qwen35-data-agent-e2e-canary.md`](qwen35-data-agent-e2e-canary.md).

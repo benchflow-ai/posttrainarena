@@ -128,8 +128,9 @@ independently retokenizing the OpenAI request.
 Model-generated tokens receive action mask `1`; tool results, environment
 feedback, and the next assistant-generation prefix receive mask `0`. Provider
 token bytes are retokenized only as a fallback and must match both the exact
-served completion IDs and provider token count. BenchFlow call-purpose metadata excludes OpenCode helper
-calls, and explicit failed provider attempts are ignored when OpenCode later
+served completion IDs and provider token count. BenchFlow call-purpose metadata
+excludes OpenCode helper calls, and explicit failed provider attempts are
+ignored when OpenCode later
 records a successful retry. If structured tool messages canonicalize a suffix
 of prior sampled text, the parser rolls back only that suffix and masks the
 canonical replacement as environment context. If OpenCode refreshes dynamic
@@ -173,6 +174,11 @@ policy attestation, vLLM wiring, and final synchronization are covered by
 no-spend tests. A post-run audit of the July 14 Qwen3.5 canary found that the
 older implementation independently retokenized prompts: `0/321` sampled agent
 exchanges matched the exact prompt-token count reported by the serving
-endpoint. That historical run remains orchestration evidence, not valid GRPO
-optimization evidence. The corrected exact-ID path requires a clean live
-rerun.
+endpoint. That historical run remains orchestration evidence only.
+
+The corrected July 15 run used exact served IDs for 128 OpenCode GRPO rollouts,
+completed 16/16 reward groups, observed four mixed groups, logged 30 nonzero
+gradient steps, updated all 248 LoRA-B tensors with finite values, and observed
+a same-domain pass-rate increase from `8/14` to `11/14` with zero regressions.
+This validates the current rollout contract on an exploratory public canary; it
+does not establish generalization or replace private competition evaluation.

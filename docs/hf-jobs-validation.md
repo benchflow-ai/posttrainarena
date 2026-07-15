@@ -3,8 +3,9 @@
 ## Verdict
 
 The PostTrain Arena Hugging Face handoff is implemented and its exact UV runner
-has completed the full pipeline on an H100. Allocation through the HF Jobs
-scheduler is currently blocked by account credits, not code.
+completed the historical pipeline on an H100. July 11 allocation attempts
+through the HF Jobs scheduler were blocked by account credits, not code;
+current paid-launch availability was not re-tested during the July 15 audit.
 
 This July 11 evidence predates the OpenCode evaluation migration. It validates
 the HF bundle, trainer, publishing, and earlier TRL evaluation path. The current
@@ -70,8 +71,12 @@ Real `hf jobs uv run` requests reached the official API under the `benchflow`,
 Required` with the same reason: insufficient prepaid Jobs credits.
 
 The uploaded script and bundle were therefore executed on a dedicated H100
-outside the HF scheduler. No code or secret-boundary change is required to
-retry after HF grants or billing are enabled.
+outside the HF scheduler. Authenticated job listing succeeded on July 15 and
+showed no active jobs, but that read-only check does not prove credits are now
+available. The next paid scheduler retry must validate the current
+Qwen3.5/OpenCode path, including authenticated model ingress, Docker
+availability, and separate trainer/vLLM GPU placement; those constraints may
+require topology or secret-boundary changes.
 
 ## Cleanup
 

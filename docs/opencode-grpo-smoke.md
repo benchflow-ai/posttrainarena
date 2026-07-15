@@ -1,5 +1,7 @@
 # OpenCode SFT-to-GRPO smoke
 
+<!-- markdownlint-disable MD013 -->
+
 On July 13, 2026, the Qwen3-4B reference pipeline completed a real
 OpenCode-only teacher, evaluation, and GRPO run on SkillsBench tasks with
 Daytona sandboxes.

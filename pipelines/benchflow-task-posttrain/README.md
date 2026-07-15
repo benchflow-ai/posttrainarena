@@ -31,10 +31,16 @@ recipes pin the public BenchFlow-native `task.md` datasets
 `benchflow/data_agent_rl_environment_eval`. The pipeline does not depend on
 Harbor or translate Harbor trajectories.
 
+The public full recipe uses all 2,238 training and 366 evaluation tasks. For
+competition entries, `prepare-submission` replaces the training repository and
+task list with the participant corpus; organizers supply a private base recipe
+whose eval repository and task list point at the sealed internal suite.
+
 After snapshotting, the pipeline hashes canonical package content and rejects
 an exact train/eval package duplicate even when it appears under a different
 task ID. This complements, but does not replace, the organizer's semantic
 leakage audit for private evaluation.
+
 ## Repository Layout
 
 ```text
@@ -199,12 +205,16 @@ official default, and requires at least one group with nonzero verifier-reward
 variance before it publishes a GRPO adapter. Two-generation settings remain in
 the canary and smoke recipes for cost control.
 
-Do not use held-out eval tasks to tune this gate. Production recipes should use
-separate training, gate/development, and final evaluation lists.
+Do not use held-out eval tasks to tune this gate. The current contract derives
+the gate from training tasks and uses the eval list for baseline, post-SFT, and
+final paired scoring. A separate development-list surface would require a
+future recipe/schema change.
 
 ## Qwen3.5 Data Agent Lift Result
 
-The clean July 15, 2026 Docker + OpenCode run on two H100 80 GB GPUs completed:
+This result is exploratory same-domain evidence. The July 15, 2026 Docker +
+OpenCode diagnostic run on two H100 80 GB GPUs used disjoint task IDs from the
+same red-wine source dataset and completed:
 
 - strict `16/16` verifier-approved Qwen3.5-397B-A17B teacher coverage
 - 63 validated tool-calling TRL SFT rows and one bf16 LoRA SFT epoch
@@ -214,6 +224,8 @@ The clean July 15, 2026 Docker + OpenCode run on two H100 80 GB GPUs completed:
 - held-out baseline/SFT/final pass rates `8/14`, `8/14`, and `11/14`
 - paired lift `+3/14` (`+21.4` percentage points), with zero regressions
 
+This validates real policy updates and records exploratory same-domain uplift;
+it is not a broad generalization claim.
 The earlier July 14 soccer canary remains historical orchestration evidence
 because it predated exact served-prompt-ID reconstruction.
 See
@@ -245,7 +257,8 @@ Before opening a PR:
 ```bash
 python3 -m pytest pipelines/benchflow-task-posttrain/tests -q
 python3 -m py_compile \
-  pipelines/benchflow-task-posttrain/src/posttrainarena/benchflow_pipeline/*.py \
+  pipelines/benchflow-task-posttrain/src/posttrainarena/benchflow_pipeline/*.py
+python3 -m py_compile \
   pipelines/benchflow-task-posttrain/src/posttrainarena/benchflow_pipeline/openenv/*.py
 ```
 

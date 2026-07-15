@@ -1,5 +1,7 @@
 # Team submissions
 
+<!-- markdownlint-disable MD013 MD060 -->
+
 Submissions use the PostTrain Arena task-package and team-manifest contract.
 They are validated locally with the self-contained scripts in this repository;
 organizer training uses BenchFlow + TRL after intake. OpenEnv compatibility is
@@ -24,7 +26,7 @@ allow lowering the environments minimum if participation is low.
 
 ## Layout
 
-```
+```text
 submissions/<team-entry>/
   submission.yaml          # flat key: value
   envs/<env-name>/...      # track: environments
@@ -67,11 +69,17 @@ training recipe:
 ```bash
 posttrainarena-train prepare-submission \
   --entry submissions/<team-entry> \
-  --base-config pipelines/benchflow-task-posttrain/configs/qwen3-4b-data-agent-forced-grpo-smoke.toml \
+  --base-config pipelines/benchflow-task-posttrain/configs/qwen3.5-9b-data-agent-full.toml \
   --out .local/prepared/<team-entry> \
   --dataset-repo <namespace>/posttrainarena-<team-entry> \
   --upload
 ```
+
+This public example inherits the pinned 366-task public eval list. During the
+competition, organizers use a private base config with the same
+Qwen3.5-9B/OpenCode/one-epoch LoRA recipe and the sealed internal eval
+dataset/task list. Preparation replaces the training dataset/list with the
+participant corpus and sets strict teacher coverage to that corpus size.
 
 This managed SFT/GRPO bridge supports `track: environments`. Skill-track
 evaluation remains a separate frozen-agent workflow.

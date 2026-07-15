@@ -47,6 +47,12 @@ lists, immutable recipe, and a machine-readable preparation manifest. Uploaded
 submission datasets are private by default; use `--public` only during the
 explicit post-competition release.
 
+The public command above inherits the 366-task public eval list from the base
+config. For a competition run, organizers use the same model/SFT/GRPO settings
+in a private base config whose `eval_dataset` and task list point at the sealed
+internal suite; `prepare-submission` replaces only the training dataset/list
+with the participant corpus.
+
 ## 2. Test the HF path without GPU spend
 
 Inspect the portable bundle without creating any remote resource:
@@ -168,21 +174,29 @@ posttrainarena-train openenv-serve \
   --include-task 0000_369_369503_qa_1 \
   --environment daytona \
   --jobs-dir .local/openenv-jobs \
-  --host 0.0.0.0 \
+  --host 127.0.0.1 \
   --port 8000
 ```
 
-The server resolves client task IDs to its own pinned task paths. Competition
-HF Jobs normally use co-located mode so all artifacts remain directly
-publishable by the job runner.
+The server resolves client task IDs to its own pinned task paths. Optional
+OpenEnv compatibility jobs can use co-located mode so artifacts remain directly
+publishable by the job runner; the current Qwen3.5/OpenCode training job does
+not use OpenEnv. The command has no built-in authentication; never expose its
+raw port publicly. Remote access requires encrypted, authenticated ingress plus
+network allowlisting.
 
 ## Validation and current HF blocker
 
-The exact UV runner completed the full submission-to-training-to-leaderboard
-flow on an H100, including Data Agent and SkillsBench evaluation. See
+The exact UV runner completed the historical pre-OpenCode
+submission-to-training-to-leaderboard flow on an H100, including Data Agent and
+SkillsBench evaluation. The current Qwen3.5/OpenCode topology still requires a
+paid scheduler rerun. See
 [`hf-jobs-validation.md`](hf-jobs-validation.md).
 
-HF Jobs allocation itself currently returns HTTP 402 for all available
-namespaces because prepaid Jobs credits are unavailable. After HF enables the
-grant or billing balance, rerun the documented `hf-job-submit` command without
-any code change.
+The July 11 scheduler attempts returned HTTP 402 for all tested namespaces
+because prepaid Jobs credits were unavailable. During the July 15 documentation
+audit, authenticated `hf jobs ps --namespace benchflow` succeeded and returned
+no jobs; no paid launch was submitted, so current credit availability is
+unverified. The native two-H100 run validates the current OpenCode/Qwen3.5
+pipeline independently, but does not validate managed HF Jobs support for its
+Docker, ingress, and two-physical-GPU topology.
