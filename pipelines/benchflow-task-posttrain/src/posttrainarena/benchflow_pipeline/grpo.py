@@ -9,17 +9,196 @@ import os
 import gc
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
+from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 from collections.abc import Callable, Mapping
 from typing import Any, Sequence
 
-from .config import PipelineConfig
+from .config import BENCHFLOW_COMMIT, PipelineConfig
 from .io import CommandRunner, supported_kwargs, write_json
 from .model_bridge import normalize_tool_call_arguments
 from .opencode import ServedModelRole, evaluate, served_model
 
 
 TASK_HANDLE_PREFIX = "benchflow-task://"
+
+
+def effective_generation_batch_size(config: PipelineConfig) -> int:
+    return (
+        config.grpo.generation_batch_size
+        or config.runtime.num_generations * config.harness.concurrency
+    )
+
+
+def _implementation_sha256() -> str:
+    digest = hashlib.sha256()
+    module_dir = Path(__file__).resolve().parent
+    for name in ("config.py", "grpo.py", "model_bridge.py", "opencode.py"):
+        path = module_dir / name
+        digest.update(name.encode())
+        digest.update(b"\0")
+        digest.update(path.read_bytes())
+    return digest.hexdigest()
+
+
+def _distribution_version(name: str) -> str:
+    try:
+        return version(name)
+    except PackageNotFoundError as exc:
+        raise RuntimeError(
+            f"GRPO training dependency is not installed: {name}"
+        ) from exc
+
+
+def grpo_training_recipe(config: PipelineConfig) -> dict[str, Any]:
+    return {
+        "trl_version": _distribution_version("trl"),
+        "peft_version": _distribution_version("peft"),
+        "transformers_version": _distribution_version("transformers"),
+        "torch_version": _distribution_version("torch"),
+        "benchflow_commit": BENCHFLOW_COMMIT,
+        "implementation_sha256": _implementation_sha256(),
+        "num_generations": config.runtime.num_generations,
+        "max_completion_length": config.runtime.max_completion_length,
+        "generation_batch_size": effective_generation_batch_size(config),
+        "num_train_epochs": config.grpo.num_train_epochs,
+        "max_steps": config.grpo.max_steps,
+        "learning_rate": config.grpo.learning_rate,
+        "gradient_accumulation_steps": config.grpo.gradient_accumulation_steps,
+        "gradient_checkpointing": config.grpo.gradient_checkpointing,
+        "lora_r": config.grpo.lora_r,
+        "lora_alpha": config.grpo.lora_alpha,
+        "lora_dropout": config.grpo.lora_dropout,
+        "rollout_attempts": config.grpo.rollout_attempts,
+        "require_reward_variance": config.grpo.require_reward_variance,
+        "bf16": True,
+        "per_device_train_batch_size": 1,
+        "loss_type": "dapo",
+        "scale_rewards": "group",
+        "target_modules": "all-linear",
+        "lora_bias": "none",
+        "task_type": "CAUSAL_LM",
+        "torch_empty_cache_steps": 1,
+        "use_vllm": True,
+        "vllm_mode": "server",
+        "vllm_importance_sampling_correction": True,
+    }
+
+
+def reward_group_diagnostics(
+    records: Sequence[Mapping[str, Any]],
+    *,
+    num_generations: int,
+) -> dict[str, Any]:
+    groups: dict[int, dict[str, Any]] = {}
+    for record in records:
+        group_index = record.get("group_index")
+        global_step = record.get("global_step")
+        task_id = record.get("task_id")
+        reward = record.get("reward")
+        if (
+            not isinstance(group_index, int)
+            or isinstance(group_index, bool)
+            or not isinstance(global_step, int)
+            or isinstance(global_step, bool)
+            or not isinstance(task_id, str)
+            or not isinstance(reward, int | float)
+            or isinstance(reward, bool)
+            or not math.isfinite(float(reward))
+        ):
+            raise RuntimeError("GRPO rollout record is invalid")
+        group = groups.setdefault(
+            group_index,
+            {"global_steps": set(), "task_ids": set(), "rewards": []},
+        )
+        group["global_steps"].add(global_step)
+        group["task_ids"].add(task_id)
+        group["rewards"].append(float(reward))
+
+    group_rows = []
+    complete_group_count = 0
+    nonzero_variance_group_count = 0
+    for group_index, group in sorted(groups.items()):
+        global_steps = group["global_steps"]
+        task_ids = group["task_ids"]
+        rewards = group["rewards"]
+        reward_range = max(rewards) - min(rewards)
+        consistent = len(global_steps) == 1 and len(task_ids) == 1
+        complete = consistent and len(rewards) == num_generations
+        has_variance = complete and not math.isclose(
+            reward_range,
+            0.0,
+            rel_tol=0.0,
+            abs_tol=1e-12,
+        )
+        complete_group_count += int(complete)
+        nonzero_variance_group_count += int(has_variance)
+        group_rows.append(
+            {
+                "group_index": group_index,
+                "global_step": next(iter(global_steps))
+                if len(global_steps) == 1
+                else None,
+                "task_id": next(iter(task_ids)) if len(task_ids) == 1 else None,
+                "count": len(rewards),
+                "min_reward": min(rewards),
+                "max_reward": max(rewards),
+                "reward_range": reward_range,
+                "consistent": consistent,
+                "complete": complete,
+                "has_variance": has_variance,
+            }
+        )
+    zero_variance_group_count = complete_group_count - nonzero_variance_group_count
+    return {
+        "num_generations": num_generations,
+        "rollout_count": len(records),
+        "group_count": len(group_rows),
+        "complete_group_count": complete_group_count,
+        "incomplete_group_count": len(group_rows) - complete_group_count,
+        "nonzero_variance_group_count": nonzero_variance_group_count,
+        "zero_variance_group_count": zero_variance_group_count,
+        "zero_variance_fraction": (
+            zero_variance_group_count / complete_group_count
+            if complete_group_count
+            else None
+        ),
+        "groups": group_rows,
+    }
+
+
+def lora_b_update_diagnostics(model: Any) -> dict[str, Any]:
+    named_parameters = getattr(model, "named_parameters", None)
+    if not callable(named_parameters):
+        return {
+            "available": False,
+            "tensor_count": 0,
+            "nonzero_tensor_count": 0,
+            "nonfinite_tensor_count": 0,
+            "max_abs": 0.0,
+        }
+    tensor_count = 0
+    nonzero_tensor_count = 0
+    nonfinite_tensor_count = 0
+    max_abs = 0.0
+    for name, parameter in named_parameters():
+        if "lora_B" not in name:
+            continue
+        tensor_count += 1
+        tensor = parameter.detach()
+        tensor_max = float(tensor.float().abs().max().item()) if tensor.numel() else 0.0
+        if not math.isfinite(tensor_max):
+            nonfinite_tensor_count += 1
+            continue
+        max_abs = max(max_abs, tensor_max)
+        nonzero_tensor_count += int(tensor_max > 0.0)
+    return {
+        "available": tensor_count > 0,
+        "tensor_count": tensor_count,
+        "nonzero_tensor_count": nonzero_tensor_count,
+        "nonfinite_tensor_count": nonfinite_tensor_count,
+        "max_abs": max_abs,
+    }
 
 
 def _directory_sha256(path: Path) -> str:
@@ -790,6 +969,7 @@ class OpenCodeRolloutCollector:
                     payload=payload,
                     attempt_root=attempt_root,
                     attempt=attempt,
+                    rollout_index=rollout_index,
                     task_id=task_id,
                     tokenizer=tokenizer,
                     global_step=global_step,
@@ -816,6 +996,7 @@ class OpenCodeRolloutCollector:
         payload: dict[str, Any],
         attempt_root: Path,
         attempt: int,
+        rollout_index: int,
         task_id: str,
         tokenizer: Any,
         global_step: int,
@@ -858,6 +1039,8 @@ class OpenCodeRolloutCollector:
             trace_resolver=self._resolve_bridge_trace,
         )
         record = {
+            "rollout_index": rollout_index,
+            "group_index": rollout_index // self.config.runtime.num_generations,
             "task_id": task_id,
             "reward": float(reward),
             "rollout_dir": str(rollout_dir),
@@ -915,10 +1098,7 @@ def train_grpo(
         label="TRL vLLM server endpoint",
     )
     processing_class = _load_tokenizer(config, model)
-    generation_batch_size = (
-        config.grpo.generation_batch_size
-        or config.runtime.num_generations * config.harness.concurrency
-    )
+    generation_batch_size = effective_generation_batch_size(config)
     values = {
         "output_dir": str(adapter_dir),
         "run_name": run_name,
@@ -935,6 +1115,8 @@ def train_grpo(
         "vllm_mode": "server",
         "vllm_server_base_url": vllm_server_base_url,
         "vllm_importance_sampling_correction": True,
+        "loss_type": "dapo",
+        "scale_rewards": "group",
         "logging_steps": 1,
         "per_device_train_batch_size": 1,
         "gradient_accumulation_steps": config.grpo.gradient_accumulation_steps,
@@ -970,6 +1152,51 @@ def train_grpo(
         result = trainer.train()
     finally:
         _close_weight_communicator(getattr(trainer, "vllm_generation", None))
+    reward_diagnostics = reward_group_diagnostics(
+        collector.records,
+        num_generations=config.runtime.num_generations,
+    )
+    update_diagnostics = lora_b_update_diagnostics(trainer.model)
+    training_log = list(
+        getattr(getattr(trainer, "state", None), "log_history", []) or []
+    )
+    jobs_dir.mkdir(parents=True, exist_ok=True)
+    write_json(
+        jobs_dir / "training_diagnostics.json",
+        {
+            "training_recipe": grpo_training_recipe(config),
+            "reward_groups": reward_diagnostics,
+            "lora_b_update": update_diagnostics,
+            "metrics": result.metrics,
+            "training_log": training_log,
+        },
+    )
+    if config.grpo.require_reward_variance:
+        train_loss = result.metrics.get("train_loss")
+        if (
+            not isinstance(train_loss, int | float)
+            or isinstance(train_loss, bool)
+            or not math.isfinite(float(train_loss))
+        ):
+            raise RuntimeError("GRPO training did not produce a finite train_loss")
+        if reward_diagnostics["incomplete_group_count"]:
+            raise RuntimeError(
+                "GRPO produced incomplete reward groups; inspect "
+                f"{jobs_dir / 'training_diagnostics.json'}"
+            )
+        if not reward_diagnostics["nonzero_variance_group_count"]:
+            raise RuntimeError(
+                "GRPO produced zero within-group reward variance; increase "
+                "runtime.num_generations or improve reward shaping"
+            )
+        if not update_diagnostics["available"]:
+            raise RuntimeError("GRPO could not inspect LoRA-B update tensors")
+        if update_diagnostics["nonfinite_tensor_count"]:
+            raise RuntimeError("GRPO produced non-finite LoRA-B update tensors")
+        if not update_diagnostics["nonzero_tensor_count"]:
+            raise RuntimeError(
+                "GRPO reward variance was nonzero but every LoRA-B tensor remained zero"
+            )
     adapter_dir.mkdir(parents=True, exist_ok=True)
     trainer.save_model(str(adapter_dir))
     processing_class = getattr(trainer, "processing_class", None)
@@ -1021,6 +1248,10 @@ def train_grpo(
         ),
         "max_steps": config.grpo.max_steps,
         "generation_batch_size": generation_batch_size,
+        "training_recipe": grpo_training_recipe(config),
+        "reward_group_diagnostics": reward_diagnostics,
+        "lora_b_update_diagnostics": update_diagnostics,
+        "training_log": training_log,
         "quantization": None,
         "metrics": result.metrics,
         "jobs_dir": str(jobs_dir),

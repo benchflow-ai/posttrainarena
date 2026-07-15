@@ -8,6 +8,7 @@ import pytest
 
 from posttrainarena.benchflow_pipeline.config import load_config
 from posttrainarena.benchflow_pipeline.io import directory_sha256
+from posttrainarena.benchflow_pipeline.grpo import grpo_training_recipe
 from posttrainarena.benchflow_pipeline.pipeline import (
     Pipeline,
     _sha256,
@@ -73,6 +74,8 @@ def test_dry_run_writes_score_schema_without_heavy_dependencies(tmp_path: Path) 
     assert saved["schema_version"] == 1
     assert saved["grpo_planned"] is True
     assert saved["grpo_ran"] is False
+    assert saved["grpo_effective_update"] is None
+    assert saved["grpo_training"] is None
     assert saved["harness"]["agent"] == "opencode"
     assert saved["teacher"]["require_all_tasks"] is True
     assert saved["sft"]["lora_r"] == config.sft.lora_r
@@ -119,6 +122,80 @@ def test_dry_run_writes_score_schema_without_heavy_dependencies(tmp_path: Path) 
         item["command"][item["command"].index("--agent") + 1] == "opencode"
         for item in evaluation_commands
     )
+
+
+def test_score_compacts_grpo_training_diagnostics(tmp_path: Path) -> None:
+    config = load_config(ROOT / "configs/qwen3-4b-data-agent-smoke.toml")
+    config = replace(config, output_root=tmp_path)
+    pipeline = Pipeline(config, run_name="score-diagnostics", dry_run=False)
+    pipeline.layout.grpo_merged.mkdir(parents=True)
+    (pipeline.layout.grpo_merged / "train_metrics.json").write_text(
+        json.dumps(
+            {
+                "training_recipe": grpo_training_recipe(config),
+                "metrics": {"train_loss": 0.25},
+                "reward_group_diagnostics": {
+                    "nonzero_variance_group_count": 1,
+                    "zero_variance_group_count": 0,
+                    "groups": [{"task_id": "task-a"}],
+                },
+                "lora_b_update_diagnostics": {
+                    "available": True,
+                    "nonzero_tensor_count": 1,
+                },
+            }
+        )
+    )
+
+    pipeline._write_score(
+        baseline_score=0.0,
+        sft_score=0.5,
+        grpo_gate_score=0.5,
+        final_score=1.0,
+        final_model=str(pipeline.layout.grpo_merged),
+        grpo_planned=True,
+        grpo_ran=True,
+    )
+
+    saved = json.loads((pipeline.layout.reports / "score.json").read_text())
+    assert saved["grpo_effective_update"] is True
+    assert saved["grpo_training"]["metrics"] == {"train_loss": 0.25}
+    assert "groups" not in saved["grpo_training"]["reward_groups"]
+
+    saved_metrics = json.loads(
+        (pipeline.layout.grpo_merged / "train_metrics.json").read_text()
+    )
+    saved_metrics["lora_b_update_diagnostics"] = {
+        "available": False,
+        "nonzero_tensor_count": 0,
+    }
+    (pipeline.layout.grpo_merged / "train_metrics.json").write_text(
+        json.dumps(saved_metrics)
+    )
+    pipeline._write_score(
+        baseline_score=0.0,
+        sft_score=0.5,
+        grpo_gate_score=0.5,
+        final_score=1.0,
+        final_model=str(pipeline.layout.grpo_merged),
+        grpo_planned=True,
+        grpo_ran=True,
+    )
+    saved = json.loads((pipeline.layout.reports / "score.json").read_text())
+    assert saved["grpo_effective_update"] is False
+
+    pipeline._write_score(
+        baseline_score=0.0,
+        sft_score=0.5,
+        grpo_gate_score=0.5,
+        final_score=0.5,
+        final_model=str(pipeline.layout.sft_merged),
+        grpo_planned=False,
+        grpo_ran=False,
+    )
+    saved = json.loads((pipeline.layout.reports / "score.json").read_text())
+    assert saved["grpo_effective_update"] is None
+    assert saved["grpo_training"] is None
 
 
 def test_pipeline_rejects_train_eval_overlap(tmp_path: Path) -> None:
@@ -418,16 +495,82 @@ def test_grpo_run_policy_can_force_zero_reward_training(tmp_path: Path) -> None:
     assert forced._should_run_grpo(0.0) is True
 
 
+def test_resumed_sft_restarts_downstream_artifacts(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config = load_config(ROOT / "configs/qwen3-4b-data-agent-smoke.toml")
+    config = replace(config, output_root=tmp_path)
+    pipeline = Pipeline(
+        config,
+        run_name="resume-sft",
+        dry_run=False,
+        resume=True,
+    )
+    monkeypatch.setattr(
+        "posttrainarena.benchflow_pipeline.sft.train_sft",
+        lambda **_: None,
+    )
+    stale_paths = [
+        pipeline.layout.sft_adapter / "stale.json",
+        pipeline.layout.sft_merged / "stale.json",
+        pipeline.layout.grpo_adapter / "stale.json",
+        pipeline.layout.grpo_merged / "stale.json",
+        pipeline.layout.jobs / "sft" / "stale.json",
+        pipeline.layout.jobs / "grpo-train" / "stale.json",
+        pipeline.layout.jobs / "posttrain" / "stale.json",
+    ]
+    for path in stale_paths:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("{}")
+    stale_metrics = pipeline.layout.results / "posttrain_eval.json"
+    stale_metrics.parent.mkdir(parents=True)
+    stale_metrics.write_text("{}")
+    stale_score = pipeline.layout.reports / "score.json"
+    stale_score.parent.mkdir(parents=True)
+    stale_score.write_text("{}")
+
+    pipeline._train_sft(str(pipeline.layout.sft_merged))
+
+    assert all(not path.exists() for path in stale_paths)
+    assert not stale_metrics.exists()
+    assert not stale_score.exists()
+
+
+def test_resumed_sft_dry_run_does_not_delete_artifacts(tmp_path: Path) -> None:
+    config = load_config(ROOT / "configs/qwen3-4b-data-agent-smoke.toml")
+    config = replace(config, output_root=tmp_path)
+    pipeline = Pipeline(
+        config,
+        run_name="resume-sft-dry-run",
+        dry_run=True,
+        resume=True,
+    )
+    stale = pipeline.layout.sft_adapter / "stale.json"
+    stale.parent.mkdir(parents=True)
+    stale.write_text("{}")
+
+    pipeline._train_sft(str(pipeline.layout.sft_merged))
+
+    assert stale.is_file()
+    assert pipeline.runner.commands[-1]["name"] == "train_sft"
+
+
 def test_resumed_grpo_restarts_stage_instead_of_reusing_rollouts(
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     config = load_config(ROOT / "configs/qwen3-4b-data-agent-smoke.toml")
     config = replace(config, output_root=tmp_path)
     pipeline = Pipeline(
         config,
         run_name="resume-grpo",
-        dry_run=True,
+        dry_run=False,
         resume=True,
+    )
+    monkeypatch.setattr(
+        "posttrainarena.benchflow_pipeline.grpo.train_grpo",
+        lambda **_: None,
     )
     stale = pipeline.layout.jobs / "grpo-train" / "stale.json"
     stale.parent.mkdir(parents=True)
@@ -438,6 +581,15 @@ def test_resumed_grpo_restarts_stage_instead_of_reusing_rollouts(
     stale_merged = pipeline.layout.grpo_merged / "stale.json"
     stale_merged.parent.mkdir(parents=True)
     stale_merged.write_text("{}")
+    stale_posttrain = pipeline.layout.jobs / "posttrain" / "stale.json"
+    stale_posttrain.parent.mkdir(parents=True)
+    stale_posttrain.write_text("{}")
+    stale_posttrain_metrics = pipeline.layout.results / "posttrain_eval.json"
+    stale_posttrain_metrics.parent.mkdir(parents=True)
+    stale_posttrain_metrics.write_text("{}")
+    stale_score = pipeline.layout.reports / "score.json"
+    stale_score.parent.mkdir(parents=True)
+    stale_score.write_text("{}")
 
     pipeline._train_grpo(
         input_model=config.model,
@@ -447,6 +599,30 @@ def test_resumed_grpo_restarts_stage_instead_of_reusing_rollouts(
     assert not stale.exists()
     assert not stale_adapter.exists()
     assert not stale_merged.exists()
+    assert not stale_posttrain.exists()
+    assert not stale_posttrain_metrics.exists()
+    assert not stale_score.exists()
+
+
+def test_resumed_grpo_dry_run_does_not_delete_artifacts(tmp_path: Path) -> None:
+    config = load_config(ROOT / "configs/qwen3-4b-data-agent-smoke.toml")
+    config = replace(config, output_root=tmp_path)
+    pipeline = Pipeline(
+        config,
+        run_name="resume-grpo-dry-run",
+        dry_run=True,
+        resume=True,
+    )
+    stale = pipeline.layout.jobs / "grpo-train" / "stale.json"
+    stale.parent.mkdir(parents=True)
+    stale.write_text("{}")
+
+    pipeline._train_grpo(
+        input_model=config.model,
+        output_model=str(pipeline.layout.grpo_merged),
+    )
+
+    assert stale.is_file()
     assert pipeline.runner.commands[-1]["resume_policy"] == "restart-stage"
 
 
@@ -623,6 +799,7 @@ def test_resume_checkpoint_digests_detect_tampering(tmp_path: Path) -> None:
                 "mode": "grpo",
                 "model": str(pipeline.layout.sft_merged),
                 "task_ids": pipeline.train_task_ids,
+                "training_recipe": grpo_training_recipe(config),
                 "adapter_dir": str(pipeline.layout.grpo_adapter),
                 "merged_model_dir": str(pipeline.layout.grpo_merged),
                 "base_checkpoint_sha256": directory_sha256(pipeline.layout.sft_merged),
@@ -636,6 +813,20 @@ def test_resume_checkpoint_digests_detect_tampering(tmp_path: Path) -> None:
         input_model=str(pipeline.layout.sft_merged),
         output_model=pipeline.layout.grpo_merged,
     )
+    for changed_config in (
+        replace(config, runtime=replace(config.runtime, num_generations=4)),
+        replace(config, grpo=replace(config.grpo, generation_batch_size=4)),
+    ):
+        changed_pipeline = Pipeline(
+            changed_config,
+            run_name="checkpoint-digests",
+            dry_run=True,
+        )
+        assert not changed_pipeline._grpo_checkpoint_is_current(
+            grpo_metrics_path,
+            input_model=str(pipeline.layout.sft_merged),
+            output_model=pipeline.layout.grpo_merged,
+        )
 
     (pipeline.layout.grpo_merged / "model.safetensors").write_bytes(b"tampered")
     assert not pipeline._grpo_checkpoint_is_current(
@@ -698,6 +889,71 @@ def test_resume_allows_increased_grpo_completion_budget(tmp_path: Path) -> None:
     assert updated["runtime"]["max_completion_length"] == (
         original_plan["runtime"]["max_completion_length"] * 2
     )
+
+
+def test_resume_allows_stricter_grpo_sampling_recipe(tmp_path: Path) -> None:
+    config = load_config(ROOT / "configs/qwen3-4b-data-agent-smoke.toml")
+    config = replace(config, output_root=tmp_path)
+    original = Pipeline(config, run_name="resume-grpo-sampling", dry_run=True)
+    original._prepare_run_plan()
+    plan_path = original.layout.reports / "plan.json"
+    original_plan = json.loads(plan_path.read_text())
+    original_plan["grpo"].pop("require_reward_variance")
+    plan_path.write_text(json.dumps(original_plan))
+    changed = Pipeline(
+        replace(
+            config,
+            runtime=replace(config.runtime, num_generations=8),
+            grpo=replace(
+                config.grpo,
+                generation_batch_size=8,
+                require_reward_variance=True,
+            ),
+        ),
+        run_name="resume-grpo-sampling",
+        dry_run=True,
+        resume=True,
+    )
+
+    changed._prepare_run_plan()
+
+    updated = json.loads((changed.layout.reports / "plan.json").read_text())
+    assert updated["runtime"]["num_generations"] == 8
+    assert updated["grpo"]["generation_batch_size"] == 8
+    assert updated["grpo"]["require_reward_variance"] is True
+
+
+def test_resume_rejects_weaker_grpo_sampling_recipe(tmp_path: Path) -> None:
+    config = load_config(ROOT / "configs/qwen3-4b-data-agent-smoke.toml")
+    config = replace(
+        config,
+        output_root=tmp_path,
+        runtime=replace(config.runtime, num_generations=8),
+        grpo=replace(
+            config.grpo,
+            generation_batch_size=8,
+            require_reward_variance=True,
+        ),
+    )
+    original = Pipeline(config, run_name="resume-grpo-weaker", dry_run=True)
+    original._prepare_run_plan()
+    changed = Pipeline(
+        replace(
+            config,
+            runtime=replace(config.runtime, num_generations=2),
+            grpo=replace(
+                config.grpo,
+                generation_batch_size=2,
+                require_reward_variance=False,
+            ),
+        ),
+        run_name="resume-grpo-weaker",
+        dry_run=True,
+        resume=True,
+    )
+
+    with pytest.raises(RuntimeError, match="Changed fields: grpo, runtime"):
+        changed._prepare_run_plan()
 
 
 def test_resume_rejects_other_teacher_plan_changes(tmp_path: Path) -> None:

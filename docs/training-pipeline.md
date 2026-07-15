@@ -247,8 +247,11 @@ evaluation health artifacts. Use a new run name when changing a recipe or task
 list.
 Incomplete strict teacher collection reuses finished `attempt-*` directories
 and continues with only tasks that still lack an eligible rollout. Resume may
-increase `[teacher].max_attempts` or `[runtime].max_completion_length`; all
-dataset, model, reward, and optimizer semantics remain immutable.
+increase `[teacher].max_attempts`, `[runtime].max_completion_length`,
+`[runtime].num_generations`, and `[grpo].generation_batch_size`, or tighten
+`[grpo].require_reward_variance`. Changing the GRPO recipe invalidates GRPO and
+downstream evaluation artifacts while preserving the verified SFT checkpoint;
+all dataset, model, reward, and optimizer semantics remain immutable.
 
 The snapshot boundary also rejects byte-equivalent task packages under
 different task IDs after normalizing the package's declared task name. This is
@@ -274,6 +277,10 @@ stall before the first tool call. OpenCode title/summary helpers are not seeded.
 GRPO rollout requests opt into sampled-token logprobs and do not receive a
 forced seed, preserving within-group reward variance without making pass-rate
 comparisons depend on uncontrolled random decoding.
+The production Qwen3.5 recipe uses eight generations per task, matching TRL's
+official default instead of the two-generation smoke setting. It records
+per-group reward ranges and LoRA-B update statistics, and fails before
+publishing a GRPO checkpoint when every complete group has zero reward variance.
 
 The evaluator itself has a real SkillsBench + Daytona canary with score `1.0`,
 complete provider telemetry, and healthy `results.jsonl` and
@@ -350,10 +357,11 @@ The Qwen3.5 recipe requires separate physical devices for the trainer and TRL
 vLLM worker. Two H100 80 GB GPUs are the initial canary topology. Exact memory
 and runtime depend on completion length, generation count, sandbox latency,
 and task trajectory length. Run the 1x1 canary before the full 2,238-task run.
-The checked-in GRPO recipe trains one same-prompt pair at a time: two
-generations, generation batch two, and no gradient accumulation. This keeps
-long OpenCode trajectories within the 80 GB trainer GPU without reducing the
-one-epoch task coverage. The bootstrap also enables PyTorch expandable CUDA
+The checked-in production GRPO recipe trains one same-prompt group at a time:
+eight generations, generation batch eight, and no gradient accumulation. The
+trainer still recomputes policy logprobs with a per-device microbatch of one to
+fit long OpenCode trajectories on the 80 GB trainer GPU. The bootstrap also
+enables PyTorch expandable CUDA
 segments to reduce allocator fragmentation, and the GRPO trainer clears cached
 CUDA allocations between steps.
 

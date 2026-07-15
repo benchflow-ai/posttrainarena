@@ -73,6 +73,7 @@ def build_run_record(
             benchmark_summary.get("benchmarks") if benchmark_summary else []
         ),
         "grpo_ran": score.get("grpo_ran"),
+        "grpo_effective_update": score.get("grpo_effective_update"),
         "train_task_count": len(score.get("train_task_ids", [])),
         "eval_task_count": len(score.get("eval_task_ids", [])),
         "artifact_url": artifact_url,

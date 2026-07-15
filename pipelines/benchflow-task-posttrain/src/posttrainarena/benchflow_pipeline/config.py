@@ -68,7 +68,7 @@ class RuntimeConfig:
     sandbox: str | None = None
     sandbox_user: str | None = "agent"
     max_completion_length: int = 2048
-    num_generations: int = 2
+    num_generations: int = 8
 
 
 @dataclass(frozen=True)
@@ -140,6 +140,7 @@ class GrpoConfig:
     log_completions: bool = False
     generation_batch_size: int | None = None
     rollout_attempts: int = 2
+    require_reward_variance: bool = False
     vllm_server_base_url_env: str = "TRL_VLLM_SERVER_BASE_URL"
 
 
@@ -266,6 +267,8 @@ class PipelineConfig:
             )
         if not _is_positive_int(self.grpo.rollout_attempts):
             errors.append("grpo.rollout_attempts must be positive")
+        if not isinstance(self.grpo.require_reward_variance, bool):
+            errors.append("grpo.require_reward_variance must be boolean")
         if (
             not isinstance(self.grpo.vllm_server_base_url_env, str)
             or not self.grpo.vllm_server_base_url_env.strip()

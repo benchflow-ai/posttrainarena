@@ -156,8 +156,10 @@ can be reused.
 If strict teacher coverage is incomplete, resume reuses completed attempts and
 continues only missing tasks. The retry budget may be increased without
 changing the rest of the persisted run plan.
-An interrupted GRPO stage also permits increasing only the aggregate completion
-budget, then restarts cleanly from the saved SFT checkpoint.
+An interrupted GRPO stage also permits increasing the aggregate completion
+budget, generation count, and generation batch, or enabling strict reward
+variance checks. It then restarts GRPO and downstream evaluation cleanly from
+the saved SFT checkpoint.
 
 The public OpenCode endpoint is `posttrainarena-train model-bridge`, which
 forwards to the TRL server at `TRL_VLLM_SERVER_BASE_URL`. The pipeline
@@ -182,7 +184,8 @@ runs/<run-name>/reports/score.json
 Important fields include `baseline_score`, `sft_score`, `grpo_gate_score`,
 `score_after_posttrain`, `delta_score`, `grpo_planned`, `grpo_ran`, exact task
 IDs, dataset revisions, BenchFlow commit, `grpo_run_policy`, and the recorded
-stage commands. The report also records the SFT and GRPO adapter and merged
+stage commands. The report also records `grpo_effective_update`, the compact
+reward-variance/update summary, and the SFT and GRPO adapter and merged
 checkpoint paths. A dry-run may set `grpo_planned` while leaving `grpo_ran`
 false.
 
@@ -191,6 +194,10 @@ false.
 The Qwen3.5 full recipe sets `grpo.run_policy = "always"` because GRPO is part
 of the fixed organizer recipe. The engine still supports `on_reward` for
 low-cost experiments that should skip a constant-zero reward distribution.
+That full recipe samples eight generations per task group, matching TRL's
+official default, and requires at least one group with nonzero verifier-reward
+variance before it publishes a GRPO adapter. Two-generation settings remain in
+the canary and smoke recipes for cost control.
 
 Do not use held-out eval tasks to tune this gate. Production recipes should use
 separate training, gate/development, and final evaluation lists.

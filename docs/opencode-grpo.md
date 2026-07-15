@@ -103,6 +103,12 @@ TRL GRPOTrainer
     -> GRPO policy update
 ```
 
+Production uses eight OpenCode rollouts per task group, while low-cost smoke
+recipes may use two. `training_diagnostics.json` records the exact TRL recipe,
+reward variance for every group, LoRA-B update statistics, and trainer log
+history. The production recipe rejects an all-zero-variance run instead of
+publishing a no-op adapter.
+
 The BenchFlow LiteLLM proxy is invoked with
 `BENCHFLOW_CAPTURE_TOKEN_LOGPROBS=1`. It requests sampled-token logprobs from
 the chat-completions endpoint and preserves them in
