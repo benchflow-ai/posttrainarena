@@ -1,0 +1,103 @@
+{
+  "operation": "greedy_capacity",
+  "variant": "conflict",
+  "capacity": 45,
+  "rows": [
+    {
+      "id": "J-1",
+      "priority": 4,
+      "demand": 11,
+      "record_id": "R-001",
+      "logical_key": "L-000",
+      "source_priority": 1
+    },
+    {
+      "id": "J-2",
+      "priority": 4,
+      "demand": 5,
+      "record_id": "R-002",
+      "logical_key": "L-000",
+      "source_priority": 2
+    },
+    {
+      "id": "J-3",
+      "priority": 3,
+      "demand": 6,
+      "record_id": "R-003",
+      "logical_key": "L-001",
+      "source_priority": 1
+    },
+    {
+      "id": "J-4",
+      "priority": 4,
+      "demand": 7,
+      "record_id": "R-004",
+      "logical_key": "L-001",
+      "source_priority": 2
+    },
+    {
+      "id": "J-5",
+      "priority": 2,
+      "demand": 3,
+      "record_id": "R-005",
+      "logical_key": "L-002",
+      "source_priority": 1
+    },
+    {
+      "id": "J-6",
+      "priority": 3,
+      "demand": 3,
+      "record_id": "R-006",
+      "logical_key": "L-002",
+      "source_priority": 2
+    },
+    {
+      "id": "J-7",
+      "priority": 2,
+      "demand": 7,
+      "record_id": "R-007",
+      "logical_key": "L-003",
+      "source_priority": 1
+    },
+    {
+      "id": "J-8",
+      "priority": 4,
+      "demand": 9,
+      "record_id": "R-008",
+      "logical_key": "L-003",
+      "source_priority": 2
+    },
+    {
+      "id": "J-9",
+      "priority": 2,
+      "demand": 11,
+      "record_id": "R-009",
+      "logical_key": "L-004",
+      "source_priority": 1
+    },
+    {
+      "id": "J-10",
+      "priority": 3,
+      "demand": 7,
+      "record_id": "R-010",
+      "logical_key": "L-004",
+      "source_priority": 2
+    },
+    {
+      "id": "J-11",
+      "priority": 5,
+      "demand": 3,
+      "record_id": "R-011",
+      "logical_key": "L-005",
+      "source_priority": 1
+    },
+    {
+      "id": "J-12",
+      "priority": 1,
+      "demand": 12,
+      "record_id": "R-012",
+      "logical_key": "L-005",
+      "source_priority": 2
+    }
+  ]
+}

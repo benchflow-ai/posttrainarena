@@ -1,0 +1,258 @@
+{
+  "operation": "trimmed_mean",
+  "variant": "conflict",
+  "rows": [
+    {
+      "sensor": "S1",
+      "value": 9.705,
+      "record_id": "R-001",
+      "logical_key": "L-000",
+      "source_priority": 1
+    },
+    {
+      "sensor": "S2",
+      "value": 12.475,
+      "record_id": "R-002",
+      "logical_key": "L-000",
+      "source_priority": 2
+    },
+    {
+      "sensor": "S3",
+      "value": 29.064,
+      "record_id": "R-003",
+      "logical_key": "L-001",
+      "source_priority": 1
+    },
+    {
+      "sensor": "S1",
+      "value": 10.237,
+      "record_id": "R-004",
+      "logical_key": "L-001",
+      "source_priority": 2
+    },
+    {
+      "sensor": "S2",
+      "value": 11.922,
+      "record_id": "R-005",
+      "logical_key": "L-002",
+      "source_priority": 1
+    },
+    {
+      "sensor": "S3",
+      "value": 15.948,
+      "record_id": "R-006",
+      "logical_key": "L-002",
+      "source_priority": 2
+    },
+    {
+      "sensor": "S1",
+      "value": 9.349,
+      "record_id": "R-007",
+      "logical_key": "L-003",
+      "source_priority": 1
+    },
+    {
+      "sensor": "S2",
+      "value": 11.862,
+      "record_id": "R-008",
+      "logical_key": "L-003",
+      "source_priority": 2
+    },
+    {
+      "sensor": "S3",
+      "value": 14.594,
+      "record_id": "R-009",
+      "logical_key": "L-004",
+      "source_priority": 1
+    },
+    {
+      "sensor": "S1",
+      "value": 10.849,
+      "record_id": "R-010",
+      "logical_key": "L-004",
+      "source_priority": 2
+    },
+    {
+      "sensor": "S2",
+      "value": 10.185,
+      "record_id": "R-011",
+      "logical_key": "L-005",
+      "source_priority": 1
+    },
+    {
+      "sensor": "S3",
+      "value": 15.327,
+      "record_id": "R-012",
+      "logical_key": "L-005",
+      "source_priority": 2
+    },
+    {
+      "sensor": "S1",
+      "value": 7.915,
+      "record_id": "R-013",
+      "logical_key": "L-006",
+      "source_priority": 1
+    },
+    {
+      "sensor": "S2",
+      "value": 12.302,
+      "record_id": "R-014",
+      "logical_key": "L-006",
+      "source_priority": 2
+    },
+    {
+      "sensor": "S3",
+      "value": 15.108,
+      "record_id": "R-015",
+      "logical_key": "L-007",
+      "source_priority": 1
+    },
+    {
+      "sensor": "S1",
+      "value": 9.692,
+      "record_id": "R-016",
+      "logical_key": "L-007",
+      "source_priority": 2
+    },
+    {
+      "sensor": "S2",
+      "value": 11.614,
+      "record_id": "R-017",
+      "logical_key": "L-008",
+      "source_priority": 1
+    },
+    {
+      "sensor": "S3",
+      "value": 14.463,
+      "record_id": "R-018",
+      "logical_key": "L-008",
+      "source_priority": 2
+    },
+    {
+      "sensor": "S1",
+      "value": 8.427,
+      "record_id": "R-019",
+      "logical_key": "L-009",
+      "source_priority": 1
+    },
+    {
+      "sensor": "S2",
+      "value": 10.644,
+      "record_id": "R-020",
+      "logical_key": "L-009",
+      "source_priority": 2
+    },
+    {
+      "sensor": "S3",
+      "value": 13.517,
+      "record_id": "R-021",
+      "logical_key": "L-010",
+      "source_priority": 1
+    },
+    {
+      "sensor": "S1",
+      "value": 9.808,
+      "record_id": "R-022",
+      "logical_key": "L-010",
+      "source_priority": 2
+    },
+    {
+      "sensor": "S2",
+      "value": 11.19,
+      "record_id": "R-023",
+      "logical_key": "L-011",
+      "source_priority": 1
+    },
+    {
+      "sensor": "S3",
+      "value": 13.047,
+      "record_id": "R-024",
+      "logical_key": "L-011",
+      "source_priority": 2
+    },
+    {
+      "sensor": "S1",
+      "value": 10.247,
+      "record_id": "R-025",
+      "logical_key": "L-012",
+      "source_priority": 1
+    },
+    {
+      "sensor": "S2",
+      "value": 13.596,
+      "record_id": "R-026",
+      "logical_key": "L-012",
+      "source_priority": 2
+    },
+    {
+      "sensor": "S3",
+      "value": 15.93,
+      "record_id": "R-027",
+      "logical_key": "L-013",
+      "source_priority": 1
+    },
+    {
+      "sensor": "S1",
+      "value": 9.976,
+      "record_id": "R-028",
+      "logical_key": "L-013",
+      "source_priority": 2
+    },
+    {
+      "sensor": "S2",
+      "value": 14.059,
+      "record_id": "R-029",
+      "logical_key": "L-014",
+      "source_priority": 1
+    },
+    {
+      "sensor": "S3",
+      "value": 13.378,
+      "record_id": "R-030",
+      "logical_key": "L-014",
+      "source_priority": 2
+    },
+    {
+      "sensor": "S1",
+      "value": 11.009,
+      "record_id": "R-031",
+      "logical_key": "L-015",
+      "source_priority": 1
+    },
+    {
+      "sensor": "S2",
+      "value": 26.358,
+      "record_id": "R-032",
+      "logical_key": "L-015",
+      "source_priority": 2
+    },
+    {
+      "sensor": "S3",
+      "value": 14.181,
+      "record_id": "R-033",
+      "logical_key": "L-016",
+      "source_priority": 1
+    },
+    {
+      "sensor": "S1",
+      "value": 11.169,
+      "record_id": "R-034",
+      "logical_key": "L-016",
+      "source_priority": 2
+    },
+    {
+      "sensor": "S2",
+      "value": 11.557,
+      "record_id": "R-035",
+      "logical_key": "L-017",
+      "source_priority": 1
+    },
+    {
+      "sensor": "S3",
+      "value": 14.499,
+      "record_id": "R-036",
+      "logical_key": "L-017",
+      "source_priority": 2
+    }
+  ]
+}

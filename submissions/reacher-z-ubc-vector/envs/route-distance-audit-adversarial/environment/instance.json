@@ -1,0 +1,41 @@
+{
+  "operation": "route_distance",
+  "variant": "adversarial",
+  "route": [
+    "A",
+    "B",
+    "C",
+    "D",
+    "E"
+  ],
+  "rows": [
+    {
+      "from": "A",
+      "to": "B",
+      "distance": 1.78,
+      "record_id": "R-001",
+      "is_distractor": false
+    },
+    {
+      "from": "B",
+      "to": "C",
+      "distance": 4.13,
+      "record_id": "R-002",
+      "is_distractor": true
+    },
+    {
+      "from": "C",
+      "to": "D",
+      "distance": 6.12,
+      "record_id": "R-003",
+      "is_distractor": true
+    },
+    {
+      "from": "D",
+      "to": "E",
+      "distance": 2.87,
+      "record_id": "R-004",
+      "is_distractor": false
+    }
+  ]
+}

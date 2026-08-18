@@ -1,0 +1,120 @@
+{
+  "operation": "join_reconcile",
+  "variant": "temporal",
+  "tolerance": "0.02",
+  "rows": [
+    {
+      "key": "K1",
+      "side": "ledger",
+      "amount": 44.18,
+      "record_id": "R-001",
+      "effective_at": "2026-08-10T12:00:00"
+    },
+    {
+      "key": "K1",
+      "side": "control",
+      "amount": 30.24,
+      "record_id": "R-002",
+      "effective_at": "2026-08-11T12:00:00"
+    },
+    {
+      "key": "K2",
+      "side": "ledger",
+      "amount": 89.05,
+      "record_id": "R-003",
+      "effective_at": "2026-08-12T12:00:00"
+    },
+    {
+      "key": "K2",
+      "side": "control",
+      "amount": 64.24,
+      "record_id": "R-004",
+      "effective_at": "2026-08-13T12:00:00"
+    },
+    {
+      "key": "K3",
+      "side": "ledger",
+      "amount": 59.84,
+      "record_id": "R-005",
+      "effective_at": "2026-08-14T12:00:00"
+    },
+    {
+      "key": "K3",
+      "side": "control",
+      "amount": 36.14,
+      "record_id": "R-006",
+      "effective_at": "2026-08-15T12:00:00"
+    },
+    {
+      "key": "K4",
+      "side": "ledger",
+      "amount": 25.62,
+      "record_id": "R-007",
+      "effective_at": "2026-08-16T12:00:00"
+    },
+    {
+      "key": "K4",
+      "side": "control",
+      "amount": 29.65,
+      "record_id": "R-008",
+      "effective_at": "2026-08-17T12:00:00"
+    },
+    {
+      "key": "K5",
+      "side": "ledger",
+      "amount": 96.21,
+      "record_id": "R-009",
+      "effective_at": "2026-08-18T12:00:00"
+    },
+    {
+      "key": "K5",
+      "side": "control",
+      "amount": 25.2,
+      "record_id": "R-010",
+      "effective_at": "2026-08-19T12:00:00"
+    },
+    {
+      "key": "K6",
+      "side": "ledger",
+      "amount": 62.24,
+      "record_id": "R-011",
+      "effective_at": "2026-08-20T12:00:00"
+    },
+    {
+      "key": "K6",
+      "side": "control",
+      "amount": 61.93,
+      "record_id": "R-012",
+      "effective_at": "2026-08-21T12:00:00"
+    },
+    {
+      "key": "K7",
+      "side": "ledger",
+      "amount": 57.51,
+      "record_id": "R-013",
+      "effective_at": "2026-08-10T12:00:00"
+    },
+    {
+      "key": "K7",
+      "side": "control",
+      "amount": 32.96,
+      "record_id": "R-014",
+      "effective_at": "2026-08-11T12:00:00"
+    },
+    {
+      "key": "K8",
+      "side": "ledger",
+      "amount": 64.74,
+      "record_id": "R-015",
+      "effective_at": "2026-08-12T12:00:00"
+    },
+    {
+      "key": "K8",
+      "side": "control",
+      "amount": 56.91,
+      "record_id": "R-016",
+      "effective_at": "2026-08-13T12:00:00"
+    }
+  ],
+  "as_of": "2026-08-18T12:00:00"
+}

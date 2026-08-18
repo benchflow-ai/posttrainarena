@@ -1,0 +1,37 @@
+{
+  "operation": "route_distance",
+  "variant": "baseline",
+  "route": [
+    "A",
+    "B",
+    "C",
+    "D",
+    "E"
+  ],
+  "rows": [
+    {
+      "from": "A",
+      "to": "B",
+      "distance": 1.42,
+      "record_id": "R-001"
+    },
+    {
+      "from": "B",
+      "to": "C",
+      "distance": 2.04,
+      "record_id": "R-002"
+    },
+    {
+      "from": "C",
+      "to": "D",
+      "distance": 5.24,
+      "record_id": "R-003"
+    },
+    {
+      "from": "D",
+      "to": "E",
+      "distance": 6.7,
+      "record_id": "R-004"
+    }
+  ]
+}

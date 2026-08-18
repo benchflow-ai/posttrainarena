@@ -1,0 +1,103 @@
+{
+  "operation": "join_reconcile",
+  "variant": "baseline",
+  "tolerance": "0.02",
+  "rows": [
+    {
+      "key": "K1",
+      "side": "ledger",
+      "amount": 28.99,
+      "record_id": "R-001"
+    },
+    {
+      "key": "K1",
+      "side": "control",
+      "amount": 89.29,
+      "record_id": "R-002"
+    },
+    {
+      "key": "K2",
+      "side": "ledger",
+      "amount": 83.42,
+      "record_id": "R-003"
+    },
+    {
+      "key": "K2",
+      "side": "control",
+      "amount": 98.1,
+      "record_id": "R-004"
+    },
+    {
+      "key": "K3",
+      "side": "ledger",
+      "amount": 48.41,
+      "record_id": "R-005"
+    },
+    {
+      "key": "K3",
+      "side": "control",
+      "amount": 93.12,
+      "record_id": "R-006"
+    },
+    {
+      "key": "K4",
+      "side": "ledger",
+      "amount": 92.93,
+      "record_id": "R-007"
+    },
+    {
+      "key": "K4",
+      "side": "control",
+      "amount": 68.25,
+      "record_id": "R-008"
+    },
+    {
+      "key": "K5",
+      "side": "ledger",
+      "amount": 60.77,
+      "record_id": "R-009"
+    },
+    {
+      "key": "K5",
+      "side": "control",
+      "amount": 93.59,
+      "record_id": "R-010"
+    },
+    {
+      "key": "K6",
+      "side": "ledger",
+      "amount": 25.38,
+      "record_id": "R-011"
+    },
+    {
+      "key": "K6",
+      "side": "control",
+      "amount": 72.62,
+      "record_id": "R-012"
+    },
+    {
+      "key": "K7",
+      "side": "ledger",
+      "amount": 28.31,
+      "record_id": "R-013"
+    },
+    {
+      "key": "K7",
+      "side": "control",
+      "amount": 77.18,
+      "record_id": "R-014"
+    },
+    {
+      "key": "K8",
+      "side": "ledger",
+      "amount": 92.64,
+      "record_id": "R-015"
+    },
+    {
+      "key": "K8",
+      "side": "control",
+      "amount": 53.0,
+      "record_id": "R-016"
+    }
+  ]
+}
