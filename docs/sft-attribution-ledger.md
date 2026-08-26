@@ -123,6 +123,33 @@ benchmark. Two things follow:
    trajectory-format leak corpus — identical contamination, correct shape —
    which isolates content from format. Result pending.
 
+## Result 5 — trajectory corpora reach parity, and the screen/confirm discipline earns its keep
+
+Trained on the 75 *held-out* tasks' oracles rendered as long agentic
+trajectories (median 39 tool calls/row — above base) at minimal perturbation,
+two candidates produced the program's first positive screens (+0.106, +0.076
+at 1 attempt/task). Pooled confirmation — 36 candidate rollouts per model
+against a 60-rollout pooled baseline, bootstrap over tasks — returned:
+
+| model | pooled Δ | 95% CI | verdict |
+|---|---|---|---|
+| r4 / lr 1e-5 | −0.006 | [−0.083, +0.078] | parity with base |
+| r8 / lr 2e-5 | −0.020 | [−0.083, +0.044] | parity with base |
+
+Zero of the four never-solved tasks improved. The screen positives were
+single-run-baseline noise (the identical base model spans 0.265–0.507 across
+runs) — caught by the confirmation stage, as designed, for the second time.
+
+The trajectory-format leak controls complete the picture: heavy-perturbation
+contamination in 14-call format scored −0.367 where the step-count ladder
+predicted −0.358 — a fourth independent reproduction of the law.
+
+**Where this leaves SFT on agentic evals:** format-correct data at minimal
+perturbation eliminates the damage every earlier corpus caused — and adds
+nothing. On this task family, SFT's ceiling is parity. Capability gain has to
+come from elsewhere: reinforcement learning with turn-level credit (the staged
+plan's batch 3), harder/better data, or both.
+
 ## Staged plan (each batch gates the next)
 
 | batch | question | cost |
