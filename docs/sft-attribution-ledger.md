@@ -105,9 +105,23 @@ come back strongly positive.
   uninterpretable. **delta > 0, CI crosses zero** → underpowered; widen the
   eval before publishing verdicts.
 
-<!-- LEAK-RESULT: pending — replace this block with the measured delta/CI/verdict -->
-Status: training complete; paired eval in flight. This document will be
-updated with the measured delta.
+**Measured (2026-08-26, document-format leak corpus):** paired delta
+**−0.258**, CI [−0.530, 0.00], pass-rate delta −0.18 over 11 paired tasks —
+the model trained on the eval's own answers scored *worse* on those answers.
+
+This is not the "instrument dead" reading (delta ≈ 0); it is the step-count
+law overwhelming the contamination. The leak corpus renders oracle solutions
+as documents (0 tool calls/row) at maximal perturbation — precisely the
+configuration Result 2 predicts destroys agentic behavior (−0.400 measured
+for the document corpus). The contamination is in the weights, but the model
+no longer behaves like an agent, so it cannot cash it in on an agentic
+benchmark. Two things follow:
+
+1. The instrument detects *effects* with paired power — the degradation is
+   real signal, not noise.
+2. Detecting *improvement* remains unproven by this arm. The follow-up is a
+   trajectory-format leak corpus — identical contamination, correct shape —
+   which isolates content from format. Result pending.
 
 ## Staged plan (each batch gates the next)
 
