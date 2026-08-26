@@ -5,6 +5,10 @@ metadata:
   author_email: xiangyi@benchflow.ai
   category: software-engineering
   difficulty: easy
+  # This demo's required output is given verbatim in the prompt by design
+  # (a "write exactly this object" task) — there is no held-out answer, so the
+  # managed pipeline's answer-leakage audit does not apply.
+  output_fully_specified: true
   tags: [dogfood, hello-world, file-io]
 agent:
   timeout_sec: 300
