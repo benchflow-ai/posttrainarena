@@ -1,0 +1,53 @@
+# Example attribution run spec: does a tuned model beat its own base on an
+# eval mixture, and by how much?
+#
+# Both arms should be served from the SAME endpoint/hardware so the measured
+# delta is the weights and nothing else. Any OpenAI-compatible endpoint works:
+# the `vllm/` provider prefix routes to the base URL in
+# BENCHFLOW_PROVIDER_BASE_URL with the key from OPENAI_API_KEY.
+#
+#   MODEL_API_KEY=... python3 scripts/pta_attribute.py \
+#     --spec configs/attribution.example.yaml
+#
+# Secrets never live in this file: ${VAR} references in extra_eval_args are
+# expanded from the environment at run time, and the run dies loudly if a
+# referenced variable is unset.
+name: attribution-example
+
+arms:
+  baseline:
+    agent: deepagents
+    model: vllm/<base-model-ref>
+  candidate:
+    agent: deepagents
+    model: vllm/<tuned-model-ref>
+
+# docker needs a local daemon; daytona/modal run the sandboxes in the cloud
+# (DAYTONA_API_KEY, or a configured Modal profile, respectively).
+sandbox: docker
+concurrency: 4
+jobs_root: jobs/attribution-example
+
+extra_eval_args:
+  - --config-override
+  - '{"agent":{"timeout_sec":900}}'
+  - --agent-env
+  - BENCHFLOW_PROVIDER_BASE_URL=https://<your-openai-compatible-endpoint>/v1
+  - --agent-env
+  - OPENAI_API_KEY=${MODEL_API_KEY}
+
+eval_mixture:
+  - name: skillsbench
+    domain: skills
+    # git clone https://github.com/benchflow-ai/skillsbench
+    tasks_dir: ./skillsbench/tasks
+    include:
+      - citation-check
+      - data-to-d3
+      - dialogue-parser
+    expected_tasks: 3
+    weight: 1.0
+
+attribution:
+  per_domain_cap: 0.20
+  bootstrap_samples: 1000
