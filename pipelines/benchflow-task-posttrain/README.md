@@ -46,6 +46,7 @@ leakage audit for private evaluation.
 ```text
 benchflow-task-posttrain/
   configs/                 checked-in, reviewable training recipes
+  configs/accelerate/      reviewed Accelerate launch profiles for training workers
   task-lists/              explicit train and eval task IDs
   scripts/bootstrap_gpu.sh GPU-host bootstrap
   src/.../config.py        typed TOML contract and validation
@@ -54,6 +55,9 @@ benchflow-task-posttrain/
   src/.../opencode.py      OpenCode baseline/gate/final evaluation
   src/.../grpo.py          OpenCode custom rollouts for TRL LoRA GRPO
   src/.../sft.py           TRL LoRA SFT with exact pre-tokenized labels
+  src/.../launcher.py      per-stage Accelerate profiles and owned training workers
+  src/.../checkpoint.py    one-process CPU adapter merge shared by SFT and GRPO
+  src/.../distributed.py   rank helpers that degrade to single-process semantics
   src/.../vllm_server.py   TRL server with Qwen3.5 weight-name compatibility
   src/.../openenv/         OpenEnv client/server protocol adapter
   tests/                   no-spend contract tests
