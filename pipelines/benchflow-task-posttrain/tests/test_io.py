@@ -106,3 +106,22 @@ def test_command_runner_prefers_bench_next_to_active_python(
     assert captured["command"] == [str(bench), "eval", "run"]
     assert runner.commands[0]["command"] == ["bench", "eval", "run"]
     assert runner.commands[0]["resolved_executable"] == str(bench)
+
+
+def test_command_runner_uses_its_explicit_environment(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured = {}
+
+    def fake_run(*_args, **kwargs):
+        captured.update(kwargs.get("env") or {})
+        return SimpleNamespace(returncode=0)
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    monkeypatch.setenv("RANK", "1")
+    runner = CommandRunner(cwd=tmp_path, environment={"PATH": "/usr/bin"})
+
+    runner.run("eval", ["bench", "eval", "run"], env_overrides={"TOKEN": "t"})
+
+    assert captured == {"PATH": "/usr/bin", "TOKEN": "t"}
