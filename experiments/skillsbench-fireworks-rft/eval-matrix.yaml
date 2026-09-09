@@ -1,0 +1,4 @@
+models:
+  sbds41-r32-e10:
+    model: vllm/accounts/xiangyi-0cb55c/models/sbds41-r32-e10-50cac45a#accounts/xiangyi-0cb55c/deployments/sbds41-pass10
+    agent: opencode
