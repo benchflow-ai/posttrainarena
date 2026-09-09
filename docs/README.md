@@ -10,6 +10,8 @@
 | [`training-pipeline.md`](training-pipeline.md) | Organizers and researchers | Canonical BenchFlow + TRL operator guide, configuration, execution, artifacts, and evidence limits |
 | [`hf-jobs.md`](hf-jobs.md) | Organizers and Hugging Face collaborators | Submission-to-recipe bridge, HF UV Jobs, artifact publication, multi-benchmark evaluation, and leaderboard hosting |
 | [`hf-jobs-validation.md`](hf-jobs-validation.md) | Reviewers and operators | Historical H100 wrapper evidence, Hub outputs, live Space, and the July 11 HF Jobs credit blocker |
+| [`fireworks-deployment-safety.md`](fireworks-deployment-safety.md) | Fireworks evaluation operators | Billing-aware deployment setup, scale-to-zero verification, emergency shutdown, and preflight/post-run checks |
+| [`from-benchmark-data-to-fireworks-training.md`](from-benchmark-data-to-fireworks-training.md) | Fireworks training researchers | DeepSeek V4 Pro no-skills corpus selection, Qwen3.6-27B overfitting experiment, and pass@10 evaluation |
 | [`opencode-grpo.md`](opencode-grpo.md) | Operators and trainer authors | Current OpenCode rollout, bridge, exact-token, synchronization, and GRPO update contract |
 | [`opencode-evaluation-canary.md`](opencode-evaluation-canary.md) | Reviewers and operators | Historical single-task OpenCode evaluator evidence |
 | [`opencode-grpo-smoke.md`](opencode-grpo-smoke.md) | Reviewers and operators | Historical Qwen3-4B OpenCode SFT-to-GRPO plumbing smoke |
