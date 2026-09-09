@@ -53,6 +53,7 @@ loudly on an unset variable.
 | `scripts/pta_attribute.py` | the orchestrator described above |
 | `scripts/scoring.py` | capped aggregation (paired bootstrap, ≤20% per-domain water-filling) |
 | `scripts/build_skillsbench_sft.py` | render (instruction → oracle solution) SFT rows from a tasks dir, with the eval set held out (`--only` inverts the holdout to build a deliberate leak-control corpus) |
+| `scripts/fireworks_sft.py` | upload a chat JSONL as a Fireworks dataset and launch the managed LoRA SFT job (the training step in the method above); `--status` polls a job |
 | `scripts/train_leak.py` | LoRA SFT for the leak control: train on the eval tasks' own oracles at maximal-memorization settings |
 | `scripts/memorization_probe.py` | token-F1 lift on training vs held-out rows — verify a checkpoint actually learned its data before interpreting any benchmark delta |
 
