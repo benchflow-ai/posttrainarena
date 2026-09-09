@@ -64,13 +64,39 @@ def resolve_account(key: str) -> str:
 
 def load_rows(path: Path, split: str | None) -> list[dict]:
     rows = []
-    for line in path.read_text(encoding="utf-8").splitlines():
+    for line_num, line in enumerate(
+        path.read_text(encoding="utf-8").splitlines(),
+        start=1,
+    ):
         if not line.strip():
             continue
         rec = json.loads(line)
         if split and rec.get("split") != split:
             continue
-        rows.append({"messages": rec["messages"]})
+        messages = rec.get("messages")
+        if messages is None:
+            prompt, completion = rec.get("prompt"), rec.get("completion")
+            if not isinstance(prompt, list) or not isinstance(completion, list):
+                raise SystemExit(
+                    f"{path}:{line_num}: expected messages or prompt/completion"
+                )
+            messages = prompt + completion
+        if not isinstance(messages, list) or not messages:
+            raise SystemExit(f"{path}:{line_num}: messages must be a non-empty list")
+        normalized = []
+        for message in messages:
+            clean = dict(message)
+            for tool_call in clean.get("tool_calls") or []:
+                function = tool_call.get("function")
+                if isinstance(function, dict) and isinstance(
+                    function.get("arguments"), dict
+                ):
+                    function["arguments"] = json.dumps(
+                        function["arguments"],
+                        separators=(",", ":"),
+                    )
+            normalized.append(clean)
+        rows.append({"messages": normalized})
     if not rows:
         raise SystemExit(f"no rows selected from {path} (split={split!r})")
     return rows
