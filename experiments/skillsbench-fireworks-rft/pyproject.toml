@@ -1,0 +1,19 @@
+[project]
+name = "skillsbench-fireworks-rft"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = [
+    "eval-protocol>=0.3.0",
+    "fastapi>=0.116.1",
+    "uvicorn>=0.35.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 120
