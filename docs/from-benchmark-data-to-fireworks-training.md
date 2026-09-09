@@ -204,18 +204,15 @@ Report the result as a contaminated-task comparison:
 ```text
 Qwen3.6-27B base
   healthy attempts: 410/410
-  pass@10: <tasks passing at least once>/41
-  per-attempt pass rate: <reward-1 attempts>/410
-  mean verifier reward: <mean>
+  pass@10: 19/41
+  per-attempt pass rate: 121/410
+  mean verifier reward: 0.314
 
 Qwen3.6-27B + sbds41-r32-e10
   healthy attempts: 410/410
-  pass@10: <tasks passing at least once>/41
-  per-attempt pass rate: <reward-1 attempts>/410
-  mean verifier reward: <mean>
-
-Contaminated-task lift
-  tuned minus base for each metric
+  pass@10: 37/41
+  per-attempt pass rate: 247/410
+  mean verifier reward: 0.631
 ```
 
 The complete path is:
