@@ -82,6 +82,11 @@ def opencode_config_env(config: PipelineConfig) -> str:
             },
         },
     }
+    if config.harness.opencode_steps is not None:
+        content["agent"] = {
+            name: {"steps": config.harness.opencode_steps}
+            for name in ("build", "general", "explore")
+        }
     return "OPENCODE_CONFIG_CONTENT=" + json.dumps(
         content,
         separators=(",", ":"),

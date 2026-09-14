@@ -23,6 +23,15 @@ from .io import (
     read_task_ids,
     write_json,
 )
+from .launcher import (
+    LaunchProfile,
+    grpo_worker_command,
+    run_grpo_stage,
+    run_sft_stage,
+    sft_worker_command,
+    stage_summary,
+    validate_grpo_topology,
+)
 from .layout import RunLayout
 
 
@@ -39,6 +48,14 @@ def _json_normalized(value: Any) -> Any:
 
 
 def _resume_plan_compatible(existing: dict[str, Any], current: dict[str, Any]) -> bool:
+    # Plans predating launch profiles used in-process training for both stages.
+    default_launch = {"sft": None, "grpo": None}
+    existing = {"launch": default_launch, **existing}
+    current = {"launch": default_launch, **current}
+    # Older plans did not expose OpenCode's optional step budget.
+    for plan in (existing, current):
+        if isinstance(plan.get("harness"), dict):
+            plan["harness"] = {"opencode_steps": None, **plan["harness"]}
     if existing == current:
         return True
     normalized_current = _json_normalized(current)
@@ -113,6 +130,15 @@ def _resume_plan_compatible(existing: dict[str, Any], current: dict[str, Any]) -
 
 def _sha256(path: Path) -> str:
     return file_sha256(path)
+
+
+def _stage_plan(section: Any) -> dict[str, Any]:
+    """Stage settings by value; the profile's identity is reported under launch."""
+    return {
+        key: value
+        for key, value in asdict(section).items()
+        if key not in {"accelerate_config", "ddp_timeout"}
+    }
 
 
 def _reference_sha256(reference: str, *, revision: str | None) -> str:
@@ -197,9 +223,13 @@ class Pipeline:
                 "pending_stages": [],
             },
             "teacher": asdict(self.config.teacher),
-            "sft": asdict(self.config.sft),
-            "grpo": asdict(self.config.grpo),
+            "sft": _stage_plan(self.config.sft),
+            "grpo": _stage_plan(self.config.grpo),
             "tracking": asdict(self.config.tracking),
+            "launch": {
+                "sft": stage_summary(self.config, "sft"),
+                "grpo": stage_summary(self.config, "grpo"),
+            },
             "stages": [
                 "snapshot_train_tasks",
                 "snapshot_eval_tasks",
@@ -978,6 +1008,7 @@ class Pipeline:
                     "call": "sft.train_sft",
                     "train_jsonl": str(self.layout.sft_jsonl),
                     "output_dir": output_model,
+                    "launch": self._sft_launch(),
                 }
             )
             return
@@ -1015,15 +1046,29 @@ class Pipeline:
                 self.layout.reports / "score.json",
             ):
                 artifact.unlink(missing_ok=True)
-        from .sft import train_sft
-
-        train_sft(
+        run_sft_stage(
             config=self.config,
+            runner=self.runner,
             train_jsonl=self.layout.sft_jsonl,
             adapter_dir=self.layout.sft_adapter,
             output_dir=Path(output_model),
             run_name=self.run_name,
         )
+
+    def _sft_launch(self) -> dict[str, Any] | None:
+        profile = LaunchProfile.for_stage(self.config, "sft")
+        if profile is None:
+            return None
+        return {
+            **profile.manifest(),
+            "command": sft_worker_command(
+                profile,
+                config=self.config,
+                train_jsonl=self.layout.sft_jsonl,
+                adapter_dir=self.layout.sft_adapter,
+                run_name=self.run_name,
+            ),
+        }
 
     def _sft_checkpoint_is_current(
         self,
@@ -1039,6 +1084,7 @@ class Pipeline:
                 and metrics.get("model_revision") == self.config.model_revision
                 and metrics.get("adapter_dir") == str(self.layout.sft_adapter)
                 and metrics.get("merged_model_dir") == str(output_model)
+                and metrics.get("launch") == stage_summary(self.config, "sft")
                 and metrics.get("train_jsonl_sha256") == _sha256(self.layout.sft_jsonl)
                 and metrics.get("adapter_sha256")
                 == directory_sha256(self.layout.sft_adapter)
@@ -1068,6 +1114,7 @@ class Pipeline:
                     "model": input_model,
                     "output_dir": output_model,
                     "resume_policy": "restart-stage",
+                    "launch": self._grpo_launch(input_model, jobs_dir),
                 }
             )
             return
@@ -1092,10 +1139,9 @@ class Pipeline:
                 self.layout.reports / "score.json",
             ):
                 artifact.unlink(missing_ok=True)
-        from .grpo import train_grpo
-
-        train_grpo(
+        run_grpo_stage(
             config=self.config,
+            runner=self.runner,
             model=input_model,
             tasks_dir=self.layout.train_tasks,
             task_ids=self.train_task_ids,
@@ -1104,6 +1150,25 @@ class Pipeline:
             output_dir=Path(output_model),
             run_name=f"{self.run_name}-grpo",
         )
+
+    def _grpo_launch(self, input_model: str, jobs_dir: Path) -> dict[str, Any] | None:
+        profile = LaunchProfile.for_stage(self.config, "grpo")
+        if profile is None:
+            return None
+        validate_grpo_topology(self.config, profile)
+        return {
+            **profile.manifest(),
+            "command": grpo_worker_command(
+                profile,
+                config=self.config,
+                model=input_model,
+                tasks_dir=self.layout.train_tasks,
+                task_ids_file=jobs_dir / "task_ids.txt",
+                jobs_dir=jobs_dir,
+                adapter_dir=self.layout.grpo_adapter,
+                run_name=f"{self.run_name}-grpo",
+            ),
+        }
 
     def _grpo_checkpoint_is_current(
         self,

@@ -11,11 +11,13 @@ from typing import Any
 import pytest
 
 from posttrainarena.benchflow_pipeline.config import load_config
+from posttrainarena.benchflow_pipeline.checkpoint import export_merged_checkpoint
 from posttrainarena.benchflow_pipeline.sft import (
     build_tokenized_sft_rows,
     _token_ids,
     load_trl_rows,
     train_sft,
+    train_sft_adapter,
 )
 
 
@@ -334,3 +336,141 @@ def test_tokenized_sft_labels_start_at_exact_common_prefix() -> None:
         "max_prompt_prefix_mismatch": 1,
         "trained_tokens": 3,
     }
+
+
+def test_sft_adapter_is_published_by_the_main_process_only(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import datasets
+    import transformers
+    import posttrainarena.benchflow_pipeline.sft as sft_module
+
+    source = tmp_path / "train.jsonl"
+    source.write_text(
+        '{"prompt":[{"role":"user","content":"solve"}],'
+        '"completion":[{"role":"assistant","content":"done"}],'
+        '"tools":[]}\n'
+    )
+    config = load_config(ROOT / "configs/qwen3-4b-data-agent-smoke.toml")
+    saves: list[str] = []
+    barriers: list[str] = []
+
+    class FakeTokenizer:
+        def apply_chat_template(
+            self, messages, *, tokenize, tools, add_generation_prompt=False
+        ):
+            del tokenize, tools
+            return [1, 2, 3] if add_generation_prompt else [1, 2, 3, 4]
+
+        def save_pretrained(self, path):
+            saves.append(path)
+
+    class FakeConfig:
+        def __init__(self, **kwargs):
+            self.values = kwargs
+
+    class FakeTrainer:
+        def __init__(self, **kwargs):
+            self.accelerator = SimpleNamespace(
+                is_main_process=False,
+                wait_for_everyone=lambda: barriers.append("barrier"),
+            )
+
+        def train(self):
+            return SimpleNamespace(metrics={"loss": 0.1})
+
+        def save_model(self, path):
+            saves.append(f"collective:{path}")
+
+    monkeypatch.setattr(datasets.Dataset, "from_list", lambda rows: rows)
+    monkeypatch.setattr(
+        transformers.AutoTokenizer, "from_pretrained", lambda *a, **k: FakeTokenizer()
+    )
+    monkeypatch.setattr(
+        transformers.AutoModelForCausalLM, "from_pretrained", lambda *a, **k: object()
+    )
+    monkeypatch.setattr("peft.LoraConfig", FakeConfig)
+    monkeypatch.setattr("trl.SFTConfig", FakeConfig)
+    monkeypatch.setattr("trl.SFTTrainer", FakeTrainer)
+    monkeypatch.setattr(sft_module, "supported_kwargs", lambda _c, values: values)
+
+    metrics = train_sft_adapter(
+        config=config,
+        train_jsonl=source,
+        adapter_dir=tmp_path / "adapter",
+        run_name="follower",
+    )
+
+    assert saves == [f"collective:{tmp_path / 'adapter'}"]
+    assert barriers == ["barrier"]
+    assert metrics["launch"] is None
+    assert metrics["adapter_dir"] == str(tmp_path / "adapter")
+    assert not (tmp_path / "adapter" / "train_metrics.json").exists()
+
+
+def test_export_merges_on_cpu_and_completes_provisional_metrics(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import transformers
+
+    adapter_dir = tmp_path / "adapter"
+    adapter_dir.mkdir()
+    (adapter_dir / "adapter_model.safetensors").write_bytes(b"adapter")
+    (adapter_dir / "train_metrics.json").write_text(
+        json.dumps({"mode": "sft", "adapter_dir": str(adapter_dir)})
+    )
+    loads: list[dict[str, Any]] = []
+
+    class FakeTokenizer:
+        def save_pretrained(self, path):
+            Path(path).mkdir(parents=True, exist_ok=True)
+            (Path(path) / "tokenizer.json").write_text("{}")
+
+    class FakeMerged:
+        def save_pretrained(self, path, **kwargs):
+            assert kwargs == {"safe_serialization": True}
+            Path(path).mkdir(parents=True, exist_ok=True)
+            (Path(path) / "model.safetensors").write_bytes(b"merged")
+
+    class FakePeftModel:
+        @classmethod
+        def from_pretrained(cls, model, path):
+            assert path == str(adapter_dir)
+            return cls()
+
+        def merge_and_unload(self):
+            return FakeMerged()
+
+    monkeypatch.setattr(
+        transformers.AutoTokenizer, "from_pretrained", lambda *a, **k: FakeTokenizer()
+    )
+    monkeypatch.setattr(
+        transformers.AutoModelForCausalLM,
+        "from_pretrained",
+        lambda model, **kwargs: loads.append({"model": model, **kwargs}) or object(),
+    )
+    monkeypatch.setattr("peft.PeftModel", FakePeftModel)
+
+    payload = export_merged_checkpoint(
+        base_model="Qwen/Qwen3-4B",
+        base_kwargs={"trust_remote_code": True, "revision": "abc"},
+        adapter_dir=adapter_dir,
+        output_dir=tmp_path / "merged",
+    )
+
+    assert loads == [
+        {
+            "model": "Qwen/Qwen3-4B",
+            "dtype": "bfloat16",
+            "device_map": "cpu",
+            "trust_remote_code": True,
+            "revision": "abc",
+        }
+    ]
+    assert payload["mode"] == "sft"
+    assert payload["merged_model_dir"] == str(tmp_path / "merged")
+    assert payload["adapter_sha256"] and payload["merged_model_sha256"]
+    on_disk = json.loads((tmp_path / "merged" / "train_metrics.json").read_text())
+    assert on_disk == payload

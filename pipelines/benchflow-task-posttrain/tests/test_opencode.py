@@ -149,6 +149,20 @@ def test_build_evaluation_command_uses_opencode_contract(tmp_path: Path) -> None
         "/home/user/input/**": "allow"
     }
     assert inline["permission"]["bash"] == {"*<<*": "deny"}
+    assert "agent" not in inline
+
+
+def test_opencode_config_sets_build_step_budget() -> None:
+    config = _config()
+    config = replace(config, harness=replace(config.harness, opencode_steps=40))
+
+    inline = json.loads(opencode_config_env(config).split("=", 1)[1])
+
+    assert inline["agent"] == {
+        "build": {"steps": 40},
+        "general": {"steps": 40},
+        "explore": {"steps": 40},
+    }
 
 
 def test_build_evaluation_command_can_capture_sampled_token_logprobs(

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import sys
 from dataclasses import replace
 from pathlib import Path
 
@@ -22,7 +23,11 @@ def test_validate_emits_machine_readable_json(capsys) -> None:
     assert main(["validate", "--config", str(CONFIG)]) == 0
 
     payload = json.loads(capsys.readouterr().out)
-    assert payload == {"config": str(CONFIG.resolve()), "valid": True}
+    assert payload == {
+        "config": str(CONFIG.resolve()),
+        "launch": {"sft": None, "grpo": None},
+        "valid": True,
+    }
 
 
 def test_plan_emits_machine_readable_json(capsys) -> None:
@@ -141,3 +146,156 @@ def test_hf_job_secrets_require_known_teacher_provider(monkeypatch) -> None:
 
     with pytest.raises(ValueError, match="pass --secret-env explicitly"):
         default_hf_job_secrets(Path("unused.toml"))
+
+
+def test_worker_and_standalone_sft_commands_parse() -> None:
+    parser = build_parser()
+
+    worker = parser.parse_args(
+        [
+            "grpo-worker",
+            "--config",
+            str(CONFIG),
+            "--model",
+            "runs/x/checkpoints/sft-merged",
+            "--tasks-dir",
+            "runs/x/data/train",
+            "--task-ids-file",
+            "runs/x/jobs/grpo-train/task_ids.txt",
+            "--jobs-dir",
+            "runs/x/jobs/grpo-train",
+            "--adapter-dir",
+            "runs/x/checkpoints/grpo-adapter",
+            "--run-name",
+            "x-grpo",
+        ]
+    )
+    standalone = parser.parse_args(
+        [
+            "sft",
+            "--config",
+            str(CONFIG),
+            "--train-jsonl",
+            "data/train.jsonl",
+            "--adapter-dir",
+            "out/adapter",
+            "--output-dir",
+            "out/merged",
+            "--run-name",
+            "offline",
+        ]
+    )
+
+    assert worker.command == "grpo-worker"
+    assert worker.task_ids_file == Path("runs/x/jobs/grpo-train/task_ids.txt")
+    assert standalone.command == "sft"
+    assert standalone.output_dir == Path("out/merged")
+    with pytest.raises(SystemExit):
+        parser.parse_args(["sft-worker", "--config", str(CONFIG)])
+
+
+def test_standalone_sft_delegates_to_the_stage_launcher(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys
+) -> None:
+    calls: list[dict[str, object]] = []
+    monkeypatch.setattr(
+        "posttrainarena.benchflow_pipeline.launcher.run_sft_stage",
+        lambda **kwargs: (
+            calls.append(kwargs) or {"mode": "sft", "run": kwargs["run_name"]}
+        ),
+    )
+
+    assert (
+        main(
+            [
+                "sft",
+                "--config",
+                str(CONFIG),
+                "--train-jsonl",
+                str(tmp_path / "train.jsonl"),
+                "--adapter-dir",
+                str(tmp_path / "adapter"),
+                "--output-dir",
+                str(tmp_path / "merged"),
+                "--run-name",
+                "offline",
+            ]
+        )
+        == 0
+    )
+
+    assert json.loads(capsys.readouterr().out) == {"mode": "sft", "run": "offline"}
+    assert calls[0]["train_jsonl"] == tmp_path / "train.jsonl"
+    assert calls[0]["runner"].cwd == CONFIG.resolve().parent
+
+
+def test_standalone_sft_resolves_paths_before_changing_worker_directory(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys
+) -> None:
+    from posttrainarena.benchflow_pipeline import checkpoint, launcher
+
+    caller = tmp_path / "caller"
+    caller.mkdir()
+    (caller / "train.jsonl").write_text("input from the caller directory")
+    recipe = tmp_path / "recipes" / "sft.toml"
+    recipe.parent.mkdir()
+    profile = ROOT / "configs/accelerate/one-process.yaml"
+    recipe.write_text(
+        CONFIG.read_text()
+        .replace('task_list = "../task-lists/', f'task_list = "{ROOT}/task-lists/')
+        .replace("[sft]\n", f'[sft]\naccelerate_config = "{profile}"\n')
+    )
+    worker = tmp_path / "worker.py"
+    worker.write_text(
+        "import json\n"
+        "from pathlib import Path\n"
+        "from posttrainarena.benchflow_pipeline.cli import build_parser\n"
+        "args = build_parser().parse_args()\n"
+        "data = Path(args.train_jsonl).read_text()\n"
+        "args.adapter_dir.mkdir(parents=True)\n"
+        "(args.adapter_dir / 'train_metrics.json').write_text(json.dumps(\n"
+        "    {'input': data, 'cwd': str(Path.cwd())}))\n"
+    )
+    monkeypatch.setenv("PYTHONPATH", str(ROOT / "src"))
+    monkeypatch.setattr(
+        launcher.LaunchProfile,
+        "command",
+        lambda self, name, arguments: [sys.executable, str(worker), name, *arguments],
+    )
+
+    def export(*, adapter_dir, output_dir, **kwargs):
+        # Only the model export is replaced; the worker reads/writes real files.
+        metrics = json.loads((adapter_dir / "train_metrics.json").read_text())
+        output_dir.mkdir(parents=True)
+        (output_dir / "train_metrics.json").write_text(json.dumps(metrics))
+        return metrics
+
+    monkeypatch.setattr(checkpoint, "export_merged_checkpoint", export)
+    monkeypatch.chdir(caller)
+    assert (
+        main(
+            [
+                "sft",
+                "--config",
+                str(recipe),
+                "--train-jsonl",
+                "train.jsonl",
+                "--adapter-dir",
+                "out/adapter",
+                "--output-dir",
+                "out/merged",
+                "--run-name",
+                "relative-paths",
+            ]
+        )
+        == 0
+    )
+
+    metrics = json.loads(capsys.readouterr().out)
+    assert metrics == {
+        "input": "input from the caller directory",
+        "cwd": str(recipe.parent),
+    }
+    assert (caller / "out/adapter/train_metrics.json").is_file()
+    assert (caller / "out/merged/train_metrics.json").is_file()
+    assert not (recipe.parent / "out").exists()

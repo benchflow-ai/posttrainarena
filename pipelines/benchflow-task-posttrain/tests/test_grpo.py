@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import threading
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
@@ -13,6 +14,7 @@ from posttrainarena.benchflow_pipeline.config import load_config
 from posttrainarena.benchflow_pipeline.grpo import (
     CollectedRollout,
     OpenCodeRolloutCollector,
+    RolloutSlot,
     RolloutTokens,
     _as_token_ids,
     _chat_prompt_ids,
@@ -23,9 +25,11 @@ from posttrainarena.benchflow_pipeline.grpo import (
     sync_checkpoint_to_vllm,
     sync_model_to_vllm,
     sync_reference_to_vllm,
+    lora_b_update_diagnostics,
     task_handle,
     task_id_from_prompt,
     train_grpo,
+    train_grpo_adapter,
     trajectory_to_rollout_tokens,
     verifier_reward,
 )
@@ -302,6 +306,11 @@ def test_trajectory_to_rollout_tokens_masks_canonicalized_history(
     assert sum(tokens.env_mask) == 1
     assert tokens.logprobs[-1] == -0.2
     assert 0 in tokens.env_mask
+    assert [segment.completion_ids for segment in tokens.segments] == [
+        [ord("A")],
+        [ord("B")],
+    ]
+    assert [segment.logprobs for segment in tokens.segments] == [[-0.1], [-0.2]]
 
 
 def test_trajectory_to_rollout_tokens_resets_on_original_prompt_drift(
@@ -335,6 +344,13 @@ def test_trajectory_to_rollout_tokens_resets_on_original_prompt_drift(
     assert tokens.completion_ids == [ord("B")]
     assert tokens.logprobs == [-0.2]
     assert tokens.env_mask == [1]
+
+    assert [segment.completion_ids for segment in tokens.segments] == [
+        [ord("A")],
+        [ord("B")],
+    ]
+    assert tokens.segments[0].prompt_ids != tokens.segments[1].prompt_ids
+    assert tokens.segments[1].prompt_ids == expected_prompt
 
 
 def test_trajectory_to_rollout_tokens_requires_provider_logprobs(
@@ -380,6 +396,43 @@ def test_trajectory_to_rollout_tokens_resolves_streaming_logprobs(
     assert tokens.prompt_ids == [900, 901]
     assert tokens.completion_ids == [ord("A")]
     assert tokens.logprobs == [-0.1]
+
+
+def test_collector_persists_exact_bridge_trace(tmp_path: Path, monkeypatch) -> None:
+    config = load_config(ROOT / "configs/qwen3-4b-data-agent-smoke.toml")
+    collector = OpenCodeRolloutCollector(
+        config=config, model="student", tasks_dir=tmp_path, jobs_dir=tmp_path / "jobs"
+    )
+    rollout_dir = tmp_path / "rollout"
+    path = rollout_dir / "trajectory" / "llm_trajectory.jsonl"
+    path.parent.mkdir(parents=True)
+    row = _exchange([{"role": "user", "content": "hi"}], "A", -0.1)
+    completion_id = "chatcmpl/../one"
+    row["response"]["body"]["id"] = completion_id
+    trace = {
+        "prompt_ids": [900, 901],
+        "completion_ids": [ord("A")],
+        "logprobs": row["response"]["body"]["choices"][0].pop("logprobs"),
+    }
+    path.write_text(json.dumps(row) + "\n")
+    monkeypatch.setattr(collector, "_resolve_bridge_trace", lambda _: trace)
+    attempt_root = tmp_path / "attempt"
+    result = collector._materialize_rollout(
+        payload={
+            "health": {"rows": [{"reward": 0.0, "rollout_dir": str(rollout_dir)}]}
+        },
+        attempt_root=attempt_root,
+        attempt=1,
+        slot=RolloutSlot(0, 0, 0, 0),
+        task_id="task-a",
+        tokenizer=FakeTokenizer(),
+        global_step=0,
+    )
+    saved = list((attempt_root / "bridge_traces").glob("*.json"))
+    assert len(saved) == 1
+    assert json.loads(saved[0].read_text()) == {**trace, "id": completion_id}
+    assert result.tokens.completion_ids == [ord("A")]
+    assert result.tokens.logprobs == [-0.1]
 
 
 def test_verifier_reward_uses_rollout_metadata() -> None:
@@ -443,6 +496,7 @@ def test_collector_runs_one_opencode_rollout_per_prompt(
     config = load_config(ROOT / "configs/qwen3-4b-data-agent-smoke.toml")
     tasks_dir = tmp_path / "tasks"
     (tasks_dir / "task-a").mkdir(parents=True)
+    monkeypatch.setenv("RANK", "0")
     calls: list[dict[str, Any]] = []
 
     def fake_evaluate(**kwargs):
@@ -484,6 +538,7 @@ def test_collector_runs_one_opencode_rollout_per_prompt(
     assert len(calls) == 2
     assert all(call["model_role"] == "student" for call in calls)
     assert all(call["capture_token_logprobs"] is True for call in calls)
+    assert all("RANK" not in call["runner"].environment for call in calls)
     assert output["rollout_reward"] == [1.0, 1.0]
     assert [sum(mask) for mask in output["env_mask"]] == [2, 2]
     assert len(collector.records) == 2
@@ -511,18 +566,18 @@ def test_collector_parallelizes_rollouts_up_to_harness_concurrency(
 
     def fake_collect_one(
         *,
-        rollout_index: int,
+        slot: RolloutSlot,
         task_id: str,
         tokenizer: Any,
         trainer: Any,
     ) -> CollectedRollout:
         del tokenizer, trainer
-        indexes.append(rollout_index)
+        indexes.append(slot.index)
         barrier.wait(timeout=2)
         return CollectedRollout(
             task_id=task_id,
             reward=1.0,
-            rollout_dir=tmp_path / f"rollout-{rollout_index}",
+            rollout_dir=tmp_path / f"rollout-{slot.index}",
             tokens=RolloutTokens(
                 prompt_ids=[1],
                 completion_ids=[2],
@@ -772,14 +827,30 @@ def test_collector_selects_scored_retry_from_health_rows(
     assert output["rollout_dir"][0].endswith("/task-a")
 
 
+@pytest.mark.parametrize(
+    "fsdp_env",
+    [
+        {},
+        {"ACCELERATE_USE_FSDP": "false"},
+        {"ACCELERATE_USE_FSDP": "true", "FSDP_TRANSFORMER_CLS_TO_WRAP": "DecoderLayer"},
+        {"ACCELERATE_USE_FSDP": "true"},
+    ],
+    ids=["no-fsdp", "disabled-fsdp", "explicit-wrap-classes", "automatic-wrap-classes"],
+)
 def test_train_grpo_wires_custom_rollout_and_vllm_sync(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    fsdp_env: dict[str, str],
 ) -> None:
     import peft
     import transformers
     import trl
     import posttrainarena.benchflow_pipeline.grpo as grpo_module
+
+    for key in ("ACCELERATE_USE_FSDP", "FSDP_TRANSFORMER_CLS_TO_WRAP"):
+        monkeypatch.delenv(key, raising=False)
+    for key, value in fsdp_env.items():
+        monkeypatch.setenv(key, value)
 
     config = load_config(ROOT / "configs/qwen3-4b-data-agent-smoke.toml")
     tasks_dir = tmp_path / "tasks"
@@ -789,8 +860,18 @@ def test_train_grpo_wires_custom_rollout_and_vllm_sync(
     class FakeConfig:
         def __init__(self, **kwargs):
             self.values = kwargs
+            if "output_dir" in kwargs:
+                captured["config_ready"] = True
+
+    class DecoderLayer:
+        pass
 
     class FakeModel:
+        _no_split_modules = ["DecoderLayer", "VisionBlock"]
+
+        def modules(self):
+            return iter([self, DecoderLayer()])
+
         def named_parameters(self):
             import torch
 
@@ -829,6 +910,9 @@ def test_train_grpo_wires_custom_rollout_and_vllm_sync(
 
     class FakeTrainer:
         def __init__(self, **kwargs):
+            assert isinstance(kwargs["model"], FakeModel), (
+                "GRPO must receive the pinned text policy"
+            )
             captured["trainer_kwargs"] = kwargs
             self.model = FakeModel()
             self.processing_class = FakeProcessor()
@@ -870,12 +954,23 @@ def test_train_grpo_wires_custom_rollout_and_vllm_sync(
     monkeypatch.setattr(trl, "GRPOTrainer", FakeTrainer)
     monkeypatch.setattr(peft, "LoraConfig", FakeConfig)
     monkeypatch.setattr(peft, "PeftModel", FakePeftModel)
+
+    def load_model(*args, **kwargs):
+        assert captured.get("config_ready"), (
+            "Initialize distributed arguments before loading weights"
+        )
+        policy = FakeModel()
+        captured.update(base_load=(args, kwargs))
+        captured.setdefault("model_loads", []).append((args, kwargs, policy))
+        return policy
+
     monkeypatch.setattr(
-        transformers.AutoModelForCausalLM,
+        transformers.AutoModelForCausalLM, "from_pretrained", load_model
+    )
+    monkeypatch.setattr(
+        transformers.AutoTokenizer,
         "from_pretrained",
-        lambda *args, **kwargs: (
-            captured.update(base_load=(args, kwargs)) or FakeModel()
-        ),
+        lambda *args, **kwargs: FakeProcessor(),
     )
     monkeypatch.setattr(
         grpo_module,
@@ -905,6 +1000,17 @@ def test_train_grpo_wires_custom_rollout_and_vllm_sync(
 
     trainer_kwargs = captured["trainer_kwargs"]
     args = trainer_kwargs["args"].values
+    load_args, load_kwargs, policy = captured["model_loads"][0]
+    assert load_args == (config.model,)
+    assert load_kwargs == {
+        "trust_remote_code": True,
+        "revision": config.model_revision,
+        "dtype": "bfloat16",
+    }
+    assert trainer_kwargs["model"] is policy
+    assert "model_init_kwargs" not in args
+    if fsdp_env == {"ACCELERATE_USE_FSDP": "true"}:
+        assert payload["fsdp_layer_classes"] == ["DecoderLayer"]
     assert isinstance(
         trainer_kwargs["rollout_func"],
         OpenCodeRolloutCollector,
@@ -1252,3 +1358,261 @@ def test_sync_checkpoint_loads_saved_policy_before_endpoint_update(
 
     assert captured["model_args"] == (config.model,)
     assert captured["model_kwargs"]["revision"] == config.model_revision
+
+
+def _rank_trainer(
+    rank: int, world: int, *, main: bool | None = None
+) -> SimpleNamespace:
+    return SimpleNamespace(
+        processing_class=object(),
+        state=SimpleNamespace(global_step=1),
+        accelerator=SimpleNamespace(
+            process_index=rank,
+            num_processes=world,
+            is_main_process=rank == 0 if main is None else main,
+            wait_for_everyone=lambda: None,
+        ),
+    )
+
+
+def _slot_recorder(collector: OpenCodeRolloutCollector, slots: list[RolloutSlot]):
+    def fake_collect_one(*, slot, task_id, tokenizer, trainer) -> CollectedRollout:
+        del tokenizer, trainer
+        slots.append(slot)
+        collector.records.append(
+            {
+                "rollout_index": slot.index,
+                "group_index": slot.index // collector.config.runtime.num_generations,
+                "generation_call": slot.generation_call,
+                "global_step": 1,
+                "task_id": task_id,
+                "reward": float(slot.index % 2),
+                "rank": slot.rank,
+            }
+        )
+        return CollectedRollout(
+            task_id=task_id,
+            reward=float(slot.index % 2),
+            rollout_dir=Path("/tmp") / f"rollout-{slot.index}",
+            tokens=RolloutTokens(
+                prompt_ids=[1], completion_ids=[2], logprobs=[-0.1], env_mask=[1]
+            ),
+        )
+
+    return fake_collect_one
+
+
+def test_collector_places_each_rank_slice_in_the_global_generation_batch(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config = load_config(ROOT / "configs/qwen3-4b-data-agent-smoke.toml")
+    config = replace(config, harness=replace(config.harness, concurrency=4))
+    collector = OpenCodeRolloutCollector(
+        config=config,
+        model="/tmp/student",
+        tasks_dir=tmp_path / "tasks",
+        jobs_dir=tmp_path / "jobs",
+    )
+    slots: list[RolloutSlot] = []
+    monkeypatch.setattr(collector, "_collect_one", _slot_recorder(collector, slots))
+    prompts = [task_handle("task-a"), task_handle("task-a")]
+
+    collector(prompts, _rank_trainer(1, 2))
+    collector(prompts, _rank_trainer(1, 2))
+
+    assert [(slot.generation_call, slot.index) for slot in slots] == [
+        (0, 2),
+        (0, 3),
+        (1, 6),
+        (1, 7),
+    ]
+    assert {slot.rank for slot in slots} == {1}
+    assert [slot.local_index for slot in slots] == [0, 1, 0, 1]
+    assert [record["group_index"] for record in collector.records] == [1, 1, 3, 3]
+
+
+def test_collector_splits_the_rollout_budget_across_ranks(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config = load_config(ROOT / "configs/qwen3-4b-data-agent-smoke.toml")
+    config = replace(config, harness=replace(config.harness, concurrency=3))
+    collector = OpenCodeRolloutCollector(
+        config=config,
+        model="/tmp/student",
+        tasks_dir=tmp_path / "tasks",
+        jobs_dir=tmp_path / "jobs",
+    )
+    workers: list[int] = []
+
+    class RecordingExecutor(ThreadPoolExecutor):
+        def __init__(self, max_workers: int) -> None:
+            workers.append(max_workers)
+            super().__init__(max_workers=max_workers)
+
+    monkeypatch.setattr(
+        "posttrainarena.benchflow_pipeline.grpo.ThreadPoolExecutor",
+        RecordingExecutor,
+    )
+    monkeypatch.setattr(collector, "_collect_one", _slot_recorder(collector, []))
+    prompts = [task_handle("task-a")] * 4
+
+    collector(prompts, _rank_trainer(0, 2))
+    collector(prompts, _rank_trainer(1, 2))
+
+    assert workers == [2, 1]
+
+
+def test_collector_refuses_a_rank_without_rollout_slots(tmp_path: Path) -> None:
+    config = load_config(ROOT / "configs/qwen3-4b-data-agent-smoke.toml")
+    collector = OpenCodeRolloutCollector(
+        config=config,
+        model="/tmp/student",
+        tasks_dir=tmp_path / "tasks",
+        jobs_dir=tmp_path / "jobs",
+    )
+
+    with pytest.raises(RuntimeError, match="no rollout slot for rank 1"):
+        collector([task_handle("task-a")], _rank_trainer(1, 2))
+
+
+def test_lora_b_diagnostics_gather_sharded_tensors() -> None:
+    import torch
+
+    class Shard:
+        def __init__(self, values: list[float]) -> None:
+            self.values = values
+
+        def detach(self) -> "Shard":
+            return self
+
+        def full_tensor(self) -> torch.Tensor:
+            return torch.tensor(self.values)
+
+    class ShardedModel:
+        def named_parameters(self):
+            yield "block.lora_A.default.weight", torch.tensor([9.0])
+            yield "block.lora_B.default.weight", Shard([0.0, 0.5])
+            yield "other.lora_B.default.weight", Shard([0.0, 0.0])
+
+    assert lora_b_update_diagnostics(ShardedModel()) == {
+        "available": True,
+        "tensor_count": 2,
+        "nonzero_tensor_count": 1,
+        "nonfinite_tensor_count": 0,
+        "max_abs": 0.5,
+    }
+
+
+def test_train_grpo_adapter_gathers_records_and_publishes_from_rank_zero_only(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import peft
+    import transformers
+    import trl
+    import posttrainarena.benchflow_pipeline.grpo as grpo_module
+
+    config = load_config(ROOT / "configs/qwen3-4b-data-agent-smoke.toml")
+    tasks_dir = tmp_path / "tasks"
+    (tasks_dir / "task-a").mkdir(parents=True)
+    saved: list[str] = []
+
+    class FakeConfig:
+        def __init__(self, **kwargs):
+            self.values = kwargs
+
+    class FakeModel:
+        def named_parameters(self):
+            import torch
+
+            yield "layer.lora_B.default.weight", torch.tensor([1.0])
+
+    class FakeProcessor:
+        def save_pretrained(self, path):
+            saved.append(path)
+
+    def make_trainer(rank: int):
+        class FakeTrainer:
+            def __init__(self, **kwargs):
+                self.model = FakeModel()
+                self.processing_class = FakeProcessor()
+                self.vllm_generation = None
+                self.state = SimpleNamespace(log_history=[])
+                self.accelerator = _rank_trainer(rank, 2).accelerator
+                self.rollout_func = kwargs["rollout_func"]
+
+            def train(self):
+                self.rollout_func.records = [
+                    {
+                        "rollout_index": rank,
+                        "group_index": 0,
+                        "global_step": 0,
+                        "task_id": "task-a",
+                        "reward": float(rank),
+                        "rank": rank,
+                    }
+                ]
+                return SimpleNamespace(metrics={"train_loss": 0.5})
+
+            def save_model(self, path):
+                Path(path).mkdir(parents=True, exist_ok=True)
+                (Path(path) / "adapter_model.safetensors").write_bytes(b"adapter")
+
+        return FakeTrainer
+
+    monkeypatch.setattr(trl, "GRPOConfig", FakeConfig)
+    monkeypatch.setattr(peft, "LoraConfig", FakeConfig)
+    monkeypatch.setattr(grpo_module, "supported_kwargs", lambda _c, values: values)
+    monkeypatch.setattr(grpo_module, "_load_tokenizer", lambda config, model: object())
+    monkeypatch.setattr(
+        transformers.AutoModelForCausalLM,
+        "from_pretrained",
+        lambda *args, **kwargs: FakeModel(),
+    )
+    monkeypatch.setattr(
+        grpo_module,
+        "gather_records",
+        lambda trainer, records: [
+            {**records[0], "rollout_index": 0, "rank": 0, "reward": 0.0},
+            {**records[0], "rollout_index": 1, "rank": 1, "reward": 1.0},
+        ],
+    )
+    monkeypatch.setenv("TRL_VLLM_SERVER_BASE_URL", "http://127.0.0.1:8000")
+
+    monkeypatch.setattr(trl, "GRPOTrainer", make_trainer(1))
+    follower = train_grpo_adapter(
+        config=config,
+        model=config.model,
+        tasks_dir=tasks_dir,
+        task_ids=["task-a"],
+        jobs_dir=tmp_path / "jobs",
+        adapter_dir=tmp_path / "adapter",
+        run_name="rank-one",
+    )
+
+    assert follower["rollout_count"] == 2
+    assert follower["reward_group_diagnostics"]["nonzero_variance_group_count"] == 1
+    assert saved == []
+    assert not (tmp_path / "adapter" / "train_metrics.json").exists()
+    assert not (tmp_path / "jobs" / "training_diagnostics.json").exists()
+
+    monkeypatch.setattr(trl, "GRPOTrainer", make_trainer(0))
+    leader = train_grpo_adapter(
+        config=config,
+        model=config.model,
+        tasks_dir=tasks_dir,
+        task_ids=["task-a"],
+        jobs_dir=tmp_path / "jobs",
+        adapter_dir=tmp_path / "adapter",
+        run_name="rank-zero",
+    )
+
+    assert saved == [str(tmp_path / "adapter")]
+    assert leader["rollouts"] == follower["rollouts"]
+    published = json.loads((tmp_path / "adapter" / "train_metrics.json").read_text())
+    assert published["rollout_count"] == 2
+    assert published["training_recipe"]["launch"] is None
+    assert "merged_model_sha256" not in published
+    assert (tmp_path / "jobs" / "training_diagnostics.json").is_file()

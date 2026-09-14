@@ -1,0 +1,8 @@
+# One trainer process launched as an owned worker; no Accelerate launcher.
+# Expose exactly one GPU to it with CUDA_VISIBLE_DEVICES.
+compute_environment: LOCAL_MACHINE
+distributed_type: "NO"
+num_processes: 1
+num_machines: 1
+mixed_precision: bf16
+use_cpu: false
