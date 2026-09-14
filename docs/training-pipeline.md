@@ -186,8 +186,8 @@ Dry-run records the full possible path, including conditional GRPO. Therefore
 | `[harness]` | Required OpenCode contract, skill mode, telemetry, concurrency, and setup/idle/wall-clock timeouts for teacher collection, evaluation, and GRPO rollouts |
 | `[evaluation]` | Environment-variable names for the served base/student model aliases and OpenAI-compatible endpoint credentials |
 | `[teacher]` | Provider-qualified teacher route, declared source identity/revision, adaptive attempts, reward threshold, post-run token/tool acceptance ceilings, and all-task coverage policy |
-| `[sft]` | Enable flag, epoch or smoke-step schedule, optimizer settings, tokenizer-aware message-window length, and LoRA dimensions |
-| `[grpo]` | Enable flag, epoch or smoke-step schedule, run policy, gate threshold/count, LoRA settings, rollout/generation batching, retries, and trainer-side vLLM URL environment variable |
+| `[sft]` | Enable flag, epoch or smoke-step schedule, optimizer settings, tokenizer-aware message-window length, LoRA dimensions, and an optional `accelerate_config` launch profile (see [multi-GPU status](architecture-status.md#single-node-multi-gpu-training)) |
+| `[grpo]` | Enable flag, epoch or smoke-step schedule, run policy, gate threshold/count, LoRA settings, rollout/generation batching, retries, trainer-side vLLM URL environment variable, and an optional `accelerate_config` launch profile |
 | `[tracking]` | W&B or disabled reporting |
 | `[output]` | Run root relative to the recipe |
 
