@@ -72,7 +72,16 @@ class ModelBridgeConfig:
             raise ValueError("max_sidecar_entries must be a positive integer")
 
 
-def parse_qwen_tool_calls(text: str) -> tuple[str | None, list[dict[str, Any]]]:
+def parse_qwen_tool_calls(
+    text: str, *, tools: list[dict[str, Any]] | None = None
+) -> tuple[str | None, list[dict[str, Any]]]:
+    schemas = {
+        tool["function"]["name"]: tool["function"]
+        .get("parameters", {})
+        .get("properties", {})
+        for tool in tools or []
+        if tool.get("type") == "function"
+    }
     calls: list[dict[str, Any]] = []
     for match in TOOL_CALL_PATTERN.finditer(text):
         body = match.group(1).strip()
@@ -86,7 +95,8 @@ def parse_qwen_tool_calls(text: str) -> tuple[str | None, list[dict[str, Any]]]:
             if function is None:
                 raise RuntimeError("Malformed Qwen function-tag tool call")
             name = function.group(1).strip()
-            arguments: dict[str, str] = {}
+            arguments: dict[str, Any] = {}
+            properties = schemas.get(name, {})
             parameters = function.group(2)
             consumed = 0
             for parameter in FUNCTION_PARAMETER_PATTERN.finditer(parameters):
@@ -97,7 +107,23 @@ def parse_qwen_tool_calls(text: str) -> tuple[str | None, list[dict[str, Any]]]:
                     raise RuntimeError(
                         f"Invalid Qwen function parameter: {parameter_name!r}"
                     )
-                arguments[parameter_name] = parameter.group(2).strip()
+                value = parameter.group(2).strip()
+                parameter_type = properties.get(parameter_name, {}).get("type")
+                if parameter_type in (
+                    "integer",
+                    "number",
+                    "boolean",
+                    "object",
+                    "array",
+                    "null",
+                ):
+                    try:
+                        arguments[parameter_name] = json.loads(value)
+                    except json.JSONDecodeError:
+                        # Invalid model values still reach the tool's own validator.
+                        arguments[parameter_name] = value
+                else:
+                    arguments[parameter_name] = value
                 consumed = parameter.end()
             if parameters[consumed:].strip():
                 raise RuntimeError("Malformed Qwen function parameter block")
@@ -340,6 +366,7 @@ def translate_trl_chat_response(
     payload: dict[str, Any],
     tokenizer: Any,
     model: str,
+    tools: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     prompt_ids = payload.get("prompt_ids")
     completion_ids = payload.get("completion_ids")
@@ -366,7 +393,7 @@ def translate_trl_chat_response(
         skip_special_tokens=True,
         clean_up_tokenization_spaces=False,
     )
-    content, tool_calls = parse_qwen_tool_calls(text)
+    content, tool_calls = parse_qwen_tool_calls(text, tools=tools)
     message: dict[str, Any] = {
         "role": "assistant",
         "content": content,
@@ -654,6 +681,7 @@ def create_model_bridge_app(
                 payload=upstream,
                 tokenizer=tokenizer,
                 model=model,
+                tools=body.get("tools"),
             )
         completion_id = str(translated["id"])
         if body.get("logprobs") is True and upstream is not None:
