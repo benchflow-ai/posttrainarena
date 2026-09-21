@@ -2,203 +2,137 @@
 
 <!-- markdownlint-disable MD013 MD060 -->
 
-PostTrain Arena is a proposed NeurIPS 2026 competition: teams
-contribute containerized RL environments, the organizers run a managed
-SFT→GRPO post-training pipeline on **each team's corpus**, and entries
-are ranked by the held-out generalization delta of the resulting
-checkpoint. This repo hosts the starting kit (the task template and
-worked examples under [`starting-kit/`](./starting-kit)) and the team
-submission tree ([`submissions/`](./submissions)).
+Start with one working task, a focused pipeline fix, or a documentation improvement. You can validate task structure without a GPU, provider account, or BenchFlow installation.
 
-The full authoring reference lives at
-<https://posttrain.com/docs/spec>; this file is the short version with
-links to the right places.
+- [Contribute environments](#contribute-environments)
+- [Contribute skills](#contribute-skills)
+- [Contribute to the training pipeline](#contribute-to-the-training-pipeline)
+- [Prepare a pull request](#prepare-a-pull-request)
 
-Before changing runtime or compatibility claims, read
-[`docs/architecture-status.md`](./docs/architecture-status.md). The current
-training implementation uses BenchFlow + TRL with OpenCode as the sole agent
-harness. OpenEnv compatibility and HF Jobs execution are implemented,
-standalone surfaces; neither replaces OpenCode in the training pipeline.
+The competition is proposed and its rules remain draft. A contribution or a passing local check does not imply competition acceptance, a training allocation, or access to the sealed evaluation suite.
 
-## Contributing to the organizer training pipeline
+## Contribute environments
 
-The public training implementation lives under
-[`pipelines/benchflow-task-posttrain/`](./pipelines/benchflow-task-posttrain).
-This is separate from participant task submissions and preserves these module
-boundaries:
+### 1. Create a team entry
 
-- `config.py`: validated TOML recipe contract
-- `pipeline.py`: stage order, resume behavior, and score schema
-- `teacher.py`: verified OpenCode teacher rollout collection through BenchFlow
-- `sft.py`: native TRL prompt/completion/tools LoRA SFT, adapter, and merged checkpoint
-- `opencode.py`: shared OpenCode baseline, gate, and final evaluation path
-- `grpo.py`: OpenCode rollout collection, token/action reconstruction, and TRL
-  LoRA GRPO with adapter and merged checkpoint export
-- `model_bridge.py`: OpenAI-compatible Qwen tool-call and logprob bridge
-- `vllm_server.py`: TRL vLLM server with Qwen3.5 weight-name compatibility
-
-New recipes must pin dataset and model revisions, add explicit task lists,
-document expected compute, and keep tests no-spend. Before opening a PR:
+From a fresh clone, run the following at the repository root. Replace `your-team`, `your-env-name`, and the contact details before submitting. If your team already has a manifest, edit it instead of overwriting it.
 
 ```bash
-python3 -m pip install -e 'pipelines/benchflow-task-posttrain[test]'
-python3 -m pytest pipelines/benchflow-task-posttrain/tests -q
-python3 -m py_compile \
-  pipelines/benchflow-task-posttrain/src/posttrainarena/benchflow_pipeline/*.py
-cd pipelines/benchflow-task-posttrain
-posttrainarena-train validate \
-  --config configs/qwen3.5-9b-data-agent-canary.toml
-posttrainarena-train run \
-  --config configs/qwen3.5-9b-data-agent-canary.toml \
-  --run-name contribution-check \
-  --dry-run
+mkdir -p submissions/your-team/envs
+cp -R starting-kit/template submissions/your-team/envs/your-env-name
+cat > submissions/your-team/submission.yaml <<'YAML'
+team_name: Your Team
+contact_email: you@example.com
+track: environments
+YAML
 ```
 
-Never commit checkpoints, trajectories, raw provider responses, or secrets.
-See the [operator guide](./docs/training-pipeline.md) for the complete runtime
-and artifact contract. Do not label a change OpenEnv-compatible unless it meets
-the lifecycle acceptance criteria in the
-[architecture/status document](./docs/architecture-status.md).
+Use a descriptive package name such as `finance-fed-minutes-classify`. One entry is one team directory on one track. The draft environment bounds are 50 minimum, 100 recommended, and 200 maximum; start with one task while developing. The current checker warns below the minimum and fails above the maximum. See the [submission contract](submissions/README.md).
 
-## How submission works
+### 2. Complete the task package
 
-**Submissions are bounded by teams.** The unit of entry is a team's
-corpus on one track, not an individual task:
+| File or directory | What to implement |
+| --- | --- |
+| `task.md` | Author metadata, declared resources, and an unambiguous `## prompt` describing the required output |
+| `environment/Dockerfile` | Reproducible task image, dependencies, and seed data |
+| `verifier/test.sh` and `verifier/test_outputs.py` | Checks of actual trial output; write the reward under `/logs/verifier/` |
+| `verifier/verifier.md` and `verifier/rubrics/` | Explain what is scored and why |
+| `oracle/solve.sh` | A reference solution that passes the same verifier in the same image |
 
-| Track | Package | Min | Recommended | Max per entry |
-|---|---|---|---|---|
-| Track 2 — Environment Submission | task package (Docker + verifier + oracle + instruction) | 50 | 100 | 200 |
-| Track 1 — Skill Learning | `SKILL.md` package | 20 | 50 | 100 |
+The template's verifier is a placeholder. Replace it with checks that reject missing, incorrect, and trivial output. Use the [worked examples](starting-kit/README.md) and [full authoring specification](https://posttrain.com/docs/spec) for the task contract. Keep category/modality metadata in frontmatter rather than encoding it into directory names.
 
-Teams may enter both tracks as separate entries. One entry is one
-directory under [`submissions/`](./submissions) with a
-`submission.yaml` manifest — see that README for the layout.
+### 3. Validate structure and behavior
 
-**Scoring (Track 2, headline).** The managed pipeline uses OpenCode to collect
-a verified Qwen3.5-397B-A17B trajectory for every submitted task, runs
-one-epoch LoRA SFT and LoRA GRPO on Qwen3.5-9B over your environments, and
-evaluates the checkpoint on BenchFlow Signals — a
-private 100-task held-out suite (a 20-task public sample is released
-for sanity checks). Your score is the delta over a fixed reference
-baseline trained with the identical recipe, with paired bootstrap
-confidence intervals. Track 1 packages are evaluated by pass@1 of a
-frozen reference agent — no training, no internet.
+```bash
+# Fast structural checks; Python standard library only.
+python3 scripts/check_task.py submissions/your-team/envs
+python3 scripts/check_submission.py
 
-Qwen3.5-9B is the checked-in organizer recipe. The corrected 16-train/14-eval
-Data Agent canary completed strict teacher coverage, one-epoch LoRA SFT,
-128 OpenCode GRPO rollouts, and healthy held-out evaluation. Pass rate improved
-from `8/14` to `11/14` with zero regressions. This validates the executable
-recipe and records exploratory same-domain uplift; it does not establish
-generalization. The participant-scale run and sealed private suite remain
-organizer-only competition stages. See
-[`docs/training-pipeline.md`](./docs/training-pipeline.md) for exact executable
-behavior and evidence boundaries.
+# Requires Docker and a running daemon. Oracle must score 1.0.
+scripts/run_local.sh submissions/your-team/envs/your-env-name
 
-**Phases.** Phase 0 (warm-up): public sample only, leaderboard hidden.
-Phase 1 (development): full entries accepted, public-sample scoring
-shown live. Phase 2 (final): submissions frozen, private-suite
-evaluation. Entries may be withdrawn until the Phase 2 freeze, and
-grading is blind to author identity.
+# Empty trial must not score 1.0; normally it scores 0.0.
+scripts/run_local.sh submissions/your-team/envs/your-env-name --skip-oracle
+```
 
-**Licensing (draft rules, finalized in the starting kit).** Submissions
-are licensed CC-BY-4.0 (text/data) + Apache-2.0 (code) at submission
-time; participants retain authorship. Accepted environments, teacher
-data, and trained checkpoints are released openly after the
-competition; teams may flag individual environments as
-"release-only, training-excluded".
+Both Docker commands must exit successfully. For `--skip-oracle`, success means the verifier rejected the empty trial. A missing reward file is a harness/verifier failure, not a valid zero score.
 
-## Authoring an environment
+| Check | Proves | Does not prove |
+| --- | --- | --- |
+| `check_task.py` | Required files, selected frontmatter keys, and prompt section exist | Full YAML schema, allowed vocabulary, or instruction quality |
+| `check_submission.py` | Manifest, package structure, and upper size bound pass | Competition eligibility or final minimum enforcement |
+| Oracle replay | Reference solution receives reward `1.0` | Task difficulty or verifier robustness |
+| Empty-trial replay | Doing nothing does not receive full reward | Resistance to other shortcuts, leakage, or reward hacking |
 
-Every environment package is one directory with four parts: `task.md`,
-`environment/`, `verifier/`, `oracle/`. The
-[task template](./starting-kit/template) is the fastest way to start;
-the worked examples under
-[`starting-kit/examples/`](./starting-kit/examples) exercise every
-part of the contract.
+The Docker harness disables trial networking by default. Use `--network` only when the task needs it and document why. Image builds may access the network to install dependencies. On macOS, install GNU coreutils for `gtimeout` if you need the harness's wall-clock cap; without `timeout`/`gtimeout`, the harness warns and continues without that cap.
 
-### Step-by-step
+### 4. Review task quality
 
-1. **Copy the template** into your team entry:
+Before requesting review, check that:
 
-   ```bash
-   cp -R starting-kit/template submissions/your-team/envs/your-env-name
-   ```
+- Instructions, expected outputs, and scoring agree.
+- The oracle works within the declared resources and explains a legitimate solution.
+- The verifier checks correctness rather than a fixed filename or exact oracle bytes alone.
+- Wrong and incomplete outputs fail; infrastructure failures are distinguishable from model failures.
+- Task assets have appropriate licenses, provenance, and no credentials or private data.
+- The declared network policy matches actual task needs.
 
-   Pick a name following `<env-or-domain>-<short-description>` — for
-   example `gmail-workflow-delegation`. Category, modality, and any
-   safety qualifier belong in the frontmatter, not the directory name.
-2. **Fill in the four parts.** Read the
-   [spec](https://posttrain.com/docs/spec) for the full reference; the
-   [`starting-kit/examples/`](./starting-kit/examples) show real
-   layouts.
-3. **Validate locally** — everything runs with just python3 and
-   docker, no benchflow install:
+Include both replay results in your pull request. Deeper difficulty, leakage, and adversarial review remain separate from these local tools.
 
-   ```bash
-   # Structural — fast, no Docker required
-   python3 scripts/check_task.py submissions/your-team/envs
-   python3 scripts/check_submission.py
+## Contribute skills
 
-   # Oracle replay — build the image, run your oracle, score it
-   scripts/run_local.sh submissions/your-team/envs/your-env-name
+Use a separate team entry with `track: skills` and put each package at `skills/<skill-name>/SKILL.md`. Draft bounds are 20 minimum, 50 recommended, and 100 maximum. Run `python3 scripts/check_submission.py` from the repository root. The current structural checker verifies that `SKILL.md` exists; it does not run a skill evaluation. The environment SFT/GRPO submission bridge does not implement skill-track evaluation.
 
-   # Empty trial — prove the verifier rejects a do-nothing run
-   scripts/run_local.sh submissions/your-team/envs/your-env-name --skip-oracle
-   ```
+## Contribute to the training pipeline
 
-   Get all four green before opening a PR: the oracle replay must
-   score 1.0 and the empty trial must not.
-4. **Open a pull request** adding or updating your team entry. In the
-   description, paste the tail of both `run_local.sh` runs.
+The implementation lives in [`pipelines/benchflow-task-posttrain/`](pipelines/benchflow-task-posttrain/). Read [architecture/status](docs/architecture-status.md) before changing compatibility claims, and the [operator guide](docs/training-pipeline.md) for training behavior.
 
-### What reviewers check
+### Inspect a recipe without training
 
-- **Schema.** Frontmatter validates; required fields present; tags and
-  category are from the published vocabulary (see the spec).
-- **Build.** `environment/` builds inside the budget you declared.
-- **Solvability.** `oracle/solve.sh` produces a passing trial under the
-  same image. The oracle is documentation as much as a regression
-  check — keep it as simple as the task allows.
-- **Verifier sanity.** `verifier/test_outputs.py` distinguishes real
-  trial output from trivially-empty output and from the oracle's exact
-  bytes. A verifier that only checks for a fixed file is too weak.
-- **Network.** The environment's network policy matches what the task
-  actually needs; opt in only when the task requires the public web.
-- **Robustness.** Resistance to reward hacking, prompt injection, and
-  verifier shortcuts is a first-class review criterion — expect
-  adversarial probing of your verifier.
+Python 3.12+ is required. The base package has no runtime dependencies; installing it does not install the GPU training stack.
 
-Before Phase 0 the CI gauntlet grows to match the competition
-protocol: structural validation, oracle execution, instruction-quality
-screening, a leakage audit against the public sample, and a 3-stage
-Docker/verifier/difficulty filter. Accepted entries join the training
-queue.
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install -e pipelines/benchflow-task-posttrain
 
-## Contributing to the landing page
+cd pipelines/benchflow-task-posttrain
+posttrainarena-train validate --config configs/qwen3.5-9b-data-agent-canary.toml
+posttrainarena-train plan --config configs/qwen3.5-9b-data-agent-canary.toml --run-name contribution-check
+posttrainarena-train run --config configs/qwen3.5-9b-data-agent-canary.toml --run-name contribution-check --dry-run
+cd ../..
+```
 
-The site at <https://posttrain.com> is developed in a separate
-repository. For site bugs or copy fixes, open an issue here or ping us
-on Discord and we will route it.
+These commands validate and plan locally. A dry run writes local reports but does not perform optimizer updates or establish a model score. Actual training needs the dependencies, credentials, serving topology, and compute described in the operator guide.
 
-## Maintainer notes
+### Validate pipeline changes
 
-### CI: `tasks-check` workflow
+From the repository root in the activated environment:
 
-`.github/workflows/tasks-check.yml` runs two fully self-contained
-jobs — no secrets, no private dependencies, so fork PRs get exactly
-the same checks as everyone else:
+```bash
+python -m pip install -e 'pipelines/benchflow-task-posttrain[test]'
+python -m pytest pipelines/benchflow-task-posttrain/tests -q
+python -m py_compile pipelines/benchflow-task-posttrain/src/posttrainarena/benchflow_pipeline/*.py
+```
 
-1. **structural** — `scripts/check_task.py`, ~1s, no external deps.
-2. **submissions** — `scripts/check_submission.py`: team manifest,
-   track bounds (warn below min until the Phase 2 freeze, fail above
-   max), per-package structure.
+The test extra installs substantial dependencies and pinned upstream Git packages; the tests are designed as no-spend contracts. Keep new tests free of paid service calls. New recipes must pin model/dataset revisions, specify task lists, and document expected compute. Preserve module boundaries: BenchFlow owns tasks and sandbox/verifier lifecycle, OpenCode owns agent interaction, and TRL owns optimization. OpenEnv is a separate protocol adapter.
 
-Everything deeper — schema validation, oracle execution,
-instruction-quality screening, the leakage audit — runs in the managed
-pipeline after a PR is opened, and locally via
-`scripts/run_local.sh` (docker only, no benchflow install).
+Use the [HF Jobs guide](docs/hf-jobs.md) for the public launcher. The website's access-controlled Submission Lab is a separate demonstration; public repository access does not grant lab access or authorize a job. Do not equate completed planner output with training, adapter reload with task success, or seen-task success with held-out generalization.
 
-## Getting help
+## Prepare a pull request
 
-- Discord: <https://discord.gg/mZ9Rc8q8W3>
-- Spec questions: open a discussion thread on this repo.
+1. Fork the repository and create a branch for a focused change.
+2. Run the relevant checks above. Documentation-only changes should have working relative links and commands matched to the checked-in implementation.
+3. Describe the problem, changed behavior, and exact validation results. State anything you could not run and why.
+4. For environment entries, include oracle and empty-trial rewards. For pipeline changes, include tests and recipe validation/dry-run results.
+5. Keep generated checkpoints, trajectories, raw provider responses, private artifacts, and secrets out of the diff. Public evidence links should be accessible and describe the precise result they establish.
+
+The `tasks-check` workflow checks package structure and manifests when relevant paths change. The `benchflow-posttrain-pipeline` workflow runs pipeline contract tests, dependency resolution, and CLI smoke checks. Neither is proof of competition-scale training or a sealed-suite result. See the workflow files under [`.github/workflows/`](.github/workflows/).
+
+For website bugs or copy fixes, open an issue here with a public URL and reproduction steps; the website is developed separately. For help, see [SUPPORT.md](SUPPORT.md) or [Discord](https://discord.gg/mZ9Rc8q8W3). Report vulnerabilities using [SECURITY.md](SECURITY.md).
+
+## Licensing and competition rules
+
+Repository code is [AGPL-3.0](LICENSE) unless otherwise noted. Draft submission rules specify CC-BY-4.0 for text/data and Apache-2.0 for code, with participant authorship retained. Consult the final competition rules for entry sizes, phases, release terms, and scoring before submitting a competition entry.
+
+<!-- markdownlint-enable MD013 MD060 -->
