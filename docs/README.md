@@ -2,6 +2,17 @@
 
 <!-- markdownlint-disable MD013 MD060 -->
 
+## Start here
+
+- **First contribution:** run the [local quickstart](../README.md#local-quickstart), then follow the [environment walkthrough](../CONTRIBUTING.md#contribute-environments).
+- **Recipe exploration:** use the [local validate/plan/dry-run commands](../CONTRIBUTING.md#inspect-a-recipe-without-training) before installing a GPU runtime.
+- **Training operations:** read [the pipeline guide](training-pipeline.md), then [HF Jobs](hf-jobs.md) if using remote compute.
+- **Evidence review:** use [architecture/status](architecture-status.md) and the dated reports below. Configuration, job completion, optimizer updates, verifier success, and held-out improvement are different claims.
+
+The website's [HF cookbook](https://posttrain.com/docs/cookbook) describes a separate access-controlled lab. Its resources are not an anonymous public quickstart, and a completed demonstration is not a reusable training allocation. Use the public CLI guides for this repository's implementation.
+
+## Reference and evidence index
+
 | Document | Audience | Purpose |
 |---|---|---|
 | [`../README.md`](../README.md) | Everyone | Competition overview, repository map, and implementation status |
