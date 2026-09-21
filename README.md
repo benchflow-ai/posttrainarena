@@ -4,7 +4,7 @@
 
 [![Discord](https://img.shields.io/badge/Discord-Join-7289da?logo=discord&logoColor=white)](https://discord.gg/mZ9Rc8q8W3) [![Pipeline CI](https://github.com/benchflow-ai/posttrainarena/actions/workflows/benchflow-posttrain-pipeline.yml/badge.svg)](https://github.com/benchflow-ai/posttrainarena/actions/workflows/benchflow-posttrain-pipeline.yml) [![License](https://img.shields.io/badge/License-AGPL--3.0-3C5440)](LICENSE)
 
-**Contribute environments. Measure what models learn from them.** PostTrain Arena is an open project for agentic post-training and a proposed NeurIPS 2026 competition. Teams contribute task corpora; the organizer recipe trains a model on each corpus and measures transfer to held-out tasks.
+**Contribute environments. Measure what models learn from them.** PostTrain Arena is an open project for agentic post-training. Teams contribute verifiable task environments; the goal is to measure what models learn from those environments and how that transfers to held-out tasks.
 
 [Website](https://posttrain.com) · [Authoring specification](https://posttrain.com/docs/spec) · [Contributing](CONTRIBUTING.md) · [Documentation](docs/README.md) · [Discord](https://discord.gg/mZ9Rc8q8W3)
 
@@ -64,7 +64,7 @@ team environment corpus → fixed SFT + GRPO recipe → team checkpoint
                         → held-out evaluation → delta over reference
 ```
 
-The draft scoring design uses a sealed 100-task evaluation suite and paired bootstrap confidence intervals; a 20-task public sample is planned for sanity checks. Skill entries use a frozen reference agent. Competition-scale execution and sealed evaluation are not established by the public canaries.
+The competition scoring design is draft. Contributor tooling and bounded training experiments are available; a public competition launch, final evaluation suite, and competition-scale results are not established by those experiments.
 
 ## Evidence and limitations
 
@@ -81,7 +81,9 @@ The full public reference configuration selects 2,238 training tasks and 366 eva
 
 ### Hugging Face Submission Lab
 
-The website's [training cookbook](https://posttrain.com/docs/cookbook) describes a separate, access-controlled demonstration. The lab, its Jobs namespace, and its artifacts require explicit access; cloning this repository does not grant that access. Its current reservation guard blocks repeat GPU submissions, and the normal submit form does not launch the separate checkpoint-search experiment.
+As of September 21, 2026, the website's [training cookbook](https://posttrain.com/docs/cookbook) describes a separate, access-controlled demonstration. The lab, its Jobs namespace, and its artifacts require explicit access; cloning this repository does not grant that access. Its current reservation guard blocks repeat GPU submissions, and the normal submit form does not launch the separate checkpoint-search experiment.
+
+The September HF GPU experiment completed Qwen3.6-27B LoRA training. A separate seen-task checkpoint search rejected 4- and 8-step candidates and accepted a 16-step candidate at 3/3 original verifier checks. See the [current HF status](docs/hf-submission-lab.md) for scope and limitations.
 
 A CPU planner success, optimizer training, saved-adapter reload, seen-task verifier success, and held-out evaluation are distinct milestones. In particular, verifier-guided supervised checkpoint search on a deliberately seen task is not GRPO or evidence of held-out generalization. For the public code path, start with [the training guide](docs/training-pipeline.md) and [HF Jobs operator guide](docs/hf-jobs.md).
 

@@ -185,18 +185,10 @@ not use OpenEnv. The command has no built-in authentication; never expose its
 raw port publicly. Remote access requires encrypted, authenticated ingress plus
 network allowlisting.
 
-## Validation and current HF blocker
+## Validation status
 
-The exact UV runner completed the historical pre-OpenCode
-submission-to-training-to-leaderboard flow on an H100, including Data Agent and
-SkillsBench evaluation. The current Qwen3.5/OpenCode topology still requires a
-paid scheduler rerun. See
-[`hf-jobs-validation.md`](hf-jobs-validation.md).
+The historical UV runner completed the pre-OpenCode submission-to-training-to-leaderboard flow on an H100. See the dated [July validation report](hf-jobs-validation.md).
 
-The July 11 scheduler attempts returned HTTP 402 for all tested namespaces
-because prepaid Jobs credits were unavailable. During the July 15 documentation
-audit, authenticated `hf jobs ps --namespace benchflow` succeeded and returned
-no jobs; no paid launch was submitted, so current credit availability is
-unverified. The native two-H100 run validates the current OpenCode/Qwen3.5
-pipeline independently, but does not validate managed HF Jobs support for its
-Docker, ingress, and two-physical-GPU topology.
+In September, the separate Submission Lab completed Qwen3.6-27B SFT and a seen-task verifier-guided checkpoint search on HF A100 Large. HF GPU execution is therefore no longer generally blocked by the July credit failure. Read [current HF training status](hf-submission-lab.md) and the [inspection cookbook](https://posttrain.com/docs/cookbook).
+
+Those single-GPU lab runs do not validate the public Qwen3.5/OpenCode recipe's Docker, ingress, or two-physical-GPU topology on managed HF Jobs. Its native two-H100 evidence remains separate. Check hardware, access, and budget for the specific recipe before launching.

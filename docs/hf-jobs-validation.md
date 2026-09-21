@@ -1,11 +1,13 @@
-# HF handoff validation report
+# HF handoff validation report — July 2026
+
+> Historical report. July account-credit failures below are not the current HF status: September GPU runs completed successfully. See [current HF training status](hf-submission-lab.md). The original evidence is preserved below.
 
 ## Verdict
 
 The PostTrain Arena Hugging Face handoff is implemented and its exact UV runner
 completed the historical pipeline on an H100. July 11 allocation attempts
 through the HF Jobs scheduler were blocked by account credits, not code;
-current paid-launch availability was not re-tested during the July 15 audit.
+paid-launch availability was not re-tested during that July 15 audit.
 
 This July 11 evidence predates the OpenCode evaluation migration. It validates
 the HF bundle, trainer, publishing, and earlier TRL evaluation path. The current
