@@ -20,12 +20,16 @@ team task corpus
     -> lift over a fixed reference checkpoint
 ```
 
-The organizer implementation targets Qwen3.5-9B with a private BenchFlow
+The checked-in public reference implementation targets Qwen3.5-9B with a private BenchFlow
 Signals evaluation suite. The exploratory public 16-train/14-eval same-domain
 canary validates the recipe and model update path; the competition rules, final
 compute budget, and private-suite scale remain draft.
 
-## Current public implementation
+## Current project status — September 21, 2026
+
+The separate HF Submission Lab has completed Qwen3.6-27B GPU SFT and a seen-task verifier-guided checkpoint search. The earlier July credit blocker is historical. The lab is access-controlled and does not yet support self-service repeat runs; see [HF training status](hf-submission-lab.md). These results do not replace or validate every topology of the public OpenCode/TRL recipes below.
+
+## Checked-in public implementation
 
 The supported executable reference is the Qwen3.5-9B pipeline under
 [`pipelines/benchflow-task-posttrain/`](../pipelines/benchflow-task-posttrain):
@@ -98,7 +102,7 @@ public-reference run and private competition readiness remain unproven.
 | OpenEnv/BenchFlow Docker parity | Manually validated | Checked-in security task produced identical output and reward `1.0` through both integrations; CI uses a no-spend fake BenchFlow boundary |
 | Native Data Agent pipeline | Live canary validated | Sixteen training and 14 disjoint evaluation task IDs from the same source dataset completed strict teacher collection, LoRA SFT, 128 OpenCode GRPO rollouts, synchronization, and paired evaluation with an exploratory `8/14 -> 11/14` increase |
 | Submission-to-recipe bridge | Implemented | Environment entries become pinned Hub datasets and portable recipes |
-| HF Jobs execution | Canary handoff implemented; current allocation unverified | UV job bundle and historical H100 runner validated; July 11 scheduler requests were credit-blocked, and no paid scheduler launch was submitted during the July 15 documentation audit; the Docker-based Qwen3.5 full recipe currently targets a persistent native Linux GPU host |
+| HF Jobs execution | Public job wrapper implemented; separate lab GPU runs completed | September Qwen3.6-27B SFT and seen-task checkpoint search completed on HF A100 Large. The public Qwen3.5 Docker/two-GPU topology still needs its own managed-HF validation; see [current status](hf-submission-lab.md). |
 | Hub artifact publishing | Implemented | Run reports, checkpoint provenance, logs, and failures publish to Hub datasets/models |
 | Continuous leaderboard | Implemented | Atomic dataset records plus a deployable Gradio Space |
 | Multi-benchmark evaluation | Implemented | One base/final checkpoint pair is evaluated across pinned suites with macro delta |

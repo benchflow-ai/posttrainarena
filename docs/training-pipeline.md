@@ -1,5 +1,8 @@
 # BenchFlow task-list post-training pipeline
 
+> This guide documents the checked-in Qwen3.5 OpenCode/TRL pipeline. The newer Qwen3.6-27B HF Submission Lab is a separate runner; see [current HF training status](hf-submission-lab.md). Its results do not imply these recipes or model pins were updated.
+
+
 <!-- markdownlint-disable MD013 MD060 -->
 
 This is the canonical operator guide for the public organizer-side training
@@ -288,7 +291,7 @@ stall before the first tool call. OpenCode title/summary helpers are not seeded.
 GRPO rollout requests opt into sampled-token logprobs and do not receive a
 forced seed, preserving within-group reward variance without making pass-rate
 comparisons depend on uncontrolled random decoding.
-The production Qwen3.5 recipe uses eight generations per task, matching TRL's
+The checked-in Qwen3.5 recipe uses eight generations per task, matching TRL's
 official default instead of the two-generation smoke setting. It records
 per-group reward ranges and LoRA-B update statistics, and fails before
 publishing a GRPO checkpoint when every complete group has zero reward variance.
