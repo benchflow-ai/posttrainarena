@@ -1,0 +1,105 @@
+{
+  "operation": "deduplicate_latest",
+  "variant": "temporal",
+  "rows": [
+    {
+      "entity": "E1",
+      "recorded_at": "2026-08-01T12:00:00",
+      "value": "V1028-0",
+      "record_id": "R-001",
+      "effective_at": "2026-08-10T12:00:00"
+    },
+    {
+      "entity": "E2",
+      "recorded_at": "2026-08-02T12:00:00",
+      "value": "V1028-1",
+      "record_id": "R-002",
+      "effective_at": "2026-08-11T12:00:00"
+    },
+    {
+      "entity": "E3",
+      "recorded_at": "2026-08-03T12:00:00",
+      "value": "V1028-2",
+      "record_id": "R-003",
+      "effective_at": "2026-08-12T12:00:00"
+    },
+    {
+      "entity": "E4",
+      "recorded_at": "2026-08-04T12:00:00",
+      "value": "V1028-3",
+      "record_id": "R-004",
+      "effective_at": "2026-08-13T12:00:00"
+    },
+    {
+      "entity": "E5",
+      "recorded_at": "2026-08-05T12:00:00",
+      "value": "V1028-4",
+      "record_id": "R-005",
+      "effective_at": "2026-08-14T12:00:00"
+    },
+    {
+      "entity": "E6",
+      "recorded_at": "2026-08-06T12:00:00",
+      "value": "V1028-5",
+      "record_id": "R-006",
+      "effective_at": "2026-08-15T12:00:00"
+    },
+    {
+      "entity": "E7",
+      "recorded_at": "2026-08-07T12:00:00",
+      "value": "V1028-6",
+      "record_id": "R-007",
+      "effective_at": "2026-08-16T12:00:00"
+    },
+    {
+      "entity": "E1",
+      "recorded_at": "2026-08-08T12:00:00",
+      "value": "V1028-7",
+      "record_id": "R-008",
+      "effective_at": "2026-08-17T12:00:00"
+    },
+    {
+      "entity": "E2",
+      "recorded_at": "2026-08-09T12:00:00",
+      "value": "V1028-8",
+      "record_id": "R-009",
+      "effective_at": "2026-08-18T12:00:00"
+    },
+    {
+      "entity": "E3",
+      "recorded_at": "2026-08-10T12:00:00",
+      "value": "V1028-9",
+      "record_id": "R-010",
+      "effective_at": "2026-08-19T12:00:00"
+    },
+    {
+      "entity": "E4",
+      "recorded_at": "2026-08-11T12:00:00",
+      "value": "V1028-10",
+      "record_id": "R-011",
+      "effective_at": "2026-08-20T12:00:00"
+    },
+    {
+      "entity": "E5",
+      "recorded_at": "2026-08-12T12:00:00",
+      "value": "V1028-11",
+      "record_id": "R-012",
+      "effective_at": "2026-08-21T12:00:00"
+    },
+    {
+      "entity": "E6",
+      "recorded_at": "2026-08-13T12:00:00",
+      "value": "V1028-12",
+      "record_id": "R-013",
+      "effective_at": "2026-08-10T12:00:00"
+    },
+    {
+      "entity": "E7",
+      "recorded_at": "2026-08-14T12:00:00",
+      "value": "V1028-13",
+      "record_id": "R-014",
+      "effective_at": "2026-08-11T12:00:00"
+    }
+  ],
+  "as_of": "2026-08-18T12:00:00"
+}

@@ -1,0 +1,45 @@
+{
+  "operation": "topological_order",
+  "variant": "adversarial",
+  "rows": [
+    {
+      "node": "ingest",
+      "depends_on": [],
+      "record_id": "R-001",
+      "is_distractor": false
+    },
+    {
+      "node": "validate",
+      "depends_on": [
+        "ingest"
+      ],
+      "record_id": "R-002",
+      "is_distractor": true
+    },
+    {
+      "node": "transform",
+      "depends_on": [
+        "validate"
+      ],
+      "record_id": "R-003",
+      "is_distractor": false
+    },
+    {
+      "node": "audit",
+      "depends_on": [
+        "validate"
+      ],
+      "record_id": "R-004",
+      "is_distractor": true
+    },
+    {
+      "node": "publish",
+      "depends_on": [
+        "transform",
+        "audit"
+      ],
+      "record_id": "R-005",
+      "is_distractor": false
+    }
+  ]
+}

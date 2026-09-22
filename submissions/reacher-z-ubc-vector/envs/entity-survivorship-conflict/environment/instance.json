@@ -1,0 +1,118 @@
+{
+  "operation": "deduplicate_latest",
+  "variant": "conflict",
+  "rows": [
+    {
+      "entity": "E1",
+      "recorded_at": "2026-08-01T12:00:00",
+      "value": "V1027-0",
+      "record_id": "R-001",
+      "logical_key": "L-000",
+      "source_priority": 1
+    },
+    {
+      "entity": "E2",
+      "recorded_at": "2026-08-02T12:00:00",
+      "value": "V1027-1",
+      "record_id": "R-002",
+      "logical_key": "L-000",
+      "source_priority": 2
+    },
+    {
+      "entity": "E3",
+      "recorded_at": "2026-08-03T12:00:00",
+      "value": "V1027-2",
+      "record_id": "R-003",
+      "logical_key": "L-001",
+      "source_priority": 1
+    },
+    {
+      "entity": "E4",
+      "recorded_at": "2026-08-04T12:00:00",
+      "value": "V1027-3",
+      "record_id": "R-004",
+      "logical_key": "L-001",
+      "source_priority": 2
+    },
+    {
+      "entity": "E5",
+      "recorded_at": "2026-08-05T12:00:00",
+      "value": "V1027-4",
+      "record_id": "R-005",
+      "logical_key": "L-002",
+      "source_priority": 1
+    },
+    {
+      "entity": "E6",
+      "recorded_at": "2026-08-06T12:00:00",
+      "value": "V1027-5",
+      "record_id": "R-006",
+      "logical_key": "L-002",
+      "source_priority": 2
+    },
+    {
+      "entity": "E7",
+      "recorded_at": "2026-08-07T12:00:00",
+      "value": "V1027-6",
+      "record_id": "R-007",
+      "logical_key": "L-003",
+      "source_priority": 1
+    },
+    {
+      "entity": "E1",
+      "recorded_at": "2026-08-08T12:00:00",
+      "value": "V1027-7",
+      "record_id": "R-008",
+      "logical_key": "L-003",
+      "source_priority": 2
+    },
+    {
+      "entity": "E2",
+      "recorded_at": "2026-08-09T12:00:00",
+      "value": "V1027-8",
+      "record_id": "R-009",
+      "logical_key": "L-004",
+      "source_priority": 1
+    },
+    {
+      "entity": "E3",
+      "recorded_at": "2026-08-10T12:00:00",
+      "value": "V1027-9",
+      "record_id": "R-010",
+      "logical_key": "L-004",
+      "source_priority": 2
+    },
+    {
+      "entity": "E4",
+      "recorded_at": "2026-08-11T12:00:00",
+      "value": "V1027-10",
+      "record_id": "R-011",
+      "logical_key": "L-005",
+      "source_priority": 1
+    },
+    {
+      "entity": "E5",
+      "recorded_at": "2026-08-12T12:00:00",
+      "value": "V1027-11",
+      "record_id": "R-012",
+      "logical_key": "L-005",
+      "source_priority": 2
+    },
+    {
+      "entity": "E6",
+      "recorded_at": "2026-08-13T12:00:00",
+      "value": "V1027-12",
+      "record_id": "R-013",
+      "logical_key": "L-006",
+      "source_priority": 1
+    },
+    {
+      "entity": "E7",
+      "recorded_at": "2026-08-14T12:00:00",
+      "value": "V1027-13",
+      "record_id": "R-014",
+      "logical_key": "L-006",
+      "source_priority": 2
+    }
+  ]
+}

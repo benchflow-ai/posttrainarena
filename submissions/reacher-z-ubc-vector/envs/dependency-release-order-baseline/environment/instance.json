@@ -1,0 +1,40 @@
+{
+  "operation": "topological_order",
+  "variant": "baseline",
+  "rows": [
+    {
+      "node": "ingest",
+      "depends_on": [],
+      "record_id": "R-001"
+    },
+    {
+      "node": "validate",
+      "depends_on": [
+        "ingest"
+      ],
+      "record_id": "R-002"
+    },
+    {
+      "node": "transform",
+      "depends_on": [
+        "validate"
+      ],
+      "record_id": "R-003"
+    },
+    {
+      "node": "audit",
+      "depends_on": [
+        "validate"
+      ],
+      "record_id": "R-004"
+    },
+    {
+      "node": "publish",
+      "depends_on": [
+        "transform",
+        "audit"
+      ],
+      "record_id": "R-005"
+    }
+  ]
+}
