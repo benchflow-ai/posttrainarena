@@ -160,6 +160,14 @@ Qwen3.5-specific compatibility mapping: Transformers trains the text policy as
 `language_model.*`. The worker prefixes only those synchronized text-policy
 weights and leaves the frozen visual weights unchanged.
 
+Tensor-parallel serving inside some containers (HF Jobs `a100x8` with a
+`CUDA_VISIBLE_DEVICES` subset) fails in vLLM's CUDA-IPC custom all-reduce with
+`custom_all_reduce.cuh: invalid argument` while NCCL still works. Set
+`POSTTRAINARENA_VLLM_DISABLE_CUSTOM_ALL_REDUCE=1` before
+`posttrainarena-vllm-serve` to fall back to NCCL all-reduce. Offline data
+parallelism (`--data_parallel_size > 1`) is rejected by vLLM 0.23 for dense
+models, so scale a dense policy server with tensor parallelism instead.
+
 This removes the former TRL `environment_factory` agent loop. OpenEnv remains a
 standalone protocol compatibility service, but it is not part of teacher
 collection, evaluation, or GRPO rollout generation.
