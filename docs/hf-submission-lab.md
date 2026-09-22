@@ -65,7 +65,7 @@ python arena_cli.py train --file training.json  # preview only
 python arena_cli.py jobs
 ```
 
-The durable reservation ledger enforces the project's **$200 compute allocation**. An active or uncertain run blocks another launch; completed runs do not permanently block new requests when allocation remains. Reuse an existing request ID after an uncertain response. Do not delete reservations or change IDs to bypass the guard. Conservative reservations and earlier-work allowances are not invoices or account-wide billing enforcement.
+The durable reservation ledger enforces the project's **$400 compute allocation**. An active or uncertain run blocks another launch; completed runs do not permanently block new requests when allocation remains. Reuse an existing request ID after an uncertain response. Do not delete reservations or change IDs to bypass the guard. Conservative reservations and earlier-work allowances are not invoices or account-wide billing enforcement.
 
 ### Submitted-environment execution profile
 
@@ -143,3 +143,15 @@ The Google Auto runs’ three original checks cover note existence, patch existe
 The repository retains the Qwen3.5-9B OpenCode/TRL recipes described in [the training guide](training-pipeline.md). They have not been converted into the hosted Qwen3.6-27B prototype. The single-GPU HF results do not validate the older recipe's Docker, ingress, and two-physical-GPU topology on HF Jobs.
 
 The [July HF credit failure](hf-jobs-validation.md) is historical, not the project's current ability to execute HF GPU jobs. The current prototype uses HF; other provider research notes are not setup requirements for this workflow.
+
+## Hosted execution for any submitted task (v2)
+
+Since September 22, 2026 any validated task package can be executed on Hugging Face without a hand-written profile:
+
+1. A BenchFlow editor runs `python arena_cli.py environments image --id ENVIRONMENT_ID --task TASK_DIR`. The package's `environment/Dockerfile` is built into a public Docker Space named `benchflow/pta-img-<env>-<task>-<hash>` and pinned by its registry digest; the whole task directory is snapshotted at an immutable revision in the private artifacts dataset. Repeat the command until `status` is `ready`.
+2. `python arena_cli.py experiment profiles` then lists the task with an `experiment_template`. Copy it, set your own `request_id`, and register it with `experiment create`.
+3. `experiment recipe` previews the reservation; `experiment run --execute` (editor, one active run at a time) submits one A100 job that runs the empty and oracle controls in fresh CPU sandboxes, evaluates the base model, trains LoRA SFT on `oracle/solve.sh`, reloads the saved adapter, and evaluates again. `experiment collect`, organizer `review`, and `publish` are unchanged.
+
+Contract `bash-script-v2`: the model reads the `## prompt` section of `task.md` and must reply with exactly one fenced bash script, which runs as root in `/root` of the task image; the package's own `verifier/test.sh` then scores the workspace (CTRF checks plus `reward.json`). The empty workspace must score reward 0 and the oracle reward 1 with every check passing, or the run stops before any training. Scores are `passed checks / total checks` on that one seen task. Agent and verifier timeouts are clamped to 600 s and 300 s; the oracle must fit the 4,096-token generation budget. Notebook walkthrough: [docs/notebooks/posttrain-arena-headless-walkthrough.ipynb](notebooks/posttrain-arena-headless-walkthrough.ipynb).
+
+Recorded v2 run (September 22, 2026): collection `env-84f699e91142` (`benchflow/posttrain-generic-dogfood-20260922`, three unchanged starting-kit examples), experiment `exp-681ef6bcd913` on `dogfood-hello-text`, run `arena-87e2ec56f906`: empty control 0/6 (reward 0), oracle 6/6 (reward 1), base model 6/6, after 50 LoRA SFT steps and adapter reload 6/6. The base model already solves this task, so the run validates the pipeline rather than showing lift; see the leaderboard group "Generic runner dogfood" on posttrain.com. Second recorded run, experiment `exp-cc380b0dbb4a` on `skillsbench-3d-scan-calc` (run `arena-70ca637bb6b8`): empty 0/2, oracle 2/2, **base model 0/2, trained 2/2** after 50 LoRA SFT steps with the saved adapter reloaded; the runner injects the package's `environment/skills/` at `/root/.claude/skills` for the oracle and the model's script. Third run, `exp-693ecc66b048` on `skillsbench-weighted-gdp-calc` (run `arena-b740fd958104`): empty 11/27, oracle 27/27, **base 11/27, trained 27/27**..

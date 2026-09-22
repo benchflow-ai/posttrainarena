@@ -55,3 +55,4 @@ These reports preserve the setup and results of individual experiments. They are
 | [`native-dataset-openenv-smoke.md`](native-dataset-openenv-smoke.md) | Reviewers and operators | Historical native-dataset OpenEnv execution evidence |
 | [`qwen35-opencode-teacher-canary.md`](qwen35-opencode-teacher-canary.md) | Reviewers and operators | Historical single-task Qwen3.5-397B-A17B OpenCode rollout, trajectory, and TRL conversion evidence |
 | [`qwen35-data-agent-e2e-canary.md`](qwen35-data-agent-e2e-canary.md) | Reviewers and operators | Qwen3.5-9B LoRA SFT, OpenCode GRPO, synchronization, and exploratory same-domain score evidence |
+- [Headless walkthrough notebook](notebooks/posttrain-arena-headless-walkthrough.ipynb): submit a collection, build its image, run oracle-supervised SFT on HF, collect and publish the result.
