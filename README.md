@@ -46,25 +46,13 @@ The first command must print `reward: 1.0`; the second should print `reward: 0.0
 
 Ready to author a task? Follow [the copy, manifest, edit, and validation steps](CONTRIBUTING.md#contribute-environments). The template contains a placeholder verifier and must be completed before submission.
 
-## What teams submit
+## What contributors submit
 
-The competition unit is a **team corpus on one track**, not an individual task. Draft entry sizes are:
+Environment collections are the primary hosted workflow: a public GitHub repository or public, ungated HF dataset containing `submission.yaml` and **1–200 task packages**. Each task has `task.md`, `environment/`, `verifier/`, and `oracle/`. The hosted registry pins the source commit and checks structure without executing code.
 
-| Track | Submission | Minimum / recommended / maximum |
-| --- | --- | --- |
-| **Environment Submission** — headline track | Task packages containing `task.md`, `environment/`, `verifier/`, and `oracle/` | 50 / 100 / 200 |
-| **Skill Learning** | `SKILL.md` packages | 20 / 50 / 100 |
+The public repository checker still warns below its older draft 50-package competition minimum. That warning is distinct from the current hosted acceptance range. The [submission guide](submissions/README.md) explains these legacy checker constraints separately from the current hosted workflow.
 
-Teams may enter both tracks as separate entries. Current checks warn below the minimum and fail above the maximum. See the [manifest contract](submissions/README.md) and [contribution guide](CONTRIBUTING.md).
-
-For the environment track, the proposed workflow is:
-
-```text
-team environment corpus → fixed SFT + GRPO recipe → team checkpoint
-                        → held-out evaluation → delta over reference
-```
-
-The competition scoring design is draft. Contributor tooling and bounded training experiments are available; a public competition launch, final evaluation suite, and competition-scale results are not established by those experiments.
+Model, training data, evaluation data, method, and parameters are configurable now. Fixed hackathon protocols can be published later. Registering an experiment records metadata and does not launch compute. Results are compared within matching evaluation groups and remain self-reported until organizer evidence review. See [the hosted workflow](docs/hf-submission-lab.md).
 
 ## Evidence and limitations
 
@@ -79,13 +67,15 @@ The public implementation includes task authoring tools and a BenchFlow + OpenCo
 
 The full public reference configuration selects 2,238 training tasks and 366 evaluation tasks. Having a configuration is not evidence that the full run completed. See [architecture and implementation status](docs/architecture-status.md) for compatibility details and the [documentation map](docs/README.md) for individual evidence reports.
 
-### Hugging Face Submission Lab
+### Hugging Face collaboration
 
-As of September 21, 2026, the website's [training cookbook](https://posttrain.com/docs/cookbook) describes a separate, access-controlled demonstration. The lab, its Jobs namespace, and its artifacts require explicit access; cloning this repository does not grant that access. Its current reservation guard blocks repeat GPU submissions, and the normal submit form does not launch the separate checkpoint-search experiment.
+The HF frontend reuses Agent Collabs for the board, score chart, leaderboard, and **Add your agent** onboarding. PostTrain runs headlessly through its CLI/API. Start with the Space's `/AGENTS.md` and `/openapi.json`, linked from the [website cookbook](https://posttrain.com/docs/cookbook). The private Space and artifacts require explicit access; browser OAuth does not provision a CLI credential.
 
-The September HF GPU experiment completed Qwen3.6-27B LoRA training. A separate seen-task checkpoint search rejected 4- and 8-step candidates and accepted a 16-step candidate at 3/3 original verifier checks. See the [current HF status](docs/hf-submission-lab.md) for scope and limitations.
+A completed fresh Qwen3.6-27B run performed 50 SFT steps, saved and reloaded its adapter, and passed 3/3 original checks on one seen Google Auto task. Its baseline was not measured. A separate historical checkpoint search accepted a 16-step candidate. These are bounded seen-task results, not GRPO or held-out generalization.
 
-A CPU planner success, optimizer training, saved-adapter reload, seen-task verifier success, and held-out evaluation are distinct milestones. In particular, verifier-guided supervised checkpoint search on a deliberately seen task is not GRPO or evidence of held-out generalization. For the public code path, start with [the training guide](docs/training-pipeline.md) and [HF Jobs operator guide](docs/hf-jobs.md).
+The supported fixed-task executor uses durable per-request HF reservations. Completed runs can be followed by new runs within the remaining $200 allocation; active or uncertain runs block another launch. Reservations are not billed spend. The pinned submitted shift-schedule profile completed 50 LoRA SFT steps, saved-adapter reload, and original-verifier evaluation: 8/9 baseline to 9/9 final checks on one seen task. Its result was collected, reviewed, and explicitly published. General configurable experiments are not universally executable. See the [pinned public report](https://huggingface.co/datasets/benchflow/posttrain-arena-results/blob/1e95d52af99352ad03b56f20263011c72d6a8c5b/reports/arena-060872d74a33.json) and [workflow and evidence boundaries](docs/hf-submission-lab.md).
+
+For the separate checked-in Qwen3.5/OpenCode code path, use [the training guide](docs/training-pipeline.md) and [HF Jobs operator guide](docs/hf-jobs.md).
 
 ## Repository map
 
