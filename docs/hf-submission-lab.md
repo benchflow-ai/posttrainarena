@@ -1,6 +1,6 @@
 # Hugging Face collaboration and training status
 
-Updated September 21, 2026. The HF frontend adapts [Agent Collabs](https://github.com/huggingface/agent-collabs): a shared board, score chart, leaderboard, and **Add your agent** onboarding. PostTrain provides the headless CLI/API backend. There are no custom environment-submission, experiment, or training forms.
+Updated September 22, 2026 (UTC). The HF frontend adapts [Agent Collabs](https://github.com/huggingface/agent-collabs): a shared board, score chart, leaderboard, and **Add your agent** onboarding. PostTrain provides the headless CLI/API backend. There are no custom environment-submission, experiment, or training forms.
 
 Start with the authorized Space's `/AGENTS.md` and `/openapi.json`, available through **Add your agent**. The [website cookbook](https://posttrain.com/docs/cookbook) links to the Space and describes the workflow. This hosted prototype is separate from the public OpenCode/TRL pipeline checked into this repository.
 
@@ -54,7 +54,7 @@ Comparison groups share environment and model commits, evaluation repository/com
 
 ## Supported execution and reservations
 
-The evidenced hosted executor is the fixed Google Auto seen-task Qwen3.6-27B LoRA preset. `/api/arena/recipe` previews it, `/api/arena/train` launches an authorized run, and `/api/arena/jobs` returns status and results. The CLI defaults to preview:
+The hosted executors cover the Google Auto preset and the pinned submitted shift-schedule profile below. The older fixed Google Auto seen-task Qwen3.6-27B LoRA preset remains available. `/api/arena/recipe` previews it, `/api/arena/train` launches an authorized run, and `/api/arena/jobs` returns status and results. The CLI defaults to preview:
 
 ```sh
 python arena_cli.py recipe --file training.json
@@ -69,7 +69,7 @@ The durable reservation ledger enforces the project's **$200 compute allocation*
 
 ### Submitted-environment execution profile
 
-A bounded HF execution contract is implemented for **`shift-schedule-files-v1`**. Its actual GPU execution evidence is still pending; the interface alone does not establish a completed participant journey. Other environment packages and general experiment configurations can be registered, but need a supported execution profile before hosted compute.
+The bounded **`shift-schedule-files-v1`** profile completed a submitted-environment run through training, saved-adapter reload, original-verifier evaluation, collection, organizer review, and explicit publication. Experiment `exp-6fb41ab45e5d`, run `arena-060872d74a33`, used the pinned source below; its [public report](https://huggingface.co/datasets/benchflow/posttrain-arena-results/blob/1e95d52af99352ad03b56f20263011c72d6a8c5b/reports/arena-060872d74a33.json) records the measured result. Other environment packages and general experiment configurations can be registered, but need a supported execution profile before hosted compute.
 
 Inspect available profiles first:
 
@@ -87,6 +87,7 @@ This profile requires the public dataset `benchflow/posttrain-agent-dogfood-2026
 | Method / metric / scope | `LoRA SFT` / `pass_rate` / `seen` |
 | Parameters | Exactly `steps` (20, 50, or 100), `rate` (0.0001 or 0.0002), `rank` (16 or 32), and `seed` (42) |
 | Generated output | JSON files `violations.json` and `schedule.json` |
+| Decoding | Greedy (`do_sample: false`), `max_new_tokens: 4096` for both baseline and final |
 
 Register the matching experiment first. Put a stable request ID in `run.json`, for example `{"request_id":"shift-schedule-run-001"}`. The experiment owner must also have BenchFlow editor compute permission. The following command launches paid HF compute; run it only after explicit authorization:
 
@@ -105,7 +106,7 @@ python arena_cli.py experiment collect --id EXPERIMENT_ID --run-id RUN_ID
 python arena_cli.py experiment get --id EXPERIMENT_ID
 ```
 
-Collection requires the experiment owner and compute-editor permission. It rejects missing or mismatched reports, failed cleanup, missing saved-adapter reload, invalid empty/oracle controls, or invalid baseline/final verifier counts. The required controls are empty 0/9 and oracle 9/9; baseline and final must each contain nine original checks. The recorded score is the fraction of checks passed on this one seen task, not success across nine tasks. Successful collection records a **pending** result; it neither reviews nor publishes it.
+Collection requires the experiment owner and compute-editor permission. It rejects missing or mismatched reports, failed cleanup, missing saved-adapter reload, optimizer steps differing from the reservation, an obsolete generation budget, invalid empty/oracle controls, or invalid baseline/final verifier counts. The required controls are empty 0/9 and oracle 9/9; baseline and final must each contain nine original checks. The recorded score is the fraction of checks passed on this one seen task, not success across nine tasks. Successful collection records a **pending** result; it neither reviews nor publishes it.
 
 An organizer must inspect the pinned evidence and explicitly review the result. Prepare `review.json` with `accepted` and an evidence-based `note` of at least 20 characters. Acceptance is a decision after review, not a default:
 
@@ -119,8 +120,15 @@ Publication updates the sanitized public result feed. Review and public publicat
 
 ## Recorded evidence
 
+The submitted shift-schedule run completed **50 LoRA SFT optimizer steps** on Qwen3.6-27B. Under the same greedy 4,096-token generation limit, its baseline passed **8/9** original checks and its reloaded adapter passed **9/9**. Empty and oracle controls scored **0/9** and **9/9**. These are check counts on one deliberately seen task, not nine independent tasks or held-out performance.
+
+An independent fresh-agent Docker replay reproduced every baseline/final test status and both controls using the pinned original verifier, with replay networking disabled. The pinned adapter weights were hash-verified. The HF GPU job completed and all four CPU verifier sandboxes were terminal. **HF sandbox network isolation was false**; only the independent Docker replay disabled networking. The runner invokes the original nine pytest checks directly, not the submission’s `test.sh` wrapper. Both deviations remain limitations of the hosted execution evidence.
+
+Collection and its exact retry returned the same result, which was reviewed valid and explicitly published; the public feed read-back contained three rows at verification. The [immutable public report](https://huggingface.co/datasets/benchflow/posttrain-arena-results/blob/1e95d52af99352ad03b56f20263011c72d6a8c5b/reports/arena-060872d74a33.json) ties this result to the source configuration and completed HF job. The profile supports this pinned source, not arbitrary environment execution or general GRPO.
+
 | Run | Established result | Scope |
 | --- | --- | --- |
+| Submitted shift-schedule run | 50 SFT steps; baseline 8/9 → reloaded adapter 9/9; empty 0/9, oracle 9/9; independently replayed and publicly reviewed | One seen task with nine original checks |
 | Earlier GPU training | 20 optimizer steps and a separate saved-adapter reload/inference smoke | Training and inference plumbing |
 | Fresh Google Auto run | 50 SFT steps; adapter saved and reloaded; 3/3 original verifier checks; sandbox termination confirmed | One seen task; baseline was not measured in this run |
 | Historical checkpoint search | Baseline 0/3; rejected 4- and 8-step candidates; accepted 16-step candidate at 3/3; 28 updates performed in total | Verifier-guided supervised checkpoint search |
@@ -128,7 +136,7 @@ Publication updates the sanitized public result feed. Review and public publicat
 
 The fresh 50-step run and the historical hillclimb adapter have separate reload/verifier evidence. The hillclimb reload used evaluation run `arena-039d2cfaa6c7` (completed HF job `6ab1015851992417dfccf12f`) and adapter revision `d1c78475fa3f08026a734858596ff39d036bcbc0`. Its [pinned report](https://huggingface.co/datasets/benchflow/posttrain-lab-20260920-artifacts/blob/05af32d9cc469528427da1862672eac0f09b95ee/arena/results/arena-039d2cfaa6c7.json) records adapter reload, 3/3 original checks, and sandbox termination; authorized artifact access is required. This evaluation did not perform a new checkpoint search or establish held-out performance.
 
-The three original checks cover note existence, patch existence, and Java build success on one task. These results do not establish three independent tasks, GRPO, a 41-task benchmark result, or held-out generalization. Job completion, optimizer updates, adapter reload, task correctness, and held-out improvement are separate claims. Read current jobs instead of assuming that an online Space means training is active.
+The Google Auto runs’ three original checks cover note existence, patch existence, and Java build success on one task. Those results do not establish three independent tasks, GRPO, a 41-task benchmark result, or held-out generalization. Job completion, optimizer updates, adapter reload, task correctness, and held-out improvement are separate claims. Read current jobs instead of assuming that an online Space means training is active.
 
 ## Public pipeline boundary
 

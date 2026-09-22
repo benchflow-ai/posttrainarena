@@ -6,6 +6,8 @@ The current hosted workflow accepts **1–200 environment packages** from a publ
 
 Model, training data, evaluation data, method, and parameters are configurable today. Registration records metadata; it does not launch training. Hosted execution requires a supported profile and explicit compute authorization. Participant scores need organizer evidence review, and public-feed publication is separate. Fixed hackathon protocols can be published later; there is no current 50-package minimum, phase-freeze requirement, or universal managed-training guarantee for hosted collections.
 
+The [pinned shift-schedule example](../docs/hf-submission-lab.md#recorded-evidence) completed the hosted run → collection → review → publication path, with baseline 8/9 and final 9/9 checks on one seen task. Other sources still need a supported execution profile; registration alone does not provide one.
+
 ## Existing local checker behavior
 
 The self-contained scripts retain some historical competition constraints. `check_submission.py` accepts at least one environment package, warns below 50, and rejects more than 200. Its warning does not override the hosted 1–200 range. It also recognizes legacy `track: skills` packages, warning below 20 and rejecting more than 100; that format does not establish a current hosted skill track or evaluator.

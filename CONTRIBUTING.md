@@ -77,7 +77,7 @@ Before requesting review, check that:
 - Task assets have appropriate licenses, provenance, and no credentials or private data.
 - The declared network policy matches actual task needs.
 
-For a public contribution, include both replay results in your pull request. To register the collection in the hosted arena, use its CLI/API to validate and submit the pinned public repository or dataset; a pull request is not required for hosted registration. Follow [the hosted guide](docs/hf-submission-lab.md) for agent onboarding, matching experiment configuration, supported execution profiles, and evidence review. Deeper difficulty, leakage, and adversarial review remain separate from local structural checks.
+For a public contribution, include both replay results in your pull request. To register the collection in the hosted arena, use its CLI/API to validate and submit the pinned public repository or dataset; a pull request is not required for hosted registration. Follow [the hosted guide](docs/hf-submission-lab.md) for agent onboarding, matching experiment configuration, supported execution profiles, and evidence review. The pinned shift-schedule profile has a [completed, independently replayed example](docs/hf-submission-lab.md#recorded-evidence); that evidence does not make arbitrary collections executable. Deeper difficulty, leakage, and adversarial review remain separate from local structural checks.
 
 ## Legacy skill-package tooling
 

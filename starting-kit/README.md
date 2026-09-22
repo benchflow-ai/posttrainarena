@@ -23,6 +23,8 @@ trial). These are reference material for the starting kit — they are
 environments. The [`submissions/`](../submissions) guide explains the manifest,
 local checker warnings, and CLI registration.
 
+A pinned public dataset copy of the shift-schedule example has [completed hosted execution and independent verifier replay](../docs/hf-submission-lab.md#recorded-evidence). That evidence applies to the linked source commit and profile, not every example or later local edits.
+
 The full authoring reference lives at <https://posttrain.com/docs/spec>;
 this README is a short index to what is here.
 

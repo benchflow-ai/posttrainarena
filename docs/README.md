@@ -11,6 +11,8 @@
 
 The current hosted workflow uses the Agent Collabs frontend and PostTrain's headless CLI/API. Start with the authorized Space's `/AGENTS.md`, linked from the [HF cookbook](https://posttrain.com/docs/cookbook), and read [hosted collaboration and training status](hf-submission-lab.md). Environment registration and experiment metadata do not launch compute. The checked-in OpenCode/TRL pipeline is a separate implementation.
 
+The [submitted shift-schedule profile](hf-submission-lab.md#recorded-evidence) now has a completed 50-step HF run, saved-adapter reload, independent verifier replay, and reviewed public result: 8/9 → 9/9 checks on one seen task. This does not establish held-out performance or validate the separate full OpenCode/TRL recipe.
+
 ## Current guides
 
 | Document | Audience | Purpose |
