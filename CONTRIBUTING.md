@@ -5,11 +5,11 @@
 Start with one working task, a focused pipeline fix, or a documentation improvement. You can validate task structure without a GPU, provider account, or BenchFlow installation.
 
 - [Contribute environments](#contribute-environments)
-- [Contribute skills](#contribute-skills)
+- [Legacy skill-package tooling](#legacy-skill-package-tooling)
 - [Contribute to the training pipeline](#contribute-to-the-training-pipeline)
 - [Prepare a pull request](#prepare-a-pull-request)
 
-The competition is proposed and its rules remain draft. A contribution or a passing local check does not imply competition acceptance, a training allocation, or access to the sealed evaluation suite.
+The current hosted workflow accepts environment collections and configurable experiments through the headless CLI/API. Model, training data, evaluation data, method, and parameters are configurable now; future fixed hackathon protocols do not gate registration. Structural acceptance does not allocate training or establish a verified result. See [hosted collaboration and execution](docs/hf-submission-lab.md).
 
 ## Contribute environments
 
@@ -27,7 +27,7 @@ track: environments
 YAML
 ```
 
-Use a descriptive package name such as `finance-fed-minutes-classify`. One entry is one team directory on one track. The draft environment bounds are 50 minimum, 100 recommended, and 200 maximum; start with one task while developing. The current checker warns below the minimum and fails above the maximum. See the [submission contract](submissions/README.md).
+Use a descriptive package name such as `finance-fed-minutes-classify`. The hosted registry accepts **1–200 environment packages** in a collection. The public repository checker still emits an older draft-minimum warning below 50 and fails above 200; that warning does not impose a 50-package minimum on hosted submissions. See the [collection contract](submissions/README.md).
 
 ### 2. Complete the task package
 
@@ -60,7 +60,7 @@ Both Docker commands must exit successfully. For `--skip-oracle`, success means 
 | Check | Proves | Does not prove |
 | --- | --- | --- |
 | `check_task.py` | Required files, selected frontmatter keys, and prompt section exist | Full YAML schema, allowed vocabulary, or instruction quality |
-| `check_submission.py` | Manifest, package structure, and upper size bound pass | Competition eligibility or final minimum enforcement |
+| `check_submission.py` | Manifest, package structure, and upper size bound pass | Hosted registration, runtime correctness, or training allocation |
 | Oracle replay | Reference solution receives reward `1.0` | Task difficulty or verifier robustness |
 | Empty-trial replay | Doing nothing does not receive full reward | Resistance to other shortcuts, leakage, or reward hacking |
 
@@ -77,11 +77,11 @@ Before requesting review, check that:
 - Task assets have appropriate licenses, provenance, and no credentials or private data.
 - The declared network policy matches actual task needs.
 
-Include both replay results in your pull request. Deeper difficulty, leakage, and adversarial review remain separate from these local tools.
+For a public contribution, include both replay results in your pull request. To register the collection in the hosted arena, use its CLI/API to validate and submit the pinned public repository or dataset; a pull request is not required for hosted registration. Follow [the hosted guide](docs/hf-submission-lab.md) for agent onboarding, matching experiment configuration, supported execution profiles, and evidence review. Deeper difficulty, leakage, and adversarial review remain separate from local structural checks.
 
-## Contribute skills
+## Legacy skill-package tooling
 
-Use a separate team entry with `track: skills` and put each package at `skills/<skill-name>/SKILL.md`. Draft bounds are 20 minimum, 50 recommended, and 100 maximum. Run `python3 scripts/check_submission.py` from the repository root. The current structural checker verifies that `SKILL.md` exists; it does not run a skill evaluation. The environment SFT/GRPO submission bridge does not implement skill-track evaluation.
+The repository retains a `track: skills` structural format from the earlier competition proposal: packages live at `skills/<skill-name>/SKILL.md`; the checker warns below 20 and rejects more than 100. This is not an active hosted skill-submission or frozen-agent evaluation protocol. The current hosted workflow registers `track: environments`. Preserve existing skill packages when maintaining the repository, but do not infer an executable evaluation path from their structural checks.
 
 ## Contribute to the training pipeline
 
@@ -117,7 +117,7 @@ python -m py_compile pipelines/benchflow-task-posttrain/src/posttrainarena/bench
 
 The test extra installs substantial dependencies and pinned upstream Git packages; the tests are designed as no-spend contracts. Keep new tests free of paid service calls. New recipes must pin model/dataset revisions, specify task lists, and document expected compute. Preserve module boundaries: BenchFlow owns tasks and sandbox/verifier lifecycle, OpenCode owns agent interaction, and TRL owns optimization. OpenEnv is a separate protocol adapter.
 
-Use the [HF Jobs guide](docs/hf-jobs.md) for the public launcher. The website's access-controlled Submission Lab is a separate demonstration; public repository access does not grant lab access or authorize a job. Do not equate completed planner output with training, adapter reload with task success, or seen-task success with held-out generalization.
+Use the [HF Jobs guide](docs/hf-jobs.md) for the checked-in OpenCode/TRL launcher. The [hosted Agent Collabs workflow](docs/hf-submission-lab.md) is a separate CLI/API implementation with bounded execution profiles; public repository access does not grant Space access or authorize a job. Do not equate completed planner output with training, adapter reload with task success, or seen-task success with held-out generalization.
 
 ## Prepare a pull request
 
@@ -131,8 +131,8 @@ The `tasks-check` workflow checks package structure and manifests when relevant 
 
 For website bugs or copy fixes, open an issue here with a public URL and reproduction steps; the website is developed separately. For help, see [SUPPORT.md](SUPPORT.md) or [Discord](https://discord.gg/mZ9Rc8q8W3). Report vulnerabilities using [SECURITY.md](SECURITY.md).
 
-## Licensing and competition rules
+## Licensing and future competition rules
 
-Repository code is [AGPL-3.0](LICENSE) unless otherwise noted. Draft submission rules specify CC-BY-4.0 for text/data and Apache-2.0 for code, with participant authorship retained. Consult the final competition rules for entry sizes, phases, release terms, and scoring before submitting a competition entry.
+Repository code is [AGPL-3.0](LICENSE) unless otherwise noted. Include source provenance and applicable licenses for contributed assets. Earlier draft competition proposals named CC-BY-4.0 for text/data and Apache-2.0 for code; those proposals do not establish current hosted acceptance, automatic relicensing, or finalized competition terms. Any future fixed event must publish its own release, scoring, and eligibility rules.
 
 <!-- markdownlint-enable MD013 MD060 -->

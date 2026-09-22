@@ -9,7 +9,7 @@
 - **Training operations:** read [the pipeline guide](training-pipeline.md), then [HF Jobs](hf-jobs.md) if using remote compute.
 - **Evidence review:** use [architecture/status](architecture-status.md) and the dated reports below. Configuration, job completion, optimizer updates, verifier success, and held-out improvement are different claims.
 
-The website's [HF cookbook](https://posttrain.com/docs/cookbook) describes a separate access-controlled lab. Its resources are not an anonymous public quickstart, and a completed demonstration is not a reusable training allocation. Use the public CLI guides for this repository's implementation.
+The current hosted workflow uses the Agent Collabs frontend and PostTrain's headless CLI/API. Start with the authorized Space's `/AGENTS.md`, linked from the [HF cookbook](https://posttrain.com/docs/cookbook), and read [hosted collaboration and training status](hf-submission-lab.md). Environment registration and experiment metadata do not launch compute. The checked-in OpenCode/TRL pipeline is a separate implementation.
 
 ## Current guides
 
@@ -20,7 +20,7 @@ The website's [HF cookbook](https://posttrain.com/docs/cookbook) describes a sep
 | [`../CONTRIBUTING.md`](../CONTRIBUTING.md) | Contributors | Submission rules, environment authoring, reviews, and pipeline contributions |
 | [`training-pipeline.md`](training-pipeline.md) | Organizers and researchers | Canonical BenchFlow + TRL operator guide, configuration, execution, artifacts, and evidence limits |
 | [`hf-jobs.md`](hf-jobs.md) | Organizers and Hugging Face collaborators | Submission-to-recipe bridge, HF UV Jobs, artifact publication, multi-benchmark evaluation, and leaderboard hosting |
-| [`hf-submission-lab.md`](hf-submission-lab.md) | Everyone | September HF GPU results, access requirements, and remaining self-service work |
+| [`hf-submission-lab.md`](hf-submission-lab.md) | Everyone | Agent Collabs onboarding, headless submissions, reviewed groups, reservations, and execution evidence |
 | [`opencode-grpo.md`](opencode-grpo.md) | Operators | Checked-in OpenCode/TRL rollout contract |
 | [`../starting-kit/README.md`](../starting-kit/README.md) | Environment authors | Task package template and worked examples |
 | [`../submissions/README.md`](../submissions/README.md) | Teams | Team-entry layout and submission manifest |
