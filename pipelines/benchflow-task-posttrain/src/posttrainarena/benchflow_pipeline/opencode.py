@@ -6,6 +6,7 @@ import json
 import math
 import os
 from pathlib import Path
+from collections.abc import Mapping
 from typing import Any, Literal
 
 from .config import PipelineConfig
@@ -182,6 +183,33 @@ def _count(summary: dict[str, Any], key: str) -> int:
     return value
 
 
+TIMEOUT_MARKERS = ("wall-clock budget", "idle timeout", "timed out")
+
+
+def is_timeout_error(row: Mapping[str, Any]) -> bool:
+    """An agent that ran out of its wall-clock or idle budget produced a scored failure (reward 0), not an infrastructure error.
+
+    Terminal-Bench and Tmax count such attempts as failures; treating them as unhealthy made every
+    evaluation with one slow task abort (phase-2 run r23 lost its baseline to nine 900 s timeouts).
+    """
+    error = row.get("error")
+    if error is None:
+        return False
+    category = row.get("error_category")
+    if category is not None:
+        return str(category) == "timeout"
+    return any(marker in str(error).lower() for marker in TIMEOUT_MARKERS)
+
+
+def is_scored_row(row: Mapping[str, Any]) -> bool:
+    return (
+        row.get("scored") is True
+        and (row.get("error") is None or is_timeout_error(row))
+        and row.get("verifier_error") is None
+        and row.get("valid_llm_trajectory") is True
+    )
+
+
 def load_summary(
     *,
     jobs_dir: Path,
@@ -207,14 +235,7 @@ def load_summary(
             raise RuntimeError("OpenCode evaluation health summary has no valid rows")
         missing = []
         for task_id in expected_task_ids:
-            valid = any(
-                row.get("task_id") == task_id
-                and row.get("scored") is True
-                and row.get("error") is None
-                and row.get("verifier_error") is None
-                and row.get("valid_llm_trajectory") is True
-                for row in rows
-            )
+            valid = any(row.get("task_id") == task_id and is_scored_row(row) for row in rows)
             if not valid:
                 missing.append(task_id)
         if missing:

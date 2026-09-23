@@ -420,3 +420,24 @@ def test_evaluate_writes_metrics_from_healthy_summary(tmp_path: Path) -> None:
     assert payload["score"] == 0.5
     assert payload["served_model"] == "vllm/student"
     assert json.loads(metrics_path.read_text())["harness"] == "opencode"
+
+
+def test_load_summary_accepts_agent_timeouts_as_scored_failures(tmp_path) -> None:
+    from posttrainarena.benchflow_pipeline.opencode import is_scored_row, load_summary
+
+    (tmp_path / "summary.json").write_text(
+        json.dumps({"total": 2, "errored": 0, "verifier_errored": 0, "telemetry_coverage": 1.0, "score_excl_errors_ratio": 0.5})
+    )
+    health = tmp_path / "health.json"
+    clean = {"task_id": "a", "scored": True, "error": None, "verifier_error": None, "valid_llm_trajectory": True, "reward": 1.0, "tool_calls": 3}
+    timeout = {"task_id": "b", "scored": True, "error": "Agent prompt exceeded wall-clock budget 900s", "error_category": "timeout", "verifier_error": None, "valid_llm_trajectory": True, "reward": 0.0, "tool_calls": 45}
+    _write_health(health, total_rows=2, scored_rows=2, rows_with_tool_calls=2, rows=[clean, timeout])
+    load_summary(jobs_dir=tmp_path, health_path=health, expected_tasks=2, expected_task_ids=["a", "b"])
+    assert is_scored_row(timeout) and is_scored_row(clean)
+    infra = {**timeout, "error": "Agent opencode install failed (rc=127)", "error_category": "install_failure"}
+    assert not is_scored_row(infra)
+    untagged = {**timeout, "error_category": None}
+    assert is_scored_row(untagged)
+    _write_health(health, total_rows=2, scored_rows=2, rows_with_tool_calls=2, rows=[clean, infra])
+    with pytest.raises(RuntimeError, match="no healthy scored rollout for: b"):
+        load_summary(jobs_dir=tmp_path, health_path=health, expected_tasks=2, expected_task_ids=["a", "b"])

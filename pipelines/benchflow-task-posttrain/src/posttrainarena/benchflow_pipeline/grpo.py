@@ -17,7 +17,7 @@ from typing import Any, Sequence
 from .config import BENCHFLOW_COMMIT, PipelineConfig
 from .io import CommandRunner, supported_kwargs, write_json
 from .model_bridge import normalize_tool_call_arguments
-from .opencode import ServedModelRole, evaluate, served_model
+from .opencode import ServedModelRole, evaluate, served_model, is_scored_row
 
 
 TASK_HANDLE_PREFIX = "benchflow-task://"
@@ -1010,13 +1010,7 @@ class OpenCodeRolloutCollector:
             health_row = rows[0]
         else:
             candidates = [
-                row
-                for row in rows
-                if row.get("task_id") == task_id
-                and row.get("scored") is True
-                and row.get("error") is None
-                and row.get("verifier_error") is None
-                and row.get("valid_llm_trajectory") is True
+                row for row in rows if row.get("task_id") == task_id and is_scored_row(row)
             ]
             if not candidates:
                 raise RuntimeError(
