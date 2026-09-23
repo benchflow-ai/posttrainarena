@@ -95,6 +95,22 @@ sqlite3 database.sqlite ".tables"
     }
 
 
+def test_parse_qwen35_duplicate_function_parameter_keeps_last_value() -> None:
+    content, calls = parse_qwen_tool_calls(
+        """
+<tool_call>
+<function=bash>
+<parameter=command>ls</parameter>
+<parameter=command>cat notes.txt</parameter>
+</function>
+</tool_call>
+"""
+    )
+
+    assert content is None
+    assert json.loads(calls[0]["function"]["arguments"]) == {"command": "cat notes.txt"}
+
+
 def test_parse_qwen35_rejects_malformed_function_parameters() -> None:
     with pytest.raises(RuntimeError, match="parameter block"):
         parse_qwen_tool_calls(

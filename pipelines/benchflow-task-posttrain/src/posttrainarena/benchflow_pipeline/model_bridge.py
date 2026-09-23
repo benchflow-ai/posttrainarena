@@ -104,9 +104,15 @@ def parse_qwen_tool_calls(text: str) -> tuple[str | None, list[dict[str, Any]]]:
                 if parameters[consumed : parameter.start()].strip():
                     raise RuntimeError("Malformed Qwen function parameter block")
                 parameter_name = parameter.group(1).strip()
-                if not parameter_name or parameter_name in arguments:
-                    raise RuntimeError(
-                        f"Invalid Qwen function parameter: {parameter_name!r}"
+                if not parameter_name:
+                    raise RuntimeError("Invalid Qwen function parameter: ''")
+                if parameter_name in arguments:
+                    # The policy sometimes repeats a parameter tag; keep the last value
+                    # instead of failing the whole completion (which aborts the rollout).
+                    logger.warning(
+                        "Duplicate Qwen function parameter %r for %r; keeping the last value",
+                        parameter_name,
+                        name,
                     )
                 arguments[parameter_name] = parameter.group(2).strip()
                 consumed = parameter.end()
