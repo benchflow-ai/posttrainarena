@@ -183,6 +183,8 @@ def build_parser() -> argparse.ArgumentParser:
     bridge.add_argument("--max-context-tokens", type=int, default=49152)
     bridge.add_argument("--max-logprob-context-tokens", type=int, default=16384)
     bridge.add_argument("--max-sidecar-entries", type=int, default=2048)
+    bridge.add_argument("--batch-max-requests", type=int, default=16)
+    bridge.add_argument("--batch-wait-seconds", type=float, default=0.05)
     bridge.add_argument("--host", default="0.0.0.0")
     bridge.add_argument("--port", type=int, default=8001)
     return parser
@@ -409,6 +411,8 @@ def main(argv: list[str] | None = None) -> int:
             max_sidecar_entries=args.max_sidecar_entries,
             host=args.host,
             port=args.port,
+            batch_max_requests=args.batch_max_requests,
+            batch_wait_seconds=args.batch_wait_seconds,
         )
         return 0
     config = load_config(args.config)

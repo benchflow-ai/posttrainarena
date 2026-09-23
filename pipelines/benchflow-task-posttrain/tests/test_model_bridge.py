@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+
 import json
 from typing import Any
 
@@ -9,6 +11,7 @@ from fastapi.testclient import TestClient
 from posttrainarena.benchflow_pipeline.model_bridge import (
     ModelBridgeConfig,
     TOOL_OUTPUT_TRUNCATION_MARKER,
+    ChatBatcher,
     create_model_bridge_app,
     fit_messages_to_context,
     normalize_tool_call_arguments,
@@ -775,3 +778,82 @@ def test_model_bridge_rejects_invalid_token_cap() -> None:
             max_tokens_per_call=64,
             max_logprob_context_tokens=64,
         )
+
+
+def _batch_response(payload: dict, tag: str) -> dict:
+    count = len(payload["messages"])
+    return {
+        "prompt_ids": [[10 + index] for index in range(count)],
+        "completion_ids": [[20 + index, 21 + index] for index in range(count)],
+        "logprobs": [[-0.1 * (index + 1), -0.2] for index in range(count)],
+        "logprob_token_ids": [[20 + index, 21 + index] for index in range(count)],
+        "tag": tag,
+    }
+
+
+def test_chat_batcher_merges_concurrent_requests_and_demultiplexes() -> None:
+    calls: list[dict] = []
+
+    async def post(payload: dict) -> dict:
+        calls.append(payload)
+        await asyncio.sleep(0.01)
+        return _batch_response(payload, "batch")
+
+    async def scenario() -> list[dict]:
+        batcher = ChatBatcher(post, max_requests=8, wait_seconds=0.05)
+        base = {"n": 1, "temperature": 1.0, "top_p": 1.0, "top_k": -1, "min_p": 0.0,
+                "max_tokens": 64, "logprobs": 0, "generation_kwargs": {}, "chat_template_kwargs": {}, "tools": None}
+        payloads = [{**base, "messages": [[{"role": "user", "content": f"q{index}"}]]} for index in range(5)]
+        return await asyncio.gather(*(batcher.call(payload) for payload in payloads))
+
+    outputs = asyncio.run(scenario())
+    assert len(calls) == 1
+    assert [conversation[0]["content"] for conversation in calls[0]["messages"]] == ["q0", "q1", "q2", "q3", "q4"]
+    assert calls[0]["max_tokens"] == 64
+    for index, output in enumerate(outputs):
+        assert output["prompt_ids"] == [[10 + index]]
+        assert output["completion_ids"] == [[20 + index, 21 + index]]
+        assert output["logprobs"] == [[-0.1 * (index + 1), -0.2]]
+        assert output["logprob_token_ids"] == [[20 + index, 21 + index]]
+
+
+def test_chat_batcher_separates_incompatible_requests_and_propagates_errors() -> None:
+    calls: list[dict] = []
+
+    async def post(payload: dict) -> dict:
+        calls.append(payload)
+        if payload["max_tokens"] == 7:
+            raise RuntimeError("upstream exploded")
+        return _batch_response(payload, "ok")
+
+    async def scenario() -> list:
+        batcher = ChatBatcher(post, max_requests=8, wait_seconds=0.05)
+        base = {"n": 1, "temperature": 1.0, "top_p": 1.0, "top_k": -1, "min_p": 0.0,
+                "logprobs": 0, "generation_kwargs": {}, "chat_template_kwargs": {}, "tools": None}
+        payloads = [
+            {**base, "max_tokens": 64, "messages": [[{"role": "user", "content": "a"}]]},
+            {**base, "max_tokens": 7, "messages": [[{"role": "user", "content": "b"}]]},
+            {**base, "max_tokens": 64, "tools": [{"type": "function"}], "messages": [[{"role": "user", "content": "c"}]]},
+            {**base, "max_tokens": 64, "messages": [[{"role": "user", "content": "d"}]]},
+        ]
+        return await asyncio.gather(*(batcher.call(payload) for payload in payloads), return_exceptions=True)
+
+    results = asyncio.run(scenario())
+    assert len(calls) == 3
+    sizes = sorted(len(call["messages"]) for call in calls)
+    assert sizes == [1, 1, 2]
+    assert isinstance(results[1], RuntimeError) and "upstream exploded" in str(results[1])
+    assert results[0]["completion_ids"] == [[20, 21]] and results[3]["completion_ids"] == [[21, 22]]
+    assert results[2]["completion_ids"] == [[20, 21]]
+
+
+def test_chat_batcher_rejects_mismatched_upstream_shapes() -> None:
+    async def post(payload: dict) -> dict:
+        return {"prompt_ids": [[1]], "completion_ids": [[2], [3]]}
+
+    async def scenario() -> dict:
+        batcher = ChatBatcher(post, max_requests=8, wait_seconds=0.0)
+        return await batcher.call({"n": 1, "max_tokens": 8, "messages": [[{"role": "user", "content": "a"}]]})
+
+    with pytest.raises(RuntimeError, match="completions for 1 conversations"):
+        asyncio.run(scenario())
