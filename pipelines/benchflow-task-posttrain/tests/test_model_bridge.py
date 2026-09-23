@@ -111,18 +111,36 @@ def test_parse_qwen35_duplicate_function_parameter_keeps_last_value() -> None:
     assert json.loads(calls[0]["function"]["arguments"]) == {"command": "cat notes.txt"}
 
 
-def test_parse_qwen35_rejects_malformed_function_parameters() -> None:
-    with pytest.raises(RuntimeError, match="parameter block"):
-        parse_qwen_tool_calls(
-            """
+def test_parse_qwen35_leaves_malformed_function_call_in_text() -> None:
+    text = """
+thinking
 <tool_call>
 <function=bash>
 unexpected
 <parameter=command>pwd</parameter>
 </function>
 </tool_call>
+<tool_call>
+<function=bash>
+<parameter=command>ls</parameter>
+</function>
+</tool_call>
 """
-        )
+
+    content, calls = parse_qwen_tool_calls(text)
+
+    assert len(calls) == 1
+    assert json.loads(calls[0]["function"]["arguments"]) == {"command": "ls"}
+    assert content is not None
+    assert "unexpected" in content and content.startswith("thinking")
+    assert "<parameter=command>ls</parameter>" not in content
+
+
+def test_parse_qwen_malformed_json_tool_call_is_text_not_error() -> None:
+    content, calls = parse_qwen_tool_calls('<tool_call>{"name": "bash", "arguments": </tool_call>')
+
+    assert calls == []
+    assert content == '<tool_call>{"name": "bash", "arguments": </tool_call>'
 
 
 def test_normalize_tool_call_arguments_for_qwen_chat_template() -> None:

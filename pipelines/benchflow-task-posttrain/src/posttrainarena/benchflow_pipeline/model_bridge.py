@@ -83,62 +83,86 @@ class ModelBridgeConfig:
             raise ValueError("max_sidecar_entries must be a positive integer")
 
 
+def _parse_tool_call_body(body: str) -> dict[str, Any]:
+    if body.startswith("{"):
+        try:
+            payload = json.loads(body)
+        except json.JSONDecodeError as exc:
+            raise RuntimeError(f"Malformed Qwen tool call: {exc}") from exc
+    else:
+        function = FUNCTION_CALL_PATTERN.fullmatch(body)
+        if function is None:
+            raise RuntimeError("Malformed Qwen function-tag tool call")
+        name = function.group(1).strip()
+        arguments: dict[str, str] = {}
+        parameters = function.group(2)
+        consumed = 0
+        for parameter in FUNCTION_PARAMETER_PATTERN.finditer(parameters):
+            if parameters[consumed : parameter.start()].strip():
+                raise RuntimeError("Malformed Qwen function parameter block")
+            parameter_name = parameter.group(1).strip()
+            if not parameter_name:
+                raise RuntimeError("Invalid Qwen function parameter: ''")
+            if parameter_name in arguments:
+                # The policy sometimes repeats a parameter tag; keep the last value
+                # instead of failing the whole completion (which aborts the rollout).
+                logger.warning(
+                    "Duplicate Qwen function parameter %r for %r; keeping the last value",
+                    parameter_name,
+                    name,
+                )
+            arguments[parameter_name] = parameter.group(2).strip()
+            consumed = parameter.end()
+        if parameters[consumed:].strip():
+            raise RuntimeError("Malformed Qwen function parameter block")
+        payload = {"name": name, "arguments": arguments}
+    name = payload.get("name")
+    arguments = payload.get("arguments", {})
+    if not isinstance(name, str) or not name:
+        raise RuntimeError("Qwen tool call has no function name")
+    if not isinstance(arguments, dict):
+        raise RuntimeError("Qwen tool call arguments must be an object")
+    return {"name": name, "arguments": arguments}
+
+
 def parse_qwen_tool_calls(text: str) -> tuple[str | None, list[dict[str, Any]]]:
+    """Split a Qwen completion into assistant text and OpenAI-shaped tool calls.
+
+    A malformed ``<tool_call>`` block is model output, not a bridge fault: it is
+    left in the text (so the agent and the training transcript see what the
+    policy emitted) instead of failing the completion, which would return 500 to
+    OpenCode and abort the rollout.
+    """
     calls: list[dict[str, Any]] = []
+    well_formed: list[tuple[int, int]] = []
     for match in TOOL_CALL_PATTERN.finditer(text):
         body = match.group(1).strip()
-        if body.startswith("{"):
-            try:
-                payload = json.loads(body)
-            except json.JSONDecodeError as exc:
-                raise RuntimeError(f"Malformed Qwen tool call: {exc}") from exc
-        else:
-            function = FUNCTION_CALL_PATTERN.fullmatch(body)
-            if function is None:
-                raise RuntimeError("Malformed Qwen function-tag tool call")
-            name = function.group(1).strip()
-            arguments: dict[str, str] = {}
-            parameters = function.group(2)
-            consumed = 0
-            for parameter in FUNCTION_PARAMETER_PATTERN.finditer(parameters):
-                if parameters[consumed : parameter.start()].strip():
-                    raise RuntimeError("Malformed Qwen function parameter block")
-                parameter_name = parameter.group(1).strip()
-                if not parameter_name:
-                    raise RuntimeError("Invalid Qwen function parameter: ''")
-                if parameter_name in arguments:
-                    # The policy sometimes repeats a parameter tag; keep the last value
-                    # instead of failing the whole completion (which aborts the rollout).
-                    logger.warning(
-                        "Duplicate Qwen function parameter %r for %r; keeping the last value",
-                        parameter_name,
-                        name,
-                    )
-                arguments[parameter_name] = parameter.group(2).strip()
-                consumed = parameter.end()
-            if parameters[consumed:].strip():
-                raise RuntimeError("Malformed Qwen function parameter block")
-            payload = {"name": name, "arguments": arguments}
-        name = payload.get("name")
-        arguments = payload.get("arguments", {})
-        if not isinstance(name, str) or not name:
-            raise RuntimeError("Qwen tool call has no function name")
-        if not isinstance(arguments, dict):
-            raise RuntimeError("Qwen tool call arguments must be an object")
+        try:
+            payload = _parse_tool_call_body(body)
+        except RuntimeError as exc:
+            logger.warning("Leaving malformed Qwen tool call in the text: %s", exc)
+            continue
+        well_formed.append(match.span())
         calls.append(
             {
                 "id": f"call_{uuid4().hex}",
                 "type": "function",
                 "function": {
-                    "name": name,
+                    "name": payload["name"],
                     "arguments": json.dumps(
-                        arguments,
+                        payload["arguments"],
                         separators=(",", ":"),
                     ),
                 },
             }
         )
-    remaining = TOOL_CALL_PATTERN.sub("", text).strip()
+    pieces = []
+    cursor = 0
+    for begin, finish in well_formed:
+        pieces.append(text[cursor:begin])
+        cursor = finish
+    pieces.append(text[cursor:])
+    remaining = "".join(pieces).strip()
     return remaining or None, calls
 
 
