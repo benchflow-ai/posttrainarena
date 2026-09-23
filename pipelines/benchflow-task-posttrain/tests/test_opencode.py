@@ -441,3 +441,32 @@ def test_load_summary_accepts_agent_timeouts_as_scored_failures(tmp_path) -> Non
     _write_health(health, total_rows=2, scored_rows=2, rows_with_tool_calls=2, rows=[clean, infra])
     with pytest.raises(RuntimeError, match="no healthy scored rollout for: b"):
         load_summary(jobs_dir=tmp_path, health_path=health, expected_tasks=2, expected_task_ids=["a", "b"])
+
+
+def test_load_summary_tolerates_bounded_infra_errors_as_failures(tmp_path) -> None:
+    from posttrainarena.benchflow_pipeline.opencode import load_summary
+
+    jobs_dir = tmp_path / "jobs"; jobs_dir.mkdir()
+    (jobs_dir / "summary.json").write_text(json.dumps({"total": 4, "passed": 1, "errored": 1, "verifier_errored": 0, "telemetry_coverage": 0.75, "score_excl_errors_ratio": 1 / 3, "score_ratio": 0.25}))
+    health = tmp_path / "health.json"
+    ok = lambda tid, reward: {"task_id": tid, "scored": True, "error": None, "verifier_error": None, "valid_llm_trajectory": True, "reward": reward, "tool_calls": 2}
+    broken = {"task_id": "d", "scored": False, "error": "DaytonaConnectionTimeoutError", "error_category": "other", "verifier_error": None, "valid_llm_trajectory": False, "reward": None, "tool_calls": 0}
+    _write_health(health, total_rows=4, scored_rows=3, unscored_rows=1, rows_with_tool_calls=3, rows=[ok("a", 1.0), ok("b", 0.0), ok("c", 0.0), broken])
+    with pytest.raises(RuntimeError, match="agent or verifier errors"):
+        load_summary(jobs_dir=jobs_dir, health_path=health, expected_tasks=4, expected_task_ids=["a", "b", "c", "d"])
+    payload = load_summary(jobs_dir=jobs_dir, health_path=health, expected_tasks=4, expected_task_ids=["a", "b", "c", "d"], max_infra_errors=1)
+    assert payload["infra_error_tasks"] == ["d"]
+    assert payload["score"] == 0.25  # the errored task counts as a failure, not excluded
+    # a task that was never attempted is still a hard failure
+    _write_health(health, total_rows=3, scored_rows=3, rows_with_tool_calls=3, rows=[ok("a", 1.0), ok("b", 0.0), ok("c", 0.0)])
+    with pytest.raises(RuntimeError, match="no healthy scored rollout for: d"):
+        load_summary(jobs_dir=jobs_dir, health_path=health, expected_tasks=4, expected_task_ids=["a", "b", "c", "d"], max_infra_errors=1)
+
+
+def test_max_infra_errors_for_rounds_up() -> None:
+    from dataclasses import replace
+    from posttrainarena.benchflow_pipeline.opencode import max_infra_errors_for
+
+    config = _config()
+    assert max_infra_errors_for(config, 32) == 4
+    assert max_infra_errors_for(replace(config, harness=replace(config.harness, max_infra_error_fraction=0.0)), 32) == 0

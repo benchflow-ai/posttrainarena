@@ -45,6 +45,7 @@ def test_plan_exposes_public_stage_contract(tmp_path: Path) -> None:
         "agent_idle_timeout_sec": 300,
         "agent_timeout_sec": 900,
         "reasoning_effort": None,
+        "max_infra_error_fraction": 0.1,
     }
     assert plan["evaluation"] == {
         "base_model_env": "BENCHFLOW_BASE_MODEL",

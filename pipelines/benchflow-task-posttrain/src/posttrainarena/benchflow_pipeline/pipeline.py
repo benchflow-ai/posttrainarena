@@ -645,7 +645,7 @@ class Pipeline:
         metrics_path: Path,
         policy_sha256: str,
     ) -> float:
-        from .opencode import load_summary, served_model
+        from .opencode import load_summary, max_infra_errors_for, served_model
 
         payload = load_json(metrics_path)
         expected = {
@@ -669,6 +669,7 @@ class Pipeline:
             health_path=metrics_path.with_name(f"{metrics_path.stem}_health.json"),
             expected_tasks=len(task_ids),
             expected_task_ids=task_ids,
+            max_infra_errors=max_infra_errors_for(self.config, len(task_ids)),
         )
         score = load_score(metrics_path)
         if not math.isclose(score, float(loaded["score"]), rel_tol=0, abs_tol=1e-12):
