@@ -178,7 +178,9 @@ def pin_weight_sync_device(trainer: Any) -> bool:
     client = getattr(getattr(trainer, "vllm_generation", None), "vllm_client", None)
     if client is None or getattr(client, "_pta_weight_sync_pinned", False):
         return False
-    original = client.update_named_param
+    original = getattr(client, "update_named_param", None)
+    if not callable(original):
+        return False
 
     def update_named_param(name: str, weights: Any) -> Any:
         device = getattr(getattr(client, "communicator", None), "device", None)
