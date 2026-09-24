@@ -185,6 +185,7 @@ Dry-run records the full possible path, including conditional GRPO. Therefore
 | `[model]` | Base model ID and immutable model revision |
 | `[train_dataset]` | HF task repository, revision, path, and training task-list file |
 | `[eval_dataset]` | Separate HF repository/revision and held-out task-list file |
+| `[[eval_suites]]` | Alternative to `[eval_dataset]`: several named held-out suites (see "Held-out suites and trials") |
 | `[runtime]` | Daytona/Docker sandbox, GRPO completion-token budget, and generation count |
 | `[harness]` | Required OpenCode contract, skill mode, telemetry, concurrency, and setup/idle/wall-clock timeouts for teacher collection, evaluation, and GRPO rollouts |
 | `[evaluation]` | Environment-variable names for the served base/student model aliases and OpenAI-compatible endpoint credentials |
@@ -197,6 +198,60 @@ Dry-run records the full possible path, including conditional GRPO. Therefore
 Training and eval task IDs must be non-empty and disjoint. Dataset and model
 revisions should be immutable commit SHAs. Add explicit task-list files for new
 recipes instead of hiding task selection in code.
+
+## Held-out suites and trials
+
+A recipe can evaluate several held-out suites, each several times. Use `[[eval_suites]]` instead of `[eval_dataset]` (setting both is an error) and set `trials` in `[evaluation]`:
+
+```toml
+[[eval_suites]]
+name = "tb2"                     # unique, ^[a-z0-9][a-z0-9._-]*$; used in paths and score.json
+repo_id = "benchflow/tb2-benchflow"
+revision = "7505daf9bdc8cec27a76f6086c94e4c04dc3e758"
+path = ""                        # optional, default "tasks"
+task_list = "../task-lists/tb2-86.txt"
+
+[[eval_suites]]
+name = "lhtb"
+repo_id = "benchflow/lhtb-nongame-benchflow"
+revision = "<40-character SHA>"
+path = ""
+task_list = "../task-lists/lhtb-38.txt"
+
+[evaluation]
+trials = 3                       # default 1
+```
+
+The baseline and the final held-out evaluation (SFT or GRPO) run every suite × trial as a separate `bench eval run`. The GRPO gate still evaluates the first `gate_task_count` training tasks once. Every suite must be disjoint from the training tasks, by ID and by content digest.
+
+The first suite is the primary suite. Its first trial keeps the single-suite stage names and paths (`baseline_eval`, `jobs/baseline`, `results/baseline_eval.json`, and the same for `posttrain`), and the legacy `score.json` fields (`schema_version: 1`, `baseline_score`, `score_after_posttrain`, `delta_score`, `eval_task_ids`, `eval_dataset`) describe only that evaluation. Collectors written for one suite and one trial therefore keep working. The other evaluations run as stages named `<stage>.<suite>.tNN` under `jobs/<stage-dir>-suites/<suite>/trial-NN` and `results/<stage>-suites/<suite>/trial-NN.json`. Suites after the first snapshot into `data/eval-<suite>`. A legacy `[eval_dataset]` recipe is a single suite named `eval` and produces the same artifacts as before, plus the new fields.
+
+`score.json` gains a `score_v2` object (`schema_version: 2`):
+
+```text
+score_v2
+  metric "pass@1", pass_threshold 1.0, trials, primary_suite, baseline_stage, final_stage
+  suites[]            one entry per suite, in recipe order
+    name, dataset, task_count
+    baseline / final  task_count, scored_task_count, unscored_task_ids, cells, infra_error_cells,
+                      pass_rate, stderr, ci95, mean_reward, trial_pass_rates
+    delta             paired_task_count, excluded_task_ids, baseline_pass_rate, final_pass_rate,
+                      delta, stderr, ci95, variance_components {total, trial, task}, stderr_fixed_tasks
+  pooled              task_count, baseline, final, delta (same fields, suites combined)
+  stderr_method       the formula below, in words
+```
+
+`final` and `delta` are null when no post-training evaluation ran. `reports/eval_task_outcomes.json` keeps the per-task, per-trial reward, pass flag and infra-error flag of every cell. It holds sealed held-out results, so treat it like the per-task `result.json` files under `jobs/`.
+
+How the numbers are computed (also in `heldout.py`):
+
+- A cell is one task in one trial. It passes when the verifier reward is at least 1.0 (BenchFlow's "passed"). A cell with no healthy scored rollout is an infrastructure error: it is excluded and counted in `infra_error_cells`, not scored 0. Agent timeouts that the verifier scored are failures, as in Terminal-Bench. The legacy `baseline_score` keeps its old rule, which counts tolerated infrastructure errors as failures, so it can differ from `score_v2` when such errors occur.
+- Per task, `ybar_i` is the mean pass over the trials that scored. A suite's pass rate is the mean of `ybar_i` over tasks that scored at least once.
+- Δ uses only tasks scored in both arms: `d_i = ybar_i(final) − ybar_i(baseline)` and `Δ = mean(d_i)`. `delta.baseline_pass_rate` and `delta.final_pass_rate` are computed on that paired set, so `Δ` equals their difference.
+- `SE(Δ) = sqrt(s_d² / n)`, where `s_d²` is the sample variance (n − 1 denominator) of `d_i` over the n paired tasks. This treats the tasks as a sample from the population the suite stands for, and the trials as independent draws within each task. Its expectation is `σ²_task + mean_i(σ²_base,i / K_base,i + σ²_final,i / K_final,i)`, so it includes both the spread of the true effect between tasks and the trial noise, which falls with more trials. This is the task-clustered, paired standard error of Miller, "Adding Error Bars to Evals" (arXiv 2411.00640).
+- When every paired task has at least two scored trials in both arms, the trial part is also estimated on its own: `w = mean_i(v_base,i / K_base,i + v_final,i / K_final,i)`, with `v` the within-task variance across trials. It is reported as `variance_components.trial`, with `variance_components.task = max(0, s_d² − w)` and `stderr_fixed_tasks = sqrt(w / n)`. `stderr_fixed_tasks` is the standard error for this exact task set if only trials were repeated. More trials shrink the trial part; only more tasks shrink the task part.
+- Pooled over suites, each suite is a stratum and every paired task has equal weight: `Δ_pooled = Σ_s n_s Δ_s / N` and `SE_pooled = sqrt(Σ_s (n_s / N)² SE_s²)`. Pass rates are pooled the same way. `ci95` is the normal approximation `± 1.96 SE`. With fewer than about 30 paired tasks, a t interval would be somewhat wider.
+- Trials give independent samples only if generation is stochastic (temperature above 0) or the environment is. At temperature 0 with deterministic tasks, repeated trials add little information.
 
 ## Credentials
 
@@ -355,6 +410,7 @@ runs/<run-name>/
     sft_conversion.json
     EVAL_LIFT.md
     eval_lift.json
+    eval_task_outcomes.json   per-task, per-trial held-out outcomes (sealed)
     SCORE.md
     score.json
 ```

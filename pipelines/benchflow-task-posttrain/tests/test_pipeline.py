@@ -54,6 +54,7 @@ def test_plan_exposes_public_stage_contract(tmp_path: Path) -> None:
         "control_url_env": "BENCHFLOW_MODEL_BRIDGE_CONTROL_URL",
         "api_key_env": "BENCHFLOW_PROVIDER_API_KEY",
         "sync_base_to_vllm": False,
+        "trials": 1,
     }
     assert plan["harness_migration"] == {
         "applied_stages": ["teacher", "evaluation", "grpo"],

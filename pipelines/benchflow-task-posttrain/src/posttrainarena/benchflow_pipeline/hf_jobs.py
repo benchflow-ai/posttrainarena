@@ -50,12 +50,19 @@ def create_job_bundle(
     shutil.rmtree(output_dir, ignore_errors=True)
     task_lists = output_dir / "task-lists"
     task_lists.mkdir(parents=True)
-    for table_name in ("train_dataset", "eval_dataset"):
-        table = data[table_name]
+    tables = [
+        (table_name, data[table_name])
+        for table_name in ("train_dataset", "eval_dataset")
+        if table_name in data
+    ]
+    tables.extend(
+        (f"eval_suite-{suite['name']}", suite) for suite in data.get("eval_suites", [])
+    )
+    for label, table in tables:
         task_list = Path(str(table["task_list"])).expanduser()
         if not task_list.is_absolute():
             task_list = (source.parent / task_list).resolve()
-        destination = task_lists / f"{table_name}.txt"
+        destination = task_lists / f"{label}.txt"
         shutil.copy2(task_list, destination)
         table["task_list"] = f"task-lists/{destination.name}"
     data.setdefault("output", {})["root"] = "runs"

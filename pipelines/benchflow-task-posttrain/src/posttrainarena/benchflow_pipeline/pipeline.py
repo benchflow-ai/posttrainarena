@@ -13,7 +13,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from .config import BENCHFLOW_COMMIT, DatasetConfig, PipelineConfig
+from .config import BENCHFLOW_COMMIT, DatasetConfig, EvalSuiteConfig, PipelineConfig
 from .io import (
     CommandRunner,
     directory_sha256,
@@ -169,10 +169,17 @@ class Pipeline:
         self.dry_run = dry_run
         self.resume = resume
         self.train_task_ids = read_task_ids(config.train_dataset.task_list)
-        self.eval_task_ids = read_task_ids(config.eval_dataset.task_list)
-        if not self.train_task_ids or not self.eval_task_ids:
+        self.suite_task_ids = {
+            suite.name: read_task_ids(suite.dataset.task_list) for suite in config.suites
+        }
+        # Legacy fields (plan, score.json, eval_task_ids.txt) describe the primary suite.
+        self.eval_task_ids = self.suite_task_ids[config.suites[0].name]
+        if not self.train_task_ids or not all(self.suite_task_ids.values()):
             raise ValueError("Training and eval task lists must both be non-empty")
-        overlap = sorted(set(self.train_task_ids) & set(self.eval_task_ids))
+        all_eval_ids = {
+            task_id for task_ids in self.suite_task_ids.values() for task_id in task_ids
+        }
+        overlap = sorted(set(self.train_task_ids) & all_eval_ids)
         if overlap:
             raise ValueError(
                 "Training and eval task IDs must be disjoint; overlap: "
@@ -192,6 +199,7 @@ class Pipeline:
             "eval_task_count": len(self.eval_task_ids),
             "train_task_ids": list(self.train_task_ids),
             "eval_task_ids": list(self.eval_task_ids),
+            "eval_suites": self._suite_plan(),
             "runtime": asdict(self.config.runtime),
             "harness": asdict(self.config.harness),
             "evaluation": asdict(self.config.evaluation),
@@ -227,6 +235,108 @@ class Pipeline:
             ],
         }
 
+    def _suite_plan(self) -> list[dict[str, Any]]:
+        return [
+            {
+                "name": suite.name,
+                **asdict(suite.dataset),
+                "task_count": len(self.suite_task_ids[suite.name]),
+                "task_ids": list(self.suite_task_ids[suite.name]),
+            }
+            for suite in self.config.suites
+        ]
+
+    def _suite_snapshot(self, index: int, suite: EvalSuiteConfig) -> tuple[str, Path]:
+        """Snapshot label and directory; the primary suite keeps the legacy `eval` names."""
+        if index == 0:
+            return "eval", self.layout.eval_tasks
+        return f"eval-{suite.name}", self.layout.root / "data" / f"eval-{suite.name}"
+
+    def _heldout_cells(self, *, stage: str, jobs_name: str) -> list[dict[str, Any]]:
+        """Every (suite, trial) evaluation of one held-out stage, in run order.
+
+        The primary suite's first trial keeps the legacy stage name and paths
+        (`jobs/<jobs_name>`, `results/<stage>.json`) that single-suite collectors read; the
+        other cells live under `jobs/<jobs_name>-suites/<suite>/trial-NN` and
+        `results/<stage>-suites/<suite>/trial-NN.json`.
+        """
+        cells = []
+        for index, suite in enumerate(self.config.suites):
+            _, tasks_dir = self._suite_snapshot(index, suite)
+            for trial in range(1, self.config.evaluation.trials + 1):
+                primary = index == 0 and trial == 1
+                cells.append(
+                    {
+                        "suite": suite.name,
+                        "trial": trial,
+                        "stage": (
+                            stage if primary else f"{stage}.{suite.name}.t{trial:02d}"
+                        ),
+                        "tasks_dir": tasks_dir,
+                        "task_ids": self.suite_task_ids[suite.name],
+                        "jobs_dir": (
+                            self.layout.jobs / jobs_name
+                            if primary
+                            else self.layout.jobs
+                            / f"{jobs_name}-suites"
+                            / suite.name
+                            / f"trial-{trial:02d}"
+                        ),
+                        "metrics_path": (
+                            self.layout.results / f"{stage}.json"
+                            if primary
+                            else self.layout.results
+                            / f"{stage}-suites"
+                            / suite.name
+                            / f"trial-{trial:02d}.json"
+                        ),
+                    }
+                )
+        return cells
+
+    def _evaluate_heldout(
+        self,
+        *,
+        stage: str,
+        jobs_name: str,
+        model: str,
+        policy_sha256: str,
+    ) -> dict[str, Any]:
+        """Evaluate one policy on every held-out suite × trial.
+
+        Returns the primary score (primary suite, trial 1: the legacy score.json value) and
+        the per-task outcomes of every cell for the multi-suite report.
+        """
+        from .heldout import cell_outcomes
+
+        cells = []
+        for cell in self._heldout_cells(stage=stage, jobs_name=jobs_name):
+            payload = self._evaluate_payload(
+                stage=cell["stage"],
+                model=model,
+                tasks_dir=cell["tasks_dir"],
+                task_ids=cell["task_ids"],
+                jobs_dir=cell["jobs_dir"],
+                metrics_path=cell["metrics_path"],
+                policy_sha256=policy_sha256,
+            )
+            score = payload.get("score")
+            cells.append(
+                {
+                    "suite": cell["suite"],
+                    "trial": cell["trial"],
+                    "stage": cell["stage"],
+                    "jobs_dir": str(cell["jobs_dir"]),
+                    "score": None if score is None else float(score),
+                    "outcomes": cell_outcomes(payload, cell["task_ids"]),
+                }
+            )
+        return {
+            "stage": stage,
+            "primary_score": cells[0]["score"],
+            "cells": cells,
+        }
+
     def run(self) -> dict[str, Any]:
         os.environ.setdefault("WANDB_PROJECT", self.config.tracking.project)
         self._prepare_run_plan()
@@ -242,29 +352,33 @@ class Pipeline:
             self.train_task_ids,
             self.layout.train_tasks,
         )
-        self._snapshot(
-            "eval", self.config.eval_dataset, self.eval_task_ids, self.layout.eval_tasks
-        )
+        for index, suite in enumerate(self.config.suites):
+            label, tasks_dir = self._suite_snapshot(index, suite)
+            self._snapshot(
+                label, suite.dataset, self.suite_task_ids[suite.name], tasks_dir
+            )
         if not self.dry_run:
             self._validate_task_content_isolation()
-        baseline_path = self.layout.results / "baseline_eval.json"
         baseline_jobs = self.layout.jobs / "baseline"
+        baseline_done = all(
+            Path(cell["metrics_path"]).is_file()
+            for cell in self._heldout_cells(stage="baseline_eval", jobs_name="baseline")
+        )
         if self.config.evaluation.sync_base_to_vllm and not (
-            self.resume and baseline_path.is_file()
+            self.resume and baseline_done
         ):
             self._sync_base_endpoint()
-        baseline_score = self._evaluate(
+        baseline_heldout = self._evaluate_heldout(
             stage="baseline_eval",
+            jobs_name="baseline",
             model=self.config.model,
-            tasks_dir=self.layout.eval_tasks,
-            task_ids=self.eval_task_ids,
-            jobs_dir=baseline_jobs,
-            metrics_path=baseline_path,
             policy_sha256=_reference_sha256(
                 self.config.model,
                 revision=self.config.model_revision,
             ),
         )
+        baseline_score = baseline_heldout["primary_score"]
+        final_heldout: dict[str, Any] | None = None
         final_model = self.config.model
         final_score = baseline_score
         final_jobs = baseline_jobs
@@ -280,17 +394,14 @@ class Pipeline:
                 checkpoint=Path(final_model),
                 stage="sft",
             )
-            sft_path = self.layout.results / "sft_eval.json"
             final_jobs = self.layout.jobs / "sft"
-            sft_score = self._evaluate(
+            final_heldout = self._evaluate_heldout(
                 stage="sft_eval",
+                jobs_name="sft",
                 model=final_model,
-                tasks_dir=self.layout.eval_tasks,
-                task_ids=self.eval_task_ids,
-                jobs_dir=final_jobs,
-                metrics_path=sft_path,
                 policy_sha256=self._policy_sha256(final_model),
             )
+            sft_score = final_heldout["primary_score"]
             final_score = sft_score
         if self.config.grpo.enabled:
             gate_ids = self.train_task_ids[: max(1, self.config.grpo.gate_task_count)]
@@ -315,15 +426,13 @@ class Pipeline:
             )
             final_model = grpo_model
             final_jobs = self.layout.jobs / "posttrain"
-            final_score = self._evaluate(
+            final_heldout = self._evaluate_heldout(
                 stage="posttrain_eval",
+                jobs_name="posttrain",
                 model=final_model,
-                tasks_dir=self.layout.eval_tasks,
-                task_ids=self.eval_task_ids,
-                jobs_dir=final_jobs,
-                metrics_path=self.layout.results / "posttrain_eval.json",
                 policy_sha256=self._policy_sha256(final_model),
             )
+            final_score = final_heldout["primary_score"]
         if self.config.sft.enabled or grpo_planned:
             self.runner.run(
                 "compare_eval_lift",
@@ -349,6 +458,8 @@ class Pipeline:
             final_model=final_model,
             grpo_planned=grpo_planned,
             grpo_ran=grpo_ran,
+            baseline_heldout=baseline_heldout,
+            final_heldout=final_heldout,
         )
 
     def _prepare_run_plan(self) -> None:
@@ -589,13 +700,15 @@ class Pipeline:
             )
             for task_id in self.train_task_ids
         }
-        eval_digests = {
-            task_id: self._task_package_sha256(
-                self.layout.eval_tasks / task_id,
-                normalize_task_name=True,
-            )
-            for task_id in self.eval_task_ids
-        }
+        eval_digests = {}
+        for index, suite in enumerate(self.config.suites):
+            _, tasks_dir = self._suite_snapshot(index, suite)
+            label = "" if len(self.config.suites) == 1 else f"{suite.name}/"
+            for task_id in self.suite_task_ids[suite.name]:
+                eval_digests[label + task_id] = self._task_package_sha256(
+                    tasks_dir / task_id,
+                    normalize_task_name=True,
+                )
         by_train_digest = {digest: task_id for task_id, digest in train_digests.items()}
         overlaps = [
             (by_train_digest[digest], eval_task_id)
@@ -632,14 +745,43 @@ class Pipeline:
         metrics_path: Path,
         policy_sha256: str,
     ) -> float | None:
+        score = self._evaluate_payload(
+            stage=stage,
+            model=model,
+            tasks_dir=tasks_dir,
+            task_ids=task_ids,
+            jobs_dir=jobs_dir,
+            metrics_path=metrics_path,
+            policy_sha256=policy_sha256,
+        )["score"]
+        return None if score is None else float(score)
+
+    def _evaluate_payload(
+        self,
+        *,
+        stage: str,
+        model: str,
+        tasks_dir: Path,
+        task_ids: list[str],
+        jobs_dir: Path,
+        metrics_path: Path,
+        policy_sha256: str,
+    ) -> dict[str, Any]:
         if self.resume and metrics_path.is_file():
-            return self._load_resumed_evaluation(
+            score = self._load_resumed_evaluation(
                 model=model,
                 task_ids=task_ids,
                 jobs_dir=jobs_dir,
                 metrics_path=metrics_path,
                 policy_sha256=policy_sha256,
             )
+            return {
+                **load_json(metrics_path),
+                "score": score,
+                "health": load_json(
+                    metrics_path.with_name(f"{metrics_path.stem}_health.json")
+                ),
+            }
         if self.resume:
             if jobs_dir.exists():
                 shutil.rmtree(jobs_dir)
@@ -651,7 +793,7 @@ class Pipeline:
                 artifact.unlink(missing_ok=True)
         from .opencode import evaluate
 
-        payload = evaluate(
+        return evaluate(
             config=self.config,
             runner=self.runner,
             stage=stage,
@@ -662,8 +804,6 @@ class Pipeline:
             metrics_path=metrics_path,
             policy_sha256=policy_sha256,
         )
-        score = payload["score"]
-        return None if score is None else float(score)
 
     def _load_resumed_evaluation(
         self,
@@ -1014,9 +1154,13 @@ class Pipeline:
         if self.resume:
             for path in (
                 self.layout.jobs / "sft",
+                self.layout.jobs / "sft-suites",
                 self.layout.jobs / "grpo-gate",
                 self.layout.jobs / "grpo-train",
                 self.layout.jobs / "posttrain",
+                self.layout.jobs / "posttrain-suites",
+                self.layout.results / "sft_eval-suites",
+                self.layout.results / "posttrain_eval-suites",
                 self.layout.sft_adapter,
                 Path(output_model),
                 self.layout.grpo_adapter,
@@ -1105,6 +1249,8 @@ class Pipeline:
             for path in (
                 jobs_dir,
                 self.layout.jobs / "posttrain",
+                self.layout.jobs / "posttrain-suites",
+                self.layout.results / "posttrain_eval-suites",
                 self.layout.grpo_adapter,
                 Path(output_model),
             ):
@@ -1241,7 +1387,13 @@ class Pipeline:
         final_model: str,
         grpo_planned: bool,
         grpo_ran: bool,
+        baseline_heldout: dict[str, Any] | None = None,
+        final_heldout: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
+        score_v2 = self._heldout_report(
+            baseline_heldout=baseline_heldout,
+            final_heldout=final_heldout,
+        )
         delta = (
             None
             if baseline_score is None or final_score is None
@@ -1311,6 +1463,9 @@ class Pipeline:
             "train_dataset": asdict(self.config.train_dataset),
             "eval_dataset": asdict(self.config.eval_dataset),
             "commands": self.runner.commands,
+            # Legacy fields above describe the primary suite, trial 1. score_v2 covers every
+            # held-out suite × trial with per-suite and pooled pass rates, deltas and stderrs.
+            "score_v2": score_v2,
         }
         write_json(self.layout.reports / "score.json", summary)
         self.layout.reports.mkdir(parents=True, exist_ok=True)
@@ -1331,11 +1486,115 @@ class Pipeline:
                     f"- GRPO effective update: `{grpo_effective_update}`",
                     f"- Training tasks: `{len(self.train_task_ids)}`",
                     f"- Eval tasks: `{len(self.eval_task_ids)}`",
+                    *self._heldout_markdown(score_v2),
                     "",
                 ]
             )
         )
         return summary
+
+    def _heldout_report(
+        self,
+        *,
+        baseline_heldout: dict[str, Any] | None,
+        final_heldout: dict[str, Any] | None,
+    ) -> dict[str, Any] | None:
+        """score_v2 plus reports/eval_task_outcomes.json (per-task, per-trial results)."""
+        if baseline_heldout is None:
+            return None
+        from .heldout import score_report
+
+        def by_suite(heldout: dict[str, Any] | None, name: str) -> list[Any] | None:
+            if heldout is None:
+                return None
+            outcomes = [
+                cell["outcomes"]
+                for cell in sorted(heldout["cells"], key=lambda cell: cell["trial"])
+                if cell["suite"] == name
+            ]
+            return None if any(item is None for item in outcomes) else outcomes
+
+        suites = [
+            {
+                "name": suite.name,
+                "dataset": asdict(suite.dataset),
+                "task_ids": self.suite_task_ids[suite.name],
+                "baseline": by_suite(baseline_heldout, suite.name),
+                "final": by_suite(final_heldout, suite.name),
+            }
+            for suite in self.config.suites
+        ]
+        report = score_report(
+            suites=suites,
+            trials=self.config.evaluation.trials,
+            baseline_stage=baseline_heldout["stage"],
+            final_stage=final_heldout["stage"] if final_heldout else None,
+        )
+        write_json(
+            self.layout.reports / "eval_task_outcomes.json",
+            {
+                "schema_version": 1,
+                "pass_threshold": report["pass_threshold"],
+                "arms": {
+                    arm: (
+                        None
+                        if heldout is None
+                        else {
+                            "stage": heldout["stage"],
+                            "cells": [
+                                {
+                                    key: cell[key]
+                                    for key in (
+                                        "suite",
+                                        "trial",
+                                        "stage",
+                                        "jobs_dir",
+                                        "score",
+                                        "outcomes",
+                                    )
+                                }
+                                for cell in heldout["cells"]
+                            ],
+                        }
+                    )
+                    for arm, heldout in (
+                        ("baseline", baseline_heldout),
+                        ("final", final_heldout),
+                    )
+                },
+            },
+        )
+        return report
+
+    @staticmethod
+    def _heldout_markdown(score_v2: dict[str, Any] | None) -> list[str]:
+        if not score_v2:
+            return []
+
+        def pct(value: float | None) -> str:
+            return "n/a" if value is None else f"{100 * value:.1f}%"
+
+        def pp(value: float | None) -> str:
+            return "n/a" if value is None else f"{100 * value:+.1f} pp"
+
+        lines = [
+            "",
+            f"## Held-out suites ({score_v2['trials']} trial(s) each)",
+            "",
+            "| Suite | Tasks | Before | After | Delta | SE |",
+            "|---|---|---|---|---|---|",
+        ]
+        rows = [*score_v2["suites"], {"name": "pooled", **score_v2["pooled"]}]
+        for row in rows:
+            delta = row.get("delta") or {}
+            lines.append(
+                f"| {row['name']} | {row['task_count']} "
+                f"| {pct((row.get('baseline') or {}).get('pass_rate'))} "
+                f"| {pct((row.get('final') or {}).get('pass_rate'))} "
+                f"| {pp(delta.get('delta'))} "
+                f"| {pp(delta.get('stderr')).lstrip('+')} |"
+            )
+        return lines
 
     def reset_run(self) -> None:
         if self.layout.root.exists():
