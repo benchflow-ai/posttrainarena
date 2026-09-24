@@ -185,6 +185,11 @@ class Pipeline:
                 "Training and eval task IDs must be disjoint; overlap: "
                 + ", ".join(overlap)
             )
+        from .sampler import coverage_problem
+
+        problem = coverage_problem(config, self.train_task_ids)
+        if problem:
+            raise ValueError(problem)
 
     def plan(self) -> dict[str, Any]:
         return {
@@ -420,6 +425,7 @@ class Pipeline:
             grpo_input_model = final_model
             grpo_model = str(self.layout.grpo_merged)
             self._train_grpo(input_model=grpo_input_model, output_model=grpo_model)
+            self._write_grpo_reports()
             self._sync_student_endpoint(
                 checkpoint=Path(grpo_model),
                 stage="grpo",
@@ -1257,6 +1263,8 @@ class Pipeline:
                 if path.exists():
                     shutil.rmtree(path)
             for artifact in (
+                self.layout.reports / "train_task_stats.json",
+                self.layout.reports / "train_sampler.json",
                 self.layout.results / "grpo_endpoint_sync.json",
                 self.layout.results / "posttrain_eval.json",
                 self.layout.results / "posttrain_eval_health.json",
@@ -1280,6 +1288,19 @@ class Pipeline:
             output_dir=Path(output_model),
             run_name=f"{self.run_name}-grpo",
         )
+
+    def _write_grpo_reports(self) -> None:
+        """Copy per-task GRPO accounting and the sampler log from the checkpoint to reports/."""
+        metrics_path = self.layout.grpo_merged / "train_metrics.json"
+        if self.dry_run or not metrics_path.is_file():
+            return
+        metrics = load_json(metrics_path)
+        for key, name in (
+            ("task_stats", "train_task_stats.json"),
+            ("sampler", "train_sampler.json"),
+        ):
+            if isinstance(metrics.get(key), dict):
+                write_json(self.layout.reports / name, metrics[key])
 
     def _grpo_checkpoint_is_current(
         self,
@@ -1407,11 +1428,28 @@ class Pipeline:
             reward_groups = dict(grpo_metrics.get("reward_group_diagnostics") or {})
             reward_groups.pop("groups", None)
             lora_b_update = dict(grpo_metrics.get("lora_b_update_diagnostics") or {})
+            task_stats = grpo_metrics.get("task_stats") or {}
+            sampler = grpo_metrics.get("sampler") or {}
             grpo_training = {
                 "training_recipe": grpo_metrics.get("training_recipe"),
                 "metrics": grpo_metrics.get("metrics"),
                 "reward_groups": reward_groups,
                 "lora_b_update": lora_b_update,
+                # Full per-task accounting: reports/train_task_stats.json and train_sampler.json.
+                "task_coverage": (
+                    {
+                        "sampler": sampler.get("sampler"),
+                        "seed": sampler.get("seed"),
+                        "task_count": task_stats.get("task_count"),
+                        "sampled_task_count": task_stats.get("sampled_task_count"),
+                        "unsampled_task_count": len(
+                            task_stats.get("unsampled_task_ids") or []
+                        ),
+                        "totals": task_stats.get("totals"),
+                    }
+                    if task_stats
+                    else None
+                ),
             }
             grpo_effective_update = bool(
                 reward_groups.get("nonzero_variance_group_count")

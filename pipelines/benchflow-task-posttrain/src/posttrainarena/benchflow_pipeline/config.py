@@ -12,6 +12,8 @@ from typing import Any, Literal
 
 BENCHFLOW_COMMIT = "2a97db55947d6742b765ad34ddd91d74c20d625f"
 GrpoRunPolicy = Literal["on_reward", "always"]
+GrpoTaskSampler = Literal["trl", "cover"]
+RolloutFailurePolicy = Literal["raise", "mask"]
 HarnessSkillMode = Literal["no-skill", "with-skill"]
 UsageTrackingPolicy = Literal["required"]
 
@@ -162,6 +164,19 @@ class GrpoConfig:
     rollout_attempts: int = 2
     require_reward_variance: bool = False
     vllm_server_base_url_env: str = "TRL_VLLM_SERVER_BASE_URL"
+    # Trainer and sampler seed (TRL's args.seed; 42 is TRL's default, so grpo-v1 is unchanged).
+    seed: int = 42
+    # "trl": TRL's shuffled RepeatSampler. "cover": a seeded, balanced schedule over the whole
+    # collection, fixed before training (see sampler.py).
+    task_sampler: GrpoTaskSampler = "trl"
+    # cover only: refuse to start when max_steps cannot reach every training task.
+    require_full_coverage: bool = True
+    # "raise": a rollout that fails every attempt stops training (grpo-v1). "mask": it is left out
+    # of the loss and the group baseline and counted; over-length trajectories are truncated and
+    # keep their verifier reward instead of failing.
+    rollout_failure_policy: RolloutFailurePolicy = "raise"
+    # mask only: stop training when the cumulative share of masked rollouts exceeds this.
+    max_masked_rollout_fraction: float = 0.25
 
 
 @dataclass(frozen=True)
@@ -329,6 +344,38 @@ class PipelineConfig:
             or not self.grpo.vllm_server_base_url_env.strip()
         ):
             errors.append("grpo.vllm_server_base_url_env must be a non-empty string")
+        if (
+            not isinstance(self.grpo.seed, int)
+            or isinstance(self.grpo.seed, bool)
+            or self.grpo.seed < 0
+        ):
+            errors.append("grpo.seed must be a non-negative integer")
+        if self.grpo.task_sampler not in {"trl", "cover"}:
+            errors.append("grpo.task_sampler must be trl or cover")
+        if self.grpo.task_sampler == "cover":
+            generation_batch = (
+                self.grpo.generation_batch_size
+                or self.runtime.num_generations * self.harness.concurrency
+            )
+            if self.grpo.max_steps is None:
+                errors.append("grpo.task_sampler = cover requires grpo.max_steps")
+            if self.grpo.gradient_accumulation_steps != generation_batch:
+                errors.append(
+                    "grpo.task_sampler = cover requires grpo.gradient_accumulation_steps "
+                    f"to equal the generation batch size ({generation_batch}) so one "
+                    "optimizer step consumes exactly one generation batch"
+                )
+        if not isinstance(self.grpo.require_full_coverage, bool):
+            errors.append("grpo.require_full_coverage must be boolean")
+        if self.grpo.rollout_failure_policy not in {"raise", "mask"}:
+            errors.append("grpo.rollout_failure_policy must be raise or mask")
+        fraction = self.grpo.max_masked_rollout_fraction
+        if (
+            not isinstance(fraction, int | float)
+            or isinstance(fraction, bool)
+            or not 0 <= float(fraction) < 1
+        ):
+            errors.append("grpo.max_masked_rollout_fraction must be in [0, 1)")
         if not _is_positive_int(self.teacher.max_attempts) or not _is_positive_int(
             self.teacher.min_verified
         ):

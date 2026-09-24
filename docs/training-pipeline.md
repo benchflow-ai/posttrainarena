@@ -393,6 +393,27 @@ receives the same SFT→GRPO procedure. `run_policy = "on_reward"` remains
 available for low-cost experiments. The held-out eval set is never used to
 decide whether to train.
 
+## GRPO task sampling and per-task accounting
+
+Each GRPO generation batch holds `generation_batch_size / num_generations` task groups ("prompts per step"), each of `num_generations` rollouts. Two samplers decide which tasks those are (`grpo.task_sampler`):
+
+- `trl` (default, the grpo-v1 behavior): TRL's `RepeatSampler`. It takes one seeded `torch.randperm` of the task list per epoch, cuts it into chunks of "prompts per step" tasks, and drops the last partial chunk. With `max_steps` below one epoch, most of the collection is never sampled. grpo-v1 (`max_steps = 2`, one group of 8 per batch, `gradient_accumulation_steps = 1`) samples one task. Its only generation batch feeds 8 optimizer micro-steps, so 2 of the 8 rollouts reach a gradient.
+- `cover`: a seeded, balanced schedule over the whole collection, fixed before training. `random.Random(grpo.seed)` shuffles the task list; the shuffled lists are concatenated and cut into steps. A task is not repeated within a step while the collection has at least as many tasks as a step has groups. Every task is sampled within the first ⌈N / prompts per step⌉ steps, and exposure counts never differ by more than one. TRL reads the schedule in order (`shuffle_dataset = false`). `cover` requires `max_steps` and `gradient_accumulation_steps` equal to the generation batch size, so one optimizer step consumes exactly one generation batch. With `require_full_coverage = true` (the default), the run refuses to start when `max_steps × prompts per step` is smaller than the collection. A fixed step budget values a collection per step, not in total: a small collection is revisited, and a large one needs a larger budget.
+
+`grpo.seed` (default 42, TRL's default) seeds both the trainer and the sampler.
+
+Failed rollouts (`grpo.rollout_failure_policy`):
+
+- `raise` (default, grpo-v1): a rollout that fails all `rollout_attempts` stops training.
+- `mask`: a rollout without a healthy verifier-scored result, after all attempts, is an infrastructure error. This covers sandbox, agent-install or verifier failures, and a single health row that carries a non-timeout error. It becomes a placeholder with reward `None` and no trainable tokens. TRL leaves it out of the group mean and std and gives it zero advantage, so it is neither scored 0 nor moves the baseline. A scored rollout whose trajectory cannot be turned into tokens is masked the same way and counted as a trajectory error. A trajectory longer than `runtime.max_completion_length` is truncated and keeps its reward instead of being dropped: Nebius (arXiv 2508.03501, §5.2) found that discarding long, looping failures removes the negative examples that teach the agent to stop looping. Agent timeouts that the verifier scored remain failures (reward 0). Training stops if every rollout in a generation batch is masked (the loss normalizer would be zero), or if the cumulative masked share exceeds `grpo.max_masked_rollout_fraction` (default 0.25).
+
+Per-run outputs:
+
+- `reports/train_sampler.json`: sampler, seed, collection task IDs, prompts per step, the planned schedule (`cover`) with planned exposure counts, the TRL arguments the trainer resolved (`steps_per_generation`, `shuffle_dataset`, …), and `steps[]`: for every generation batch, the optimizer step it was generated at, the sampled task IDs, and the rollout and masked counts. `plan_mismatch_steps` lists steps whose sampled tasks differ from the plan (expected empty).
+- `reports/train_task_stats.json`: for every task in the collection, sampled or not: `sampled_steps`, `groups`, `rollouts`, `scored_rollouts`, `passes`, `pass_rate`, `reward_mean`, `reward_variance` (population variance of the scored rewards, p(1 − p) for pass/fail), `infra_errors`, `trajectory_errors`, `truncated_rollouts`, `failed_attempts` (retried attempts, including recovered ones), `groups_with_variance`, `all_pass_groups`, `all_fail_groups` and `fully_masked_groups`. It also has run totals, `unsampled_task_ids` and `masked_rollout_fraction`.
+- During training, `jobs/grpo-train/sampled_steps.jsonl` gets one line per generation batch, and `jobs/grpo-train/train_task_stats.json` is rewritten after every batch, so an interrupted run keeps its accounting up to the last batch.
+- `score.json` → `grpo_training.task_coverage` summarizes both.
+
 ## Run artifacts
 
 Each run is self-contained:
@@ -411,6 +432,8 @@ runs/<run-name>/
     EVAL_LIFT.md
     eval_lift.json
     eval_task_outcomes.json   per-task, per-trial held-out outcomes (sealed)
+    train_task_stats.json     per-task GRPO rollouts, passes, rewards, masked errors
+    train_sampler.json        GRPO sampler, seed, planned and sampled tasks per step
     SCORE.md
     score.json
 ```
