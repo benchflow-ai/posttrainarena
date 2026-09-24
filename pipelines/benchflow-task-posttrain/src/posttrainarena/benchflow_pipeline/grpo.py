@@ -167,6 +167,30 @@ def reward_group_diagnostics(
     }
 
 
+def pin_weight_sync_device(trainer: Any) -> bool:
+    """Copy each synced weight onto the NCCL communicator's device before broadcast.
+
+    With one trainer process over several GPUs the policy is split across devices, while
+    TRL's vLLM weight-sync communicator is bound to a single device (cuda:0). TRL 1.8
+    broadcasts each parameter where it lives and fails with "communicator is created to
+    work on cuda:0, but the input tensor is on cuda:1" on the first optimizer step.
+    """
+    client = getattr(getattr(trainer, "vllm_generation", None), "vllm_client", None)
+    if client is None or getattr(client, "_pta_weight_sync_pinned", False):
+        return False
+    original = client.update_named_param
+
+    def update_named_param(name: str, weights: Any) -> Any:
+        device = getattr(getattr(client, "communicator", None), "device", None)
+        if device is not None and getattr(weights, "device", device) != device:
+            weights = weights.to(device)
+        return original(name, weights)
+
+    client.update_named_param = update_named_param
+    client._pta_weight_sync_pinned = True
+    return True
+
+
 def lora_b_update_diagnostics(model: Any) -> dict[str, Any]:
     named_parameters = getattr(model, "named_parameters", None)
     if not callable(named_parameters):
@@ -1142,6 +1166,7 @@ def train_grpo(
             target_modules="all-linear",
         ),
     )
+    pin_weight_sync_device(trainer)
     try:
         result = trainer.train()
     finally:

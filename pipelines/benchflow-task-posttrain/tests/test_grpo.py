@@ -11,6 +11,7 @@ import pytest
 
 from posttrainarena.benchflow_pipeline.config import load_config
 from posttrainarena.benchflow_pipeline.grpo import (
+    pin_weight_sync_device,
     CollectedRollout,
     OpenCodeRolloutCollector,
     RolloutTokens,
@@ -1252,3 +1253,27 @@ def test_sync_checkpoint_loads_saved_policy_before_endpoint_update(
 
     assert captured["model_args"] == (config.model,)
     assert captured["model_kwargs"]["revision"] == config.model_revision
+
+
+def test_pin_weight_sync_device_moves_weights_to_communicator_device() -> None:
+    class Tensor:
+        def __init__(self, device: str) -> None:
+            self.device = device
+
+        def to(self, device: str) -> "Tensor":
+            return Tensor(device)
+
+    sent: list[tuple[str, str]] = []
+    client = SimpleNamespace(communicator=SimpleNamespace(device="cuda:0"))
+    client.update_named_param = lambda name, weights: sent.append((name, weights.device))
+    trainer = SimpleNamespace(vllm_generation=SimpleNamespace(vllm_client=client))
+
+    assert pin_weight_sync_device(trainer) is True
+    assert pin_weight_sync_device(trainer) is False
+    client.update_named_param("layer.0.weight", Tensor("cuda:1"))
+    client.update_named_param("layer.1.weight", Tensor("cuda:0"))
+    assert sent == [("layer.0.weight", "cuda:0"), ("layer.1.weight", "cuda:0")]
+
+
+def test_pin_weight_sync_device_without_vllm_client() -> None:
+    assert pin_weight_sync_device(SimpleNamespace()) is False
