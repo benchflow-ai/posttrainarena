@@ -414,6 +414,27 @@ Per-run outputs:
 - During training, `jobs/grpo-train/sampled_steps.jsonl` gets one line per generation batch, and `jobs/grpo-train/train_task_stats.json` is rewritten after every batch, so an interrupted run keeps its accounting up to the last batch.
 - `score.json` → `grpo_training.task_coverage` summarizes both.
 
+## Provenance
+
+`reports/provenance.json` records what a run ran on. It is written after the task snapshots with `status: "running"`, so a run that fails later still has it, and rewritten at the end with `status: "complete"` and the checkpoint digests:
+
+```text
+schema_version, run_name, run_dir, status, dry_run, written_at, command (argv), python
+pipeline     commit, commit_source (git | environment), dirty, dirty_files, package_source_sha256
+benchflow    pinned_commit, installed_commit, installed_version, matches_pin
+packages     installed versions of the pipeline, benchflow, trl, peft, transformers, torch, vllm, accelerate, datasets
+model        id, revision
+recipe       config_path, config_file_sha256, recipe_sha256
+sampler      task_sampler, seed, report ("train_sampler.json")
+datasets[]   role (train | eval), name, repo_id, revision, path, task_list_sha256, task_count,
+             snapshot {resolved_revision, marker_sha256, task_sha256 {task_id: digest}, reference_solutions_removed, integrity_report}
+checkpoints  sft / grpo: base_checkpoint_sha256, adapter_sha256, merged_model_sha256, train_jsonl_sha256
+```
+
+- The pipeline commit comes from `git rev-parse HEAD` in the checkout the package was imported from, or from `POSTTRAINARENA_PIPELINE_COMMIT` when there is no git checkout. `dirty_files` lists modified tracked files, such as a job script's in-place patch. `package_source_sha256` hashes the imported Python sources, so it identifies the code even without git.
+- `recipe_sha256` hashes the recipe without machine-local paths: model and revision; train and eval dataset repos, revisions, paths and task IDs; the runtime, harness, evaluation, teacher, SFT and GRPO tables (including the sampler seed); and the pinned BenchFlow commit. Two runs with the same hash used the same recipe on the same tasks.
+- `task_sha256` is the snapshot integrity digest of each task package as it was trained or evaluated: the relative path and bytes of every file, after `oracle/` and `solution/` were removed. A dry run takes no snapshot, so `snapshot` is null.
+
 ## Run artifacts
 
 Each run is self-contained:
@@ -434,6 +455,7 @@ runs/<run-name>/
     eval_task_outcomes.json   per-task, per-trial held-out outcomes (sealed)
     train_task_stats.json     per-task GRPO rollouts, passes, rewards, masked errors
     train_sampler.json        GRPO sampler, seed, planned and sampled tasks per step
+    provenance.json           code commits, model, recipe hash, dataset revisions, task digests
     SCORE.md
     score.json
 ```

@@ -364,6 +364,7 @@ class Pipeline:
             )
         if not self.dry_run:
             self._validate_task_content_isolation()
+        self._write_provenance(status="running")
         baseline_jobs = self.layout.jobs / "baseline"
         baseline_done = all(
             Path(cell["metrics_path"]).is_file()
@@ -456,7 +457,7 @@ class Pipeline:
                     str(self.layout.reports / "eval_lift.json"),
                 ],
             )
-        return self._write_score(
+        summary = self._write_score(
             baseline_score=baseline_score,
             sft_score=sft_score,
             grpo_gate_score=grpo_gate_score,
@@ -466,6 +467,48 @@ class Pipeline:
             grpo_ran=grpo_ran,
             baseline_heldout=baseline_heldout,
             final_heldout=final_heldout,
+        )
+        self._write_provenance(status="complete")
+        return summary
+
+    def _write_provenance(self, *, status: str) -> None:
+        """reports/provenance.json: code, model, recipe hash, dataset revisions, task digests."""
+        from .provenance import build_provenance
+
+        checkpoints: dict[str, Any] = {}
+        for stage, path in (
+            ("sft", self.layout.sft_merged / "train_metrics.json"),
+            ("grpo", self.layout.grpo_merged / "train_metrics.json"),
+        ):
+            if path.is_file():
+                metrics = load_json(path)
+                checkpoints[stage] = {
+                    key: metrics.get(key)
+                    for key in (
+                        "base_checkpoint_sha256",
+                        "adapter_sha256",
+                        "merged_model_sha256",
+                        "train_jsonl_sha256",
+                    )
+                    if metrics.get(key) is not None
+                }
+        write_json(
+            self.layout.reports / "provenance.json",
+            build_provenance(
+                config=self.config,
+                run_name=self.run_name,
+                run_dir=self.layout.root,
+                reports=self.layout.reports,
+                train_task_ids=self.train_task_ids,
+                suite_task_ids=self.suite_task_ids,
+                suite_labels={
+                    suite.name: self._suite_snapshot(index, suite)[0]
+                    for index, suite in enumerate(self.config.suites)
+                },
+                status=status,
+                checkpoints=checkpoints,
+                dry_run=self.dry_run,
+            ),
         )
 
     def _prepare_run_plan(self) -> None:
