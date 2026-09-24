@@ -17,17 +17,30 @@ from typing import Any, Sequence
 from .config import BENCHFLOW_COMMIT, PipelineConfig
 from .io import CommandRunner, supported_kwargs, write_json
 from .model_bridge import normalize_tool_call_arguments
-from .opencode import ServedModelRole, evaluate, served_model, is_scored_row
+from .opencode import (
+    ServedModelRole,
+    evaluate,
+    is_scored_row,
+    is_timeout_error,
+    served_model,
+)
+from .sampler import (
+    effective_generation_batch_size,
+    sampler_plan,
+    sampler_report,
+    train_task_stats,
+)
 
 
 TASK_HANDLE_PREFIX = "benchflow-task://"
 
 
-def effective_generation_batch_size(config: PipelineConfig) -> int:
-    return (
-        config.grpo.generation_batch_size
-        or config.runtime.num_generations * config.harness.concurrency
-    )
+class RolloutInfraError(RuntimeError):
+    """The rollout produced no healthy verifier-scored result (sandbox, agent or verifier failure)."""
+
+
+class RolloutTrajectoryError(RuntimeError):
+    """The rollout was scored, but its trajectory could not be turned into training tokens."""
 
 
 def _implementation_sha256() -> str:
@@ -69,8 +82,14 @@ def grpo_training_recipe(config: PipelineConfig) -> dict[str, Any]:
         "lora_r": config.grpo.lora_r,
         "lora_alpha": config.grpo.lora_alpha,
         "lora_dropout": config.grpo.lora_dropout,
+        "lora_target_parameters": list(config.grpo.lora_target_parameters),
         "rollout_attempts": config.grpo.rollout_attempts,
         "require_reward_variance": config.grpo.require_reward_variance,
+        "seed": config.grpo.seed,
+        "task_sampler": config.grpo.task_sampler,
+        "require_full_coverage": config.grpo.require_full_coverage,
+        "rollout_failure_policy": config.grpo.rollout_failure_policy,
+        "max_masked_rollout_fraction": config.grpo.max_masked_rollout_fraction,
         "bf16": True,
         "per_device_train_batch_size": 1,
         "loss_type": "dapo",
@@ -89,8 +108,27 @@ def reward_group_diagnostics(
     records: Sequence[Mapping[str, Any]],
     *,
     num_generations: int,
+    masked_records: Sequence[Mapping[str, Any]] = (),
 ) -> dict[str, Any]:
+    """Per-group reward spread. Masked rollouts count toward a group's size but carry no reward."""
     groups: dict[int, dict[str, Any]] = {}
+    for record in masked_records:
+        group_index = record.get("group_index")
+        global_step = record.get("global_step")
+        task_id = record.get("task_id")
+        if (
+            not isinstance(group_index, int)
+            or isinstance(group_index, bool)
+            or not isinstance(task_id, str)
+        ):
+            raise RuntimeError("GRPO masked rollout record is invalid")
+        group = groups.setdefault(
+            group_index,
+            {"global_steps": set(), "task_ids": set(), "rewards": [], "masked": 0},
+        )
+        group["global_steps"].add(global_step)
+        group["task_ids"].add(task_id)
+        group["masked"] += 1
     for record in records:
         group_index = record.get("group_index")
         global_step = record.get("global_step")
@@ -109,7 +147,7 @@ def reward_group_diagnostics(
             raise RuntimeError("GRPO rollout record is invalid")
         group = groups.setdefault(
             group_index,
-            {"global_steps": set(), "task_ids": set(), "rewards": []},
+            {"global_steps": set(), "task_ids": set(), "rewards": [], "masked": 0},
         )
         group["global_steps"].add(global_step)
         group["task_ids"].add(task_id)
@@ -122,14 +160,19 @@ def reward_group_diagnostics(
         global_steps = group["global_steps"]
         task_ids = group["task_ids"]
         rewards = group["rewards"]
-        reward_range = max(rewards) - min(rewards)
+        masked = group["masked"]
+        reward_range = max(rewards) - min(rewards) if rewards else 0.0
         consistent = len(global_steps) == 1 and len(task_ids) == 1
-        complete = consistent and len(rewards) == num_generations
-        has_variance = complete and not math.isclose(
-            reward_range,
-            0.0,
-            rel_tol=0.0,
-            abs_tol=1e-12,
+        complete = consistent and len(rewards) + masked == num_generations
+        has_variance = (
+            complete
+            and len(rewards) >= 2
+            and not math.isclose(
+                reward_range,
+                0.0,
+                rel_tol=0.0,
+                abs_tol=1e-12,
+            )
         )
         complete_group_count += int(complete)
         nonzero_variance_group_count += int(has_variance)
@@ -140,9 +183,10 @@ def reward_group_diagnostics(
                 if len(global_steps) == 1
                 else None,
                 "task_id": next(iter(task_ids)) if len(task_ids) == 1 else None,
-                "count": len(rewards),
-                "min_reward": min(rewards),
-                "max_reward": max(rewards),
+                "count": len(rewards) + masked,
+                "masked_count": masked,
+                "min_reward": min(rewards) if rewards else None,
+                "max_reward": max(rewards) if rewards else None,
                 "reward_range": reward_range,
                 "consistent": consistent,
                 "complete": complete,
@@ -152,7 +196,8 @@ def reward_group_diagnostics(
     zero_variance_group_count = complete_group_count - nonzero_variance_group_count
     return {
         "num_generations": num_generations,
-        "rollout_count": len(records),
+        "rollout_count": len(records) + len(masked_records),
+        "masked_rollout_count": len(masked_records),
         "group_count": len(group_rows),
         "complete_group_count": complete_group_count,
         "incomplete_group_count": len(group_rows) - complete_group_count,
@@ -285,6 +330,24 @@ def build_grpo_dataset(tasks_dir: Path, task_ids: list[str]) -> Any:
     from datasets import Dataset
 
     return Dataset.from_list(build_grpo_rows(tasks_dir, task_ids))
+
+
+def _trainer_sampling_args(trainer: Any) -> dict[str, Any]:
+    """The TRL arguments that decide how prompts are drawn, as the trainer resolved them."""
+    args = getattr(trainer, "args", None)
+    names = (
+        "seed",
+        "shuffle_dataset",
+        "generation_batch_size",
+        "steps_per_generation",
+        "gradient_accumulation_steps",
+        "per_device_train_batch_size",
+        "num_iterations",
+        "max_steps",
+    )
+    if isinstance(args, Mapping):
+        return {name: args.get(name) for name in names}
+    return {name: getattr(args, name, None) for name in names}
 
 
 def _model_init_kwargs(config: PipelineConfig, model: str) -> dict[str, Any]:
@@ -582,13 +645,21 @@ def attest_served_policy(
 def verifier_reward(
     completions: Sequence[Any],
     *,
-    rollout_reward: Sequence[float] | None = None,
+    rollout_reward: Sequence[float | None] | None = None,
     **_: Any,
-) -> list[float]:
+) -> list[float | None]:
+    """Verifier reward per rollout; None for a masked rollout.
+
+    TRL 1.8 turns None into NaN, leaves that rollout out of the group mean and std, and gives it
+    zero advantage, so a masked rollout is neither scored 0 nor moves the baseline.
+    """
     if rollout_reward is None or len(rollout_reward) != len(completions):
         raise RuntimeError("OpenCode GRPO rollouts are missing verifier rewards")
-    rewards = []
+    rewards: list[float | None] = []
     for value in rollout_reward:
+        if value is None:
+            rewards.append(None)
+            continue
         if (
             not isinstance(value, int | float)
             or isinstance(value, bool)
@@ -749,6 +820,8 @@ class RolloutTokens:
     completion_ids: list[int]
     logprobs: list[float]
     env_mask: list[int]
+    # Completion length before truncation to max_completion_tokens, when truncated.
+    truncated_from: int | None = None
 
 
 def trajectory_to_rollout_tokens(
@@ -757,7 +830,14 @@ def trajectory_to_rollout_tokens(
     *,
     max_completion_tokens: int,
     trace_resolver: Callable[[str], dict[str, Any]] | None = None,
+    truncate: bool = False,
 ) -> RolloutTokens:
+    """Training tokens of one OpenCode trajectory.
+
+    With ``truncate``, a trajectory longer than ``max_completion_tokens`` keeps its first
+    ``max_completion_tokens`` tokens instead of failing, so long (often looping) failures stay in
+    training as negative examples (Nebius, arXiv 2508.03501, section 5.2).
+    """
     rows = []
     for row in _load_jsonl(path):
         metadata = row.get("metadata")
@@ -855,11 +935,21 @@ def trajectory_to_rollout_tokens(
 
     if prompt_ids is None or not completion_ids or not any(env_mask):
         raise RuntimeError("OpenCode trajectory produced no trainable model tokens")
+    truncated_from = None
     if len(completion_ids) > max_completion_tokens:
-        raise RuntimeError(
-            f"OpenCode trajectory has {len(completion_ids)} completion tokens; "
-            f"limit is {max_completion_tokens}"
-        )
+        if not truncate:
+            raise RuntimeError(
+                f"OpenCode trajectory has {len(completion_ids)} completion tokens; "
+                f"limit is {max_completion_tokens}"
+            )
+        truncated_from = len(completion_ids)
+        del completion_ids[max_completion_tokens:]
+        del sampled_logprobs[max_completion_tokens:]
+        del env_mask[max_completion_tokens:]
+        if not any(env_mask):
+            raise RuntimeError(
+                "OpenCode trajectory has no model tokens within the completion limit"
+            )
     if not (len(completion_ids) == len(sampled_logprobs) == len(env_mask)):
         raise RuntimeError("OpenCode rollout token fields are not aligned")
     return RolloutTokens(
@@ -867,15 +957,32 @@ def trajectory_to_rollout_tokens(
         completion_ids=completion_ids,
         logprobs=sampled_logprobs,
         env_mask=env_mask,
+        truncated_from=truncated_from,
     )
 
 
 @dataclass(frozen=True)
 class CollectedRollout:
     task_id: str
-    reward: float
+    reward: float | None
     rollout_dir: Path
     tokens: RolloutTokens
+    # Masked rollouts have reward None and an all-zero env_mask: no loss, no baseline effect.
+    masked: bool = False
+
+
+def _health_row_problem(row: Mapping[str, Any]) -> str | None:
+    """Why a single BenchFlow health row is not a healthy scored rollout, or None.
+
+    Agent timeouts that the verifier scored are failures (reward 0), as in evaluation.
+    """
+    if row.get("scored") is False:
+        return f"rollout was not scored: {row.get('error') or row.get('verifier_error')}"
+    if row.get("verifier_error") is not None:
+        return f"verifier error: {row.get('verifier_error')}"
+    if row.get("error") is not None and not is_timeout_error(row):
+        return f"agent error: {row.get('error')}"
+    return None
 
 
 class OpenCodeRolloutCollector:
@@ -886,12 +993,20 @@ class OpenCodeRolloutCollector:
         model: str,
         tasks_dir: Path,
         jobs_dir: Path,
+        task_ids: Sequence[str] = (),
     ) -> None:
         self.config = config
         self.model = model
         self.tasks_dir = tasks_dir
         self.jobs_dir = jobs_dir
+        self.task_ids = list(task_ids)
         self.records: list[dict[str, Any]] = []
+        # Rollouts that failed every attempt under rollout_failure_policy = "mask".
+        self.masked_records: list[dict[str, Any]] = []
+        # Every failed attempt, including ones a later attempt recovered.
+        self.failed_attempts: list[dict[str, Any]] = []
+        # One entry per generation batch: which tasks were sampled at which step.
+        self.batches: list[dict[str, Any]] = []
         self._rollout_index = 0
 
     def _resolve_bridge_trace(self, completion_id: str) -> dict[str, Any]:
@@ -948,6 +1063,7 @@ class OpenCodeRolloutCollector:
             max_workers=min(self.config.harness.concurrency, len(requests))
         ) as executor:
             collected = list(executor.map(collect, requests))
+        self._log_batch(requests, collected, trainer)
         return {
             "prompt_ids": [rollout.tokens.prompt_ids for rollout in collected],
             "completion_ids": [rollout.tokens.completion_ids for rollout in collected],
@@ -957,6 +1073,99 @@ class OpenCodeRolloutCollector:
             "benchflow_task_id": [rollout.task_id for rollout in collected],
             "rollout_dir": [str(rollout.rollout_dir) for rollout in collected],
         }
+
+    def _log_batch(
+        self,
+        requests: list[tuple[int, str]],
+        collected: list[CollectedRollout],
+        trainer: Any,
+    ) -> None:
+        """Record the tasks of this generation batch, refresh the task stats, apply mask guards."""
+        num_generations = self.config.runtime.num_generations
+        groups: dict[int, str] = {}
+        for rollout_index, task_id in requests:
+            groups.setdefault(rollout_index // num_generations, task_id)
+        masked = sum(1 for rollout in collected if rollout.masked)
+        batch = {
+            "generation_index": len(self.batches),
+            "global_step": int(getattr(getattr(trainer, "state", None), "global_step", 0)),
+            "task_ids": list(dict.fromkeys(task_id for _, task_id in requests)),
+            "groups": [
+                {"group_index": index, "task_id": task_id}
+                for index, task_id in sorted(groups.items())
+            ],
+            "rollouts": len(collected),
+            "masked_rollouts": masked,
+        }
+        self.batches.append(batch)
+        self.jobs_dir.mkdir(parents=True, exist_ok=True)
+        with (self.jobs_dir / "sampled_steps.jsonl").open("a") as handle:
+            handle.write(json.dumps(batch, sort_keys=True) + "\n")
+        if self.task_ids:
+            write_json(
+                self.jobs_dir / "train_task_stats.json",
+                train_task_stats(
+                    self.task_ids,
+                    records=self.records,
+                    masked_records=self.masked_records,
+                    failed_attempts=self.failed_attempts,
+                    num_generations=num_generations,
+                ),
+            )
+        if masked and masked == len(collected):
+            raise RuntimeError(
+                f"Every rollout in GRPO generation batch {batch['generation_index']} failed; "
+                f"inspect {self.jobs_dir}"
+            )
+        total = sum(entry["rollouts"] for entry in self.batches)
+        masked_total = sum(entry["masked_rollouts"] for entry in self.batches)
+        if masked_total / total > self.config.grpo.max_masked_rollout_fraction:
+            raise RuntimeError(
+                f"{masked_total} of {total} GRPO rollouts were masked, above "
+                f"grpo.max_masked_rollout_fraction={self.config.grpo.max_masked_rollout_fraction}"
+            )
+
+    def _masked_rollout(
+        self,
+        *,
+        rollout_index: int,
+        task_id: str,
+        tokenizer: Any,
+        global_step: int,
+        rank: int,
+        kind: str,
+        failures: list[dict[str, Any]],
+    ) -> CollectedRollout:
+        """A placeholder the trainer cannot learn from: reward None, one masked EOS token."""
+        eos = getattr(tokenizer, "eos_token_id", None)
+        if eos is None:
+            eos = getattr(tokenizer, "pad_token_id", None)
+        token = eos if isinstance(eos, int) and not isinstance(eos, bool) else 0
+        record = {
+            "rollout_index": rollout_index,
+            "group_index": rollout_index // self.config.runtime.num_generations,
+            "task_id": task_id,
+            "reward": None,
+            "masked": True,
+            "kind": kind,
+            "global_step": global_step,
+            "rank": rank,
+            "attempts": len(failures),
+            "last_error": failures[-1]["error"] if failures else None,
+        }
+        self.masked_records.append(record)
+        return CollectedRollout(
+            task_id=task_id,
+            reward=None,
+            rollout_dir=Path(""),
+            tokens=RolloutTokens(
+                prompt_ids=[token],
+                completion_ids=[token],
+                logprobs=[0.0],
+                env_mask=[0],
+            ),
+            masked=True,
+        )
 
     def _collect_one(
         self,
@@ -1004,13 +1213,38 @@ class OpenCodeRolloutCollector:
                 (attempt_root / "rollout_error.json").unlink(missing_ok=True)
                 return rollout
             except Exception as exc:
+                cause = exc.__cause__ if isinstance(
+                    exc, RolloutInfraError | RolloutTrajectoryError
+                ) and exc.__cause__ is not None else exc
                 failure = {
                     "attempt": attempt,
-                    "error_type": type(exc).__name__,
+                    "error_type": type(cause).__name__,
                     "error": str(exc)[:2000],
+                    "kind": (
+                        "trajectory" if isinstance(exc, RolloutTrajectoryError) else "infra"
+                    ),
                 }
                 failures.append(failure)
+                self.failed_attempts.append(
+                    {
+                        "task_id": task_id,
+                        "rollout_index": rollout_index,
+                        "global_step": global_step,
+                        "attempt": attempt,
+                        "kind": failure["kind"],
+                    }
+                )
                 write_json(attempt_root / "rollout_error.json", failure)
+        if self.config.grpo.rollout_failure_policy == "mask":
+            return self._masked_rollout(
+                rollout_index=rollout_index,
+                task_id=task_id,
+                tokenizer=tokenizer,
+                global_step=global_step,
+                rank=rank,
+                kind=failures[-1]["kind"] if failures else "infra",
+                failures=failures,
+            )
         raise RuntimeError(
             f"OpenCode GRPO rollout failed for {task_id} after "
             f"{self.config.grpo.rollout_attempts} attempts: {failures}"
@@ -1032,8 +1266,12 @@ class OpenCodeRolloutCollector:
         rows = health.get("rows") if isinstance(health, dict) else None
         if not isinstance(rows, list) or any(not isinstance(row, dict) for row in rows):
             raise RuntimeError("OpenCode GRPO health summary has no rollout")
+        mask = self.config.grpo.rollout_failure_policy == "mask"
         if len(rows) == 1:
             health_row = rows[0]
+            problem = _health_row_problem(health_row) if mask else None
+            if problem:
+                raise RolloutInfraError(problem)
         else:
             candidates = [
                 row for row in rows if row.get("task_id") == task_id and is_scored_row(row)
@@ -1052,12 +1290,18 @@ class OpenCodeRolloutCollector:
             raise RuntimeError(f"Invalid verifier reward: {reward!r}")
         rollout_dir = Path(str(health_row.get("rollout_dir") or ""))
         trajectory_path = rollout_dir / "trajectory" / "llm_trajectory.jsonl"
-        tokens = trajectory_to_rollout_tokens(
-            trajectory_path,
-            tokenizer,
-            max_completion_tokens=self.config.runtime.max_completion_length,
-            trace_resolver=self._resolve_bridge_trace,
-        )
+        try:
+            tokens = trajectory_to_rollout_tokens(
+                trajectory_path,
+                tokenizer,
+                max_completion_tokens=self.config.runtime.max_completion_length,
+                trace_resolver=self._resolve_bridge_trace,
+                truncate=mask,
+            )
+        except Exception as exc:
+            if not mask:
+                raise
+            raise RolloutTrajectoryError(str(exc)) from exc
         record = {
             "rollout_index": rollout_index,
             "group_index": rollout_index // self.config.runtime.num_generations,
@@ -1070,6 +1314,8 @@ class OpenCodeRolloutCollector:
             "prompt_tokens": len(tokens.prompt_ids),
             "completion_tokens": len(tokens.completion_ids),
             "action_tokens": sum(tokens.env_mask),
+            "truncated": tokens.truncated_from is not None,
+            "completion_tokens_untruncated": tokens.truncated_from,
         }
         write_json(attempt_root / "rollout.json", record)
         write_json(
@@ -1106,12 +1352,25 @@ def train_grpo(
     from transformers import AutoModelForCausalLM
     from trl import GRPOConfig, GRPOTrainer
 
-    dataset = build_grpo_dataset(tasks_dir, task_ids)
+    plan = sampler_plan(config, task_ids)
+    jobs_dir.mkdir(parents=True, exist_ok=True)
+    write_json(jobs_dir / "sampler_plan.json", plan)
+    # cover: the dataset is the fixed schedule, one row per group in step order, read by TRL
+    # without shuffling. trl: one row per task, shuffled by TRL's RepeatSampler.
+    dataset = build_grpo_dataset(
+        tasks_dir,
+        (
+            [task_id for step in plan["planned_steps"] for task_id in step]
+            if plan["planned_steps"] is not None
+            else task_ids
+        ),
+    )
     collector = OpenCodeRolloutCollector(
         config=config,
         model=model,
         tasks_dir=tasks_dir,
         jobs_dir=jobs_dir,
+        task_ids=task_ids,
     )
     vllm_server_base_url = _required_environment(
         config.grpo.vllm_server_base_url_env,
@@ -1147,7 +1406,10 @@ def train_grpo(
         "save_strategy": "no",
         "num_generations": config.runtime.num_generations,
         "model_init_kwargs": _model_init_kwargs(config, model),
+        "seed": config.grpo.seed,
     }
+    if config.grpo.task_sampler == "cover":
+        values["shuffle_dataset"] = False
     if config.grpo.max_steps is None:
         values["num_train_epochs"] = config.grpo.num_train_epochs
     else:
@@ -1166,9 +1428,26 @@ def train_grpo(
             bias="none",
             task_type="CAUSAL_LM",
             target_modules="all-linear",
+            **(
+                {"target_parameters": list(config.grpo.lora_target_parameters)}
+                if config.grpo.lora_target_parameters
+                else {}
+            ),
         ),
     )
     pin_weight_sync_device(trainer)
+    trainer_args = _trainer_sampling_args(trainer)
+    if (
+        config.grpo.task_sampler == "cover"
+        and trainer_args.get("steps_per_generation") is not None
+        and trainer_args["steps_per_generation"] != config.grpo.gradient_accumulation_steps
+    ):
+        raise RuntimeError(
+            "grpo.task_sampler = cover needs one generation batch per optimizer step, but TRL "
+            f"uses steps_per_generation={trainer_args['steps_per_generation']} with "
+            f"gradient_accumulation_steps={config.grpo.gradient_accumulation_steps}; run "
+            "the trainer as a single process with per-device batch size 1"
+        )
     try:
         result = trainer.train()
     finally:
@@ -1176,7 +1455,20 @@ def train_grpo(
     reward_diagnostics = reward_group_diagnostics(
         collector.records,
         num_generations=config.runtime.num_generations,
+        masked_records=collector.masked_records,
     )
+    task_stats = train_task_stats(
+        task_ids,
+        records=collector.records,
+        masked_records=collector.masked_records,
+        failed_attempts=collector.failed_attempts,
+        num_generations=config.runtime.num_generations,
+    )
+    sampler = sampler_report(
+        plan, batches=collector.batches, trainer_args=trainer_args
+    )
+    write_json(jobs_dir / "train_task_stats.json", task_stats)
+    write_json(jobs_dir / "train_sampler.json", sampler)
     update_diagnostics = lora_b_update_diagnostics(trainer.model)
     training_log = list(
         getattr(getattr(trainer, "state", None), "log_history", []) or []
@@ -1284,6 +1576,10 @@ def train_grpo(
         "resume_policy": "restart-stage",
         "rollout_count": len(collector.records),
         "rollouts": collector.records,
+        "masked_rollouts": collector.masked_records,
+        "failed_attempts": collector.failed_attempts,
+        "task_stats": task_stats,
+        "sampler": sampler,
         "rollout_contract": {
             "token_ids": "training-tokenizer-aligned",
             "logprobs": "provider-sampled",

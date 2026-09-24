@@ -185,6 +185,7 @@ Dry-run records the full possible path, including conditional GRPO. Therefore
 | `[model]` | Base model ID and immutable model revision |
 | `[train_dataset]` | HF task repository, revision, path, and training task-list file |
 | `[eval_dataset]` | Separate HF repository/revision and held-out task-list file |
+| `[[eval_suites]]` | Alternative to `[eval_dataset]`: several named held-out suites (see "Held-out suites and trials") |
 | `[runtime]` | Daytona/Docker sandbox, GRPO completion-token budget, and generation count |
 | `[harness]` | Required OpenCode contract, skill mode, telemetry, concurrency, and setup/idle/wall-clock timeouts for teacher collection, evaluation, and GRPO rollouts |
 | `[evaluation]` | Environment-variable names for the served base/student model aliases and OpenAI-compatible endpoint credentials |
@@ -197,6 +198,62 @@ Dry-run records the full possible path, including conditional GRPO. Therefore
 Training and eval task IDs must be non-empty and disjoint. Dataset and model
 revisions should be immutable commit SHAs. Add explicit task-list files for new
 recipes instead of hiding task selection in code.
+
+## Held-out suites and trials
+
+The recipe v2 template for Qwen3.5-35B-A3B on one 8×H200 node, and why each of its settings was chosen, is in [recipe-v2.md](recipe-v2.md).
+
+A recipe can evaluate several held-out suites, each several times. Use `[[eval_suites]]` instead of `[eval_dataset]` (setting both is an error) and set `trials` in `[evaluation]`:
+
+```toml
+[[eval_suites]]
+name = "tb2"                     # unique, ^[a-z0-9][a-z0-9._-]*$; used in paths and score.json
+repo_id = "benchflow/tb2-benchflow"
+revision = "7505daf9bdc8cec27a76f6086c94e4c04dc3e758"
+path = ""                        # optional, default "tasks"
+task_list = "../task-lists/tb2-86.txt"
+
+[[eval_suites]]
+name = "lhtb"
+repo_id = "benchflow/lhtb-nongame-benchflow"
+revision = "<40-character SHA>"
+path = ""
+task_list = "../task-lists/lhtb-38.txt"
+
+[evaluation]
+trials = 3                       # default 1
+```
+
+The baseline and the final held-out evaluation (SFT or GRPO) run every suite × trial as a separate `bench eval run`. The GRPO gate still evaluates the first `gate_task_count` training tasks once. Every suite must be disjoint from the training tasks, by ID and by content digest.
+
+The first suite is the primary suite. Its first trial keeps the single-suite stage names and paths (`baseline_eval`, `jobs/baseline`, `results/baseline_eval.json`, and the same for `posttrain`), and the legacy `score.json` fields (`schema_version: 1`, `baseline_score`, `score_after_posttrain`, `delta_score`, `eval_task_ids`, `eval_dataset`) describe only that evaluation. Collectors written for one suite and one trial therefore keep working. The other evaluations run as stages named `<stage>.<suite>.tNN` under `jobs/<stage-dir>-suites/<suite>/trial-NN` and `results/<stage>-suites/<suite>/trial-NN.json`. Suites after the first snapshot into `data/eval-<suite>`. A legacy `[eval_dataset]` recipe is a single suite named `eval` and produces the same artifacts as before, plus the new fields.
+
+`score.json` gains a `score_v2` object (`schema_version: 2`):
+
+```text
+score_v2
+  metric "pass@1", pass_threshold 1.0, trials, primary_suite, baseline_stage, final_stage
+  suites[]            one entry per suite, in recipe order
+    name, dataset, task_count
+    baseline / final  task_count, scored_task_count, unscored_task_ids, cells, infra_error_cells,
+                      pass_rate, stderr, ci95, mean_reward, trial_pass_rates
+    delta             paired_task_count, excluded_task_ids, baseline_pass_rate, final_pass_rate,
+                      delta, stderr, ci95, variance_components {total, trial, task}, stderr_fixed_tasks
+  pooled              task_count, baseline, final, delta (same fields, suites combined)
+  stderr_method       the formula below, in words
+```
+
+`final` and `delta` are null when no post-training evaluation ran. `reports/eval_task_outcomes.json` keeps the per-task, per-trial reward, pass flag and infra-error flag of every cell. It holds sealed held-out results, so treat it like the per-task `result.json` files under `jobs/`.
+
+How the numbers are computed (also in `heldout.py`):
+
+- A cell is one task in one trial. It passes when the verifier reward is at least 1.0 (BenchFlow's "passed"). A cell with no healthy scored rollout is an infrastructure error: it is excluded and counted in `infra_error_cells`, not scored 0. Agent timeouts that the verifier scored are failures, as in Terminal-Bench. The legacy `baseline_score` keeps its old rule, which counts tolerated infrastructure errors as failures, so it can differ from `score_v2` when such errors occur.
+- Per task, `ybar_i` is the mean pass over the trials that scored. A suite's pass rate is the mean of `ybar_i` over tasks that scored at least once.
+- Δ uses only tasks scored in both arms: `d_i = ybar_i(final) − ybar_i(baseline)` and `Δ = mean(d_i)`. `delta.baseline_pass_rate` and `delta.final_pass_rate` are computed on that paired set, so `Δ` equals their difference.
+- `SE(Δ) = sqrt(s_d² / n)`, where `s_d²` is the sample variance (n − 1 denominator) of `d_i` over the n paired tasks. This treats the tasks as a sample from the population the suite stands for, and the trials as independent draws within each task. Its expectation is `σ²_task + mean_i(σ²_base,i / K_base,i + σ²_final,i / K_final,i)`, so it includes both the spread of the true effect between tasks and the trial noise, which falls with more trials. This is the task-clustered, paired standard error of Miller, "Adding Error Bars to Evals" (arXiv 2411.00640).
+- When every paired task has at least two scored trials in both arms, the trial part is also estimated on its own: `w = mean_i(v_base,i / K_base,i + v_final,i / K_final,i)`, with `v` the within-task variance across trials. It is reported as `variance_components.trial`, with `variance_components.task = max(0, s_d² − w)` and `stderr_fixed_tasks = sqrt(w / n)`. `stderr_fixed_tasks` is the standard error for this exact task set if only trials were repeated. More trials shrink the trial part; only more tasks shrink the task part.
+- Pooled over suites, each suite is a stratum and every paired task has equal weight: `Δ_pooled = Σ_s n_s Δ_s / N` and `SE_pooled = sqrt(Σ_s (n_s / N)² SE_s²)`. Pass rates are pooled the same way. `ci95` is the normal approximation `± 1.96 SE`. With fewer than about 30 paired tasks, a t interval would be somewhat wider.
+- Trials give independent samples only if generation is stochastic (temperature above 0) or the environment is. At temperature 0 with deterministic tasks, repeated trials add little information.
 
 ## Credentials
 
@@ -338,6 +395,48 @@ receives the same SFT→GRPO procedure. `run_policy = "on_reward"` remains
 available for low-cost experiments. The held-out eval set is never used to
 decide whether to train.
 
+## GRPO task sampling and per-task accounting
+
+Each GRPO generation batch holds `generation_batch_size / num_generations` task groups ("prompts per step"), each of `num_generations` rollouts. Two samplers decide which tasks those are (`grpo.task_sampler`):
+
+- `trl` (default, the grpo-v1 behavior): TRL's `RepeatSampler`. It takes one seeded `torch.randperm` of the task list per epoch, cuts it into chunks of "prompts per step" tasks, and drops the last partial chunk. With `max_steps` below one epoch, most of the collection is never sampled. grpo-v1 (`max_steps = 2`, one group of 8 per batch, `gradient_accumulation_steps = 1`) samples one task. Its only generation batch feeds 8 optimizer micro-steps, so 2 of the 8 rollouts reach a gradient.
+- `cover`: a seeded, balanced schedule over the whole collection, fixed before training. `random.Random(grpo.seed)` shuffles the task list; the shuffled lists are concatenated and cut into steps. A task is not repeated within a step while the collection has at least as many tasks as a step has groups. Every task is sampled within the first ⌈N / prompts per step⌉ steps, and exposure counts never differ by more than one. TRL reads the schedule in order (`shuffle_dataset = false`). `cover` requires `max_steps` and `gradient_accumulation_steps` equal to the generation batch size, so one optimizer step consumes exactly one generation batch. With `require_full_coverage = true` (the default), the run refuses to start when `max_steps × prompts per step` is smaller than the collection. A fixed step budget values a collection per step, not in total: a small collection is revisited, and a large one needs a larger budget.
+
+`grpo.seed` (default 42, TRL's default) seeds both the trainer and the sampler.
+
+Failed rollouts (`grpo.rollout_failure_policy`):
+
+- `raise` (default, grpo-v1): a rollout that fails all `rollout_attempts` stops training.
+- `mask`: a rollout without a healthy verifier-scored result, after all attempts, is an infrastructure error. This covers sandbox, agent-install or verifier failures, and a single health row that carries a non-timeout error. It becomes a placeholder with reward `None` and no trainable tokens. TRL leaves it out of the group mean and std and gives it zero advantage, so it is neither scored 0 nor moves the baseline. A scored rollout whose trajectory cannot be turned into tokens is masked the same way and counted as a trajectory error. A trajectory longer than `runtime.max_completion_length` is truncated and keeps its reward instead of being dropped: Nebius (arXiv 2508.03501, §5.2) found that discarding long, looping failures removes the negative examples that teach the agent to stop looping. Agent timeouts that the verifier scored remain failures (reward 0). Training stops if every rollout in a generation batch is masked (the loss normalizer would be zero), or if the cumulative masked share exceeds `grpo.max_masked_rollout_fraction` (default 0.25).
+
+Per-run outputs:
+
+- `reports/train_sampler.json`: sampler, seed, collection task IDs, prompts per step, the planned schedule (`cover`) with planned exposure counts, the TRL arguments the trainer resolved (`steps_per_generation`, `shuffle_dataset`, …), and `steps[]`: for every generation batch, the optimizer step it was generated at, the sampled task IDs, and the rollout and masked counts. `plan_mismatch_steps` lists steps whose sampled tasks differ from the plan (expected empty).
+- `reports/train_task_stats.json`: for every task in the collection, sampled or not: `sampled_steps`, `groups`, `rollouts`, `scored_rollouts`, `passes`, `pass_rate`, `reward_mean`, `reward_variance` (population variance of the scored rewards, p(1 − p) for pass/fail), `infra_errors`, `trajectory_errors`, `truncated_rollouts`, `failed_attempts` (retried attempts, including recovered ones), `groups_with_variance`, `all_pass_groups`, `all_fail_groups` and `fully_masked_groups`. It also has run totals, `unsampled_task_ids` and `masked_rollout_fraction`.
+- During training, `jobs/grpo-train/sampled_steps.jsonl` gets one line per generation batch, and `jobs/grpo-train/train_task_stats.json` is rewritten after every batch, so an interrupted run keeps its accounting up to the last batch.
+- `score.json` → `grpo_training.task_coverage` summarizes both.
+
+## Provenance
+
+`reports/provenance.json` records what a run ran on. It is written after the task snapshots with `status: "running"`, so a run that fails later still has it, and rewritten at the end with `status: "complete"` and the checkpoint digests:
+
+```text
+schema_version, run_name, run_dir, status, dry_run, written_at, command (argv), python
+pipeline     commit, commit_source (git | environment), dirty, dirty_files, package_source_sha256
+benchflow    pinned_commit, installed_commit, installed_version, matches_pin
+packages     installed versions of the pipeline, benchflow, trl, peft, transformers, torch, vllm, accelerate, datasets
+model        id, revision
+recipe       config_path, config_file_sha256, recipe_sha256
+sampler      task_sampler, seed, report ("train_sampler.json")
+datasets[]   role (train | eval), name, repo_id, revision, path, task_list_sha256, task_count,
+             snapshot {resolved_revision, marker_sha256, task_sha256 {task_id: digest}, reference_solutions_removed, integrity_report}
+checkpoints  sft / grpo: base_checkpoint_sha256, adapter_sha256, merged_model_sha256, train_jsonl_sha256
+```
+
+- The pipeline commit comes from `git rev-parse HEAD` in the checkout the package was imported from, or from `POSTTRAINARENA_PIPELINE_COMMIT` when there is no git checkout. `dirty_files` lists modified tracked files, such as a job script's in-place patch. `package_source_sha256` hashes the imported Python sources, so it identifies the code even without git.
+- `recipe_sha256` hashes the recipe without machine-local paths: model and revision; train and eval dataset repos, revisions, paths and task IDs; the runtime, harness, evaluation, teacher, SFT and GRPO tables (including the sampler seed); and the pinned BenchFlow commit. Two runs with the same hash used the same recipe on the same tasks.
+- `task_sha256` is the snapshot integrity digest of each task package as it was trained or evaluated: the relative path and bytes of every file, after `oracle/` and `solution/` were removed. A dry run takes no snapshot, so `snapshot` is null.
+
 ## Run artifacts
 
 Each run is self-contained:
@@ -355,6 +454,10 @@ runs/<run-name>/
     sft_conversion.json
     EVAL_LIFT.md
     eval_lift.json
+    eval_task_outcomes.json   per-task, per-trial held-out outcomes (sealed)
+    train_task_stats.json     per-task GRPO rollouts, passes, rewards, masked errors
+    train_sampler.json        GRPO sampler, seed, planned and sampled tasks per step
+    provenance.json           code commits, model, recipe hash, dataset revisions, task digests
     SCORE.md
     score.json
 ```

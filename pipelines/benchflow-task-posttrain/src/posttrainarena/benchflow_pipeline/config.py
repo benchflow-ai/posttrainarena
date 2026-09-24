@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import tomllib
 from dataclasses import dataclass, field
 from math import isfinite
@@ -11,6 +12,8 @@ from typing import Any, Literal
 
 BENCHFLOW_COMMIT = "2a97db55947d6742b765ad34ddd91d74c20d625f"
 GrpoRunPolicy = Literal["on_reward", "always"]
+GrpoTaskSampler = Literal["trl", "cover"]
+RolloutFailurePolicy = Literal["raise", "mask"]
 HarnessSkillMode = Literal["no-skill", "with-skill"]
 UsageTrackingPolicy = Literal["required"]
 
@@ -63,6 +66,20 @@ class DatasetConfig:
     path: str = "tasks"
 
 
+# Suite names appear in run paths, stage names and score.json keys.
+EVAL_SUITE_NAME = re.compile(r"^[a-z0-9][a-z0-9._-]*$")
+# The suite a legacy single [eval_dataset] config evaluates on.
+LEGACY_EVAL_SUITE = "eval"
+
+
+@dataclass(frozen=True)
+class EvalSuiteConfig:
+    """One held-out suite: a named, pinned task list evaluated before and after training."""
+
+    name: str
+    dataset: DatasetConfig
+
+
 @dataclass(frozen=True)
 class RuntimeConfig:
     sandbox: str | None = None
@@ -96,6 +113,8 @@ class EvaluationConfig:
     control_url_env: str = "BENCHFLOW_MODEL_BRIDGE_CONTROL_URL"
     api_key_env: str = "BENCHFLOW_PROVIDER_API_KEY"
     sync_base_to_vllm: bool = False
+    # Independent repetitions of every held-out suite, for the baseline and the final evaluation.
+    trials: int = 1
 
 
 @dataclass(frozen=True)
@@ -145,6 +164,23 @@ class GrpoConfig:
     rollout_attempts: int = 2
     require_reward_variance: bool = False
     vllm_server_base_url_env: str = "TRL_VLLM_SERVER_BASE_URL"
+    # Trainer and sampler seed (TRL's args.seed; 42 is TRL's default, so grpo-v1 is unchanged).
+    seed: int = 42
+    # "trl": TRL's shuffled RepeatSampler. "cover": a seeded, balanced schedule over the whole
+    # collection, fixed before training (see sampler.py).
+    task_sampler: GrpoTaskSampler = "trl"
+    # cover only: refuse to start when max_steps cannot reach every training task.
+    require_full_coverage: bool = True
+    # "raise": a rollout that fails every attempt stops training (grpo-v1). "mask": it is left out
+    # of the loss and the group baseline and counted; over-length trajectories are truncated and
+    # keep their verifier reward instead of failing.
+    rollout_failure_policy: RolloutFailurePolicy = "raise"
+    # mask only: stop training when the cumulative share of masked rollouts exceeds this.
+    max_masked_rollout_fraction: float = 0.25
+    # Extra LoRA targets that are nn.Parameter tensors rather than nn.Linear modules, such as the
+    # fused routed experts of a Qwen3.5 MoE ("mlp.experts.gate_up_proj", "mlp.experts.down_proj"),
+    # which target_modules = "all-linear" skips. Passed to PEFT LoraConfig.target_parameters.
+    lora_target_parameters: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -168,10 +204,24 @@ class PipelineConfig:
     grpo: GrpoConfig = field(default_factory=GrpoConfig)
     tracking: TrackingConfig = field(default_factory=TrackingConfig)
     output_root: Path = Path("runs")
+    # Held-out suites from [[eval_suites]]; empty for a legacy single [eval_dataset] config.
+    # When set, eval_dataset is the first (primary) suite's dataset.
+    eval_suites: tuple[EvalSuiteConfig, ...] = ()
 
     @property
     def sandbox(self) -> str:
         return self.runtime.sandbox or "daytona"
+
+    @property
+    def suites(self) -> tuple[EvalSuiteConfig, ...]:
+        """Held-out suites in evaluation order; the first is the primary suite.
+
+        The primary suite's first trial keeps the legacy artifact paths and the legacy
+        score.json fields, so single-suite collectors keep working unchanged.
+        """
+        if self.eval_suites:
+            return self.eval_suites
+        return (EvalSuiteConfig(name=LEGACY_EVAL_SUITE, dataset=self.eval_dataset),)
 
     def validate(self) -> None:
         errors: list[str] = []
@@ -232,6 +282,20 @@ class PipelineConfig:
                 errors.append(f"{label} must be a non-empty string")
         if not isinstance(self.evaluation.sync_base_to_vllm, bool):
             errors.append("evaluation.sync_base_to_vllm must be boolean")
+        if not _is_positive_int(self.evaluation.trials):
+            errors.append("evaluation.trials must be a positive integer")
+        suite_names = [suite.name for suite in self.suites]
+        if any(
+            not isinstance(name, str) or not EVAL_SUITE_NAME.match(name)
+            for name in suite_names
+        ):
+            errors.append(
+                "eval_suites names must match " + EVAL_SUITE_NAME.pattern
+            )
+        if len(set(suite_names)) != len(suite_names):
+            errors.append("eval_suites names must be unique")
+        if self.eval_suites and self.eval_suites[0].dataset != self.eval_dataset:
+            errors.append("eval_dataset must be the first eval_suites entry")
         if self.sandbox not in {"docker", "daytona"}:
             errors.append("runtime.sandbox must be docker or daytona")
         if self.runtime.num_generations < 2:
@@ -284,6 +348,43 @@ class PipelineConfig:
             or not self.grpo.vllm_server_base_url_env.strip()
         ):
             errors.append("grpo.vllm_server_base_url_env must be a non-empty string")
+        if (
+            not isinstance(self.grpo.seed, int)
+            or isinstance(self.grpo.seed, bool)
+            or self.grpo.seed < 0
+        ):
+            errors.append("grpo.seed must be a non-negative integer")
+        if self.grpo.task_sampler not in {"trl", "cover"}:
+            errors.append("grpo.task_sampler must be trl or cover")
+        if self.grpo.task_sampler == "cover":
+            generation_batch = (
+                self.grpo.generation_batch_size
+                or self.runtime.num_generations * self.harness.concurrency
+            )
+            if self.grpo.max_steps is None:
+                errors.append("grpo.task_sampler = cover requires grpo.max_steps")
+            if self.grpo.gradient_accumulation_steps != generation_batch:
+                errors.append(
+                    "grpo.task_sampler = cover requires grpo.gradient_accumulation_steps "
+                    f"to equal the generation batch size ({generation_batch}) so one "
+                    "optimizer step consumes exactly one generation batch"
+                )
+        if not isinstance(self.grpo.lora_target_parameters, tuple) or any(
+            not isinstance(name, str) or not name.strip()
+            for name in self.grpo.lora_target_parameters
+        ):
+            errors.append("grpo.lora_target_parameters must contain parameter names")
+        if not isinstance(self.grpo.require_full_coverage, bool):
+            errors.append("grpo.require_full_coverage must be boolean")
+        if self.grpo.rollout_failure_policy not in {"raise", "mask"}:
+            errors.append("grpo.rollout_failure_policy must be raise or mask")
+        fraction = self.grpo.max_masked_rollout_fraction
+        if (
+            not isinstance(fraction, int | float)
+            or isinstance(fraction, bool)
+            or not 0 <= float(fraction) < 1
+        ):
+            errors.append("grpo.max_masked_rollout_fraction must be in [0, 1)")
         if not _is_positive_int(self.teacher.max_attempts) or not _is_positive_int(
             self.teacher.min_verified
         ):
@@ -348,7 +449,14 @@ class PipelineConfig:
             errors.append("sft.lora_dropout must be between 0 and 1")
         for label, path in (
             ("train_dataset.task_list", self.train_dataset.task_list),
-            ("eval_dataset.task_list", self.eval_dataset.task_list),
+            *(
+                (
+                    (f"eval_suites.{suite.name}.task_list", suite.dataset.task_list)
+                    for suite in self.eval_suites
+                )
+                if self.eval_suites
+                else (("eval_dataset.task_list", self.eval_dataset.task_list),)
+            ),
         ):
             if not path.is_file():
                 errors.append(f"{label} does not exist: {path}")
@@ -358,12 +466,50 @@ class PipelineConfig:
             raise ValueError("Invalid pipeline config:\n- " + "\n- ".join(errors))
 
 
+def _dataset(base: Path, table: dict[str, Any]) -> DatasetConfig:
+    return DatasetConfig(
+        repo_id=str(table["repo_id"]),
+        revision=str(table["revision"]),
+        task_list=_resolve(base, str(table["task_list"])),
+        path=str(table.get("path", "tasks")),
+    )
+
+
+def _eval_suites(data: dict[str, Any], base: Path) -> tuple[EvalSuiteConfig, ...]:
+    """Parse [[eval_suites]]: an array of tables with name, repo_id, revision, path, task_list."""
+    if "eval_suites" not in data:
+        return ()
+    if "eval_dataset" in data:
+        raise ValueError("Use either [eval_dataset] or [[eval_suites]], not both")
+    raw = data["eval_suites"]
+    if not isinstance(raw, list) or not raw:
+        raise ValueError("[[eval_suites]] must be a non-empty array of tables")
+    suites = []
+    for index, table in enumerate(raw):
+        if not isinstance(table, dict):
+            raise ValueError(f"eval_suites[{index}] must be a TOML table")
+        missing = [
+            key
+            for key in ("name", "repo_id", "revision", "task_list")
+            if key not in table
+        ]
+        if missing:
+            raise ValueError(
+                f"eval_suites[{index}] is missing: " + ", ".join(missing)
+            )
+        suites.append(
+            EvalSuiteConfig(name=str(table["name"]), dataset=_dataset(base, table))
+        )
+    return tuple(suites)
+
+
 def load_config(path: str | Path) -> PipelineConfig:
     source = Path(path).expanduser().resolve()
     data = tomllib.loads(source.read_text())
     base = source.parent
     model = _table(data, "model")
     train = _table(data, "train_dataset")
+    eval_suites = _eval_suites(data, base)
     eval_data = _table(data, "eval_dataset")
     runtime = _table(data, "runtime")
     harness = _table(data, "harness", required=True)
@@ -377,17 +523,9 @@ def load_config(path: str | Path) -> PipelineConfig:
         source=source,
         model=str(model["id"]),
         model_revision=str(model["revision"]) if model.get("revision") else None,
-        train_dataset=DatasetConfig(
-            repo_id=str(train["repo_id"]),
-            revision=str(train["revision"]),
-            task_list=_resolve(base, str(train["task_list"])),
-            path=str(train.get("path", "tasks")),
-        ),
-        eval_dataset=DatasetConfig(
-            repo_id=str(eval_data["repo_id"]),
-            revision=str(eval_data["revision"]),
-            task_list=_resolve(base, str(eval_data["task_list"])),
-            path=str(eval_data.get("path", "tasks")),
+        train_dataset=_dataset(base, train),
+        eval_dataset=(
+            eval_suites[0].dataset if eval_suites else _dataset(base, eval_data)
         ),
         runtime=RuntimeConfig(**runtime),
         harness=HarnessConfig(
@@ -408,9 +546,19 @@ def load_config(path: str | Path) -> PipelineConfig:
         evaluation=EvaluationConfig(**evaluation),
         teacher=TeacherConfig(**teacher),
         sft=SftConfig(**sft),
-        grpo=GrpoConfig(**grpo),
+        grpo=GrpoConfig(
+            **{
+                **grpo,
+                **(
+                    {"lora_target_parameters": tuple(grpo["lora_target_parameters"])}
+                    if isinstance(grpo.get("lora_target_parameters"), list)
+                    else {}
+                ),
+            }
+        ),
         tracking=TrackingConfig(**tracking),
         output_root=_resolve(base, str(output.get("root", "../runs"))),
+        eval_suites=eval_suites,
     )
     config.validate()
     return config
