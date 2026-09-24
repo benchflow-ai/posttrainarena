@@ -311,6 +311,62 @@ def test_resume_validates_snapshot_marker_and_task_bytes(tmp_path: Path) -> None
         )
 
 
+def test_snapshot_drops_reference_solutions_before_rollouts(tmp_path: Path) -> None:
+    config = load_config(ROOT / "configs/qwen3-4b-data-agent-smoke.toml")
+    train_id = config.train_dataset.task_list.read_text().splitlines()[0]
+    train_list = tmp_path / "train.txt"
+    train_list.write_text(train_id + "\n")
+    config = replace(
+        config,
+        output_root=tmp_path / "runs",
+        train_dataset=replace(config.train_dataset, task_list=train_list),
+    )
+    pipeline = Pipeline(config, run_name="strip-oracle")
+    destination = pipeline.layout.train_tasks
+    task_dir = destination / train_id
+
+    def fake_snapshot(name, command, **kwargs):
+        (task_dir / "oracle").mkdir(parents=True)
+        (task_dir / "oracle" / "solve.sh").write_text("echo answer > /app/out\n")
+        (task_dir / "solution").mkdir()
+        (task_dir / "environment").mkdir()
+        (task_dir / "environment" / "Dockerfile").write_text("FROM python:3.12\n")
+        (task_dir / "task.md").write_text("---\ntask:\n  name: task\n---\nprompt\n")
+        (destination / ".benchflow-source.json").write_text(
+            json.dumps(
+                {
+                    "repo": config.train_dataset.repo_id,
+                    "repo_type": "dataset",
+                    "path": config.train_dataset.path,
+                    "requested_revision": config.train_dataset.revision,
+                    "resolved_revision": config.train_dataset.revision,
+                    "include_tasks": [train_id],
+                    "dirty": False,
+                    "local_path": str(destination),
+                }
+            )
+        )
+        return 0
+
+    pipeline.runner.run = fake_snapshot
+    pipeline._snapshot("train", config.train_dataset, [train_id], destination)
+
+    assert not (task_dir / "oracle").exists()
+    assert not (task_dir / "solution").exists()
+    assert (task_dir / "environment" / "Dockerfile").is_file()
+    report = json.loads(
+        (pipeline.layout.reports / "train_snapshot_integrity.json").read_text()
+    )
+    assert report["reference_solutions_removed"] == [
+        f"{train_id}/oracle",
+        f"{train_id}/solution",
+    ]
+
+    resumed = Pipeline(config, run_name="strip-oracle", dry_run=True, resume=True)
+    resumed._snapshot("train", config.train_dataset, [train_id], destination)
+    assert resumed.runner.commands == []
+
+
 def test_qwen35_dry_run_syncs_pinned_base_before_baseline(tmp_path: Path) -> None:
     config = load_config(ROOT / "configs/qwen3.5-9b-data-agent-soccer-canary.toml")
     config = replace(config, output_root=tmp_path)
