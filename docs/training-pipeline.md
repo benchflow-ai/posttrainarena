@@ -201,6 +201,8 @@ recipes instead of hiding task selection in code.
 
 ## Held-out suites and trials
 
+The recipe v2 template for Qwen3.5-35B-A3B on one 8×H200 node, and why each of its settings was chosen, is in [recipe-v2.md](recipe-v2.md).
+
 A recipe can evaluate several held-out suites, each several times. Use `[[eval_suites]]` instead of `[eval_dataset]` (setting both is an error) and set `trials` in `[evaluation]`:
 
 ```toml
