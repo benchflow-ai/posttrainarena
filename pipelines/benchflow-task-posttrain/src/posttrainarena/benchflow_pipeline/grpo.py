@@ -82,6 +82,7 @@ def grpo_training_recipe(config: PipelineConfig) -> dict[str, Any]:
         "lora_r": config.grpo.lora_r,
         "lora_alpha": config.grpo.lora_alpha,
         "lora_dropout": config.grpo.lora_dropout,
+        "lora_target_parameters": list(config.grpo.lora_target_parameters),
         "rollout_attempts": config.grpo.rollout_attempts,
         "require_reward_variance": config.grpo.require_reward_variance,
         "seed": config.grpo.seed,
@@ -1427,6 +1428,11 @@ def train_grpo(
             bias="none",
             task_type="CAUSAL_LM",
             target_modules="all-linear",
+            **(
+                {"target_parameters": list(config.grpo.lora_target_parameters)}
+                if config.grpo.lora_target_parameters
+                else {}
+            ),
         ),
     )
     pin_weight_sync_device(trainer)

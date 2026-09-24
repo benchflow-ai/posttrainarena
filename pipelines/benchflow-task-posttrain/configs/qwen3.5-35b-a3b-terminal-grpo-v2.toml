@@ -1,0 +1,110 @@
+# Recipe v2 template: Qwen3.5-35B-A3B, LoRA GRPO with OpenCode rollouts over the whole submitted
+# collection, held-out = sealed TB2 (86, no qemu) + sealed long-horizon TB non-game (38), 3 trials
+# each, one 8xH200 node. Not run yet: every number here is a planning choice, justified with
+# citations, wall-clock estimates and open risks in docs/recipe-v2.md.
+#
+# Task lists are bundle-relative (task-lists/*.txt); the Space's config composer writes the
+# [model], [train_dataset], [[eval_suites]] and [output] tables and supplies the lists. The sealed
+# suite task IDs are not in this public repository, so this file validates only inside a bundle.
+# Everything from [runtime] down is the method (grpo-v2).
+
+[model]
+id = "Qwen/Qwen3.5-35B-A3B"
+revision = "59d61f3ce65a6d9863b86d2e96597125219dc754"
+
+[train_dataset]
+# The submission's accepted tasks (example: the organizer TMax pool).
+repo_id = "benchflow/tmax-train4k-benchflow"
+revision = "208bd62890de7e32e11875ce1d441a2febdd8e62"
+path = ""
+task_list = "task-lists/train.txt"
+
+[[eval_suites]]
+name = "tb2"
+repo_id = "benchflow/tb2-benchflow"
+revision = "7505daf9bdc8cec27a76f6086c94e4c04dc3e758"
+path = ""
+task_list = "task-lists/tb2-86.txt"
+
+[[eval_suites]]
+name = "lhtb"
+repo_id = "benchflow/lhtb-nongame-benchflow"
+revision = "dadf01e18db16f4248d0a64933dcdc6d2c9ed29f"
+path = ""
+task_list = "task-lists/lhtb-38.txt"
+
+[runtime]
+sandbox = "daytona"
+sandbox_user = "none"  # root: Terminal-Bench and TMax tasks are written for root (Harbor convention)
+# Trainer-side token budget per trajectory. PENDING the 64K/128K context grid. Above ~64K the
+# trainer's full-vocabulary logits (248,320 x tokens) need a chunked loss; longer trajectories are
+# truncated, not dropped (rollout_failure_policy = "mask").
+max_completion_length = 65536
+num_generations = 8  # group size; LEGO-RL uses 8 for this model under OpenCode
+
+[harness]
+agent = "opencode"
+skill_mode = "no-skill"
+usage_tracking = "required"
+# Concurrent sandboxes for evaluation and for GRPO rollouts. Needs Daytona capacity for 32
+# sandboxes (unconfirmed; see docs/recipe-v2.md). Rollout wall-clock scales with 1/concurrency.
+concurrency = 32
+sandbox_setup_timeout_sec = 600
+# Idle limit = wall limit: the pipeline treats idle timeouts as infrastructure errors, and a
+# scored wall-clock timeout as a failure (Terminal-Bench convention).
+agent_idle_timeout_sec = 1800
+agent_timeout_sec = 1800
+max_infra_error_fraction = 0.1
+
+[evaluation]
+base_model_env = "BENCHFLOW_BASE_MODEL"
+student_model_env = "BENCHFLOW_ADAPTER_MODEL"
+base_url_env = "BENCHFLOW_PROVIDER_BASE_URL"
+control_url_env = "BENCHFLOW_MODEL_BRIDGE_CONTROL_URL"
+api_key_env = "BENCHFLOW_PROVIDER_API_KEY"
+sync_base_to_vllm = true
+trials = 3  # every suite x 3, before and after training
+
+[teacher]
+enabled = false
+
+[sft]
+enabled = false
+
+[grpo]
+enabled = true
+run_policy = "always"
+threshold = 0.0
+gate_task_count = 8  # informational only under run_policy = "always"; train_task_stats.json has per-task pass rates
+num_train_epochs = 1.0
+# 32 steps x 8 task groups = 256 group slots: every task of a collection of up to 256 tasks is
+# sampled (require_full_coverage); larger collections need more steps.
+max_steps = 32
+generation_batch_size = 64  # 8 tasks x 8 rollouts per step
+gradient_accumulation_steps = 64  # one optimizer step per generation batch (required by cover)
+# LoRA learning rate = 10x the 1e-6 full fine-tuning rate of TMax, LEGO-RL, Nebius and MiMo
+# ("LoRA Without Regret", Thinking Machines, 2025).
+learning_rate = 0.00001
+gradient_checkpointing = true
+lora_r = 32
+lora_alpha = 64
+lora_dropout = 0.0
+# "all-linear" skips the fused routed experts of Qwen3.5-MoE. Uncomment after the one-step
+# validation run in docs/recipe-v2.md shows PEFT, the merge and the vLLM weight sync handle them:
+# lora_target_parameters = ["mlp.experts.gate_up_proj", "mlp.experts.down_proj"]
+log_completions = false
+rollout_attempts = 2
+require_reward_variance = true
+seed = 42
+task_sampler = "cover"
+require_full_coverage = true
+rollout_failure_policy = "mask"
+max_masked_rollout_fraction = 0.25
+vllm_server_base_url_env = "TRL_VLLM_SERVER_BASE_URL"
+
+[tracking]
+report_to = "none"
+project = "posttrainarena-recipe-v2"
+
+[output]
+root = "runs"

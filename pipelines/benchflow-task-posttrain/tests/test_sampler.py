@@ -397,7 +397,11 @@ def test_train_grpo_feeds_the_cover_schedule_in_order(
     import trl
     import posttrainarena.benchflow_pipeline.grpo as grpo_module
 
-    config = _cover_config(max_steps=3, rollout_failure_policy="mask")
+    config = _cover_config(
+        max_steps=3,
+        rollout_failure_policy="mask",
+        lora_target_parameters=("mlp.experts.gate_up_proj",),
+    )
     tasks = ["task-a", "task-b", "task-c"]
     tasks_dir = tmp_path / "tasks"
     for task_id in tasks:
@@ -478,6 +482,8 @@ def test_train_grpo_feeds_the_cover_schedule_in_order(
 
     plan = sampler_plan(config, tasks)
     args = captured["args"].values
+    assert captured["peft_config"].values["target_modules"] == "all-linear"
+    assert captured["peft_config"].values["target_parameters"] == ["mlp.experts.gate_up_proj"]
     assert args["seed"] == 42
     assert args["shuffle_dataset"] is False
     assert [row["benchflow_task_id"] for row in captured["train_dataset"]] == [

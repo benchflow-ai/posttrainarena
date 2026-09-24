@@ -177,6 +177,10 @@ class GrpoConfig:
     rollout_failure_policy: RolloutFailurePolicy = "raise"
     # mask only: stop training when the cumulative share of masked rollouts exceeds this.
     max_masked_rollout_fraction: float = 0.25
+    # Extra LoRA targets that are nn.Parameter tensors rather than nn.Linear modules, such as the
+    # fused routed experts of a Qwen3.5 MoE ("mlp.experts.gate_up_proj", "mlp.experts.down_proj"),
+    # which target_modules = "all-linear" skips. Passed to PEFT LoraConfig.target_parameters.
+    lora_target_parameters: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -365,6 +369,11 @@ class PipelineConfig:
                     f"to equal the generation batch size ({generation_batch}) so one "
                     "optimizer step consumes exactly one generation batch"
                 )
+        if not isinstance(self.grpo.lora_target_parameters, tuple) or any(
+            not isinstance(name, str) or not name.strip()
+            for name in self.grpo.lora_target_parameters
+        ):
+            errors.append("grpo.lora_target_parameters must contain parameter names")
         if not isinstance(self.grpo.require_full_coverage, bool):
             errors.append("grpo.require_full_coverage must be boolean")
         if self.grpo.rollout_failure_policy not in {"raise", "mask"}:
@@ -537,7 +546,16 @@ def load_config(path: str | Path) -> PipelineConfig:
         evaluation=EvaluationConfig(**evaluation),
         teacher=TeacherConfig(**teacher),
         sft=SftConfig(**sft),
-        grpo=GrpoConfig(**grpo),
+        grpo=GrpoConfig(
+            **{
+                **grpo,
+                **(
+                    {"lora_target_parameters": tuple(grpo["lora_target_parameters"])}
+                    if isinstance(grpo.get("lora_target_parameters"), list)
+                    else {}
+                ),
+            }
+        ),
         tracking=TrackingConfig(**tracking),
         output_root=_resolve(base, str(output.get("root", "../runs"))),
         eval_suites=eval_suites,
