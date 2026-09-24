@@ -25,6 +25,9 @@ from .io import (
 )
 from .layout import RunLayout
 
+# Reference-solution directories of native (oracle/) and legacy (solution/) BenchFlow task packages.
+REFERENCE_SOLUTION_DIRS = ("oracle", "solution")
+
 
 def utc_run_name() -> str:
     return datetime.now(timezone.utc).strftime("run-%Y%m%dT%H%M%SZ")
@@ -414,13 +417,37 @@ class Pipeline:
             ],
         )
         if not self.dry_run:
+            removed = self._strip_reference_solutions(task_ids, destination)
             self._write_snapshot_integrity(
                 label=label,
                 dataset=dataset,
                 task_ids=task_ids,
                 destination=destination,
                 marker=marker,
+                reference_solutions_removed=removed,
             )
+
+    @staticmethod
+    def _strip_reference_solutions(task_ids: list[str], destination: Path) -> list[str]:
+        """Remove oracle/ and legacy solution/ from snapshotted tasks.
+
+        BenchFlow uploads a task's reference solution to /oracle (or /solution) in every sandbox before
+        the agent starts, and locks it only when the agent runs as a non-root sandbox user. With
+        ``runtime.sandbox_user = "none"`` the OpenCode agent runs as root and could read it during
+        baseline, GRPO rollouts and held-out evaluation. The pipeline never runs the oracle, so the
+        snapshot drops it before any rollout.
+        """
+        removed = []
+        for task_id in task_ids:
+            for name in REFERENCE_SOLUTION_DIRS:
+                path = destination / task_id / name
+                if path.is_symlink() or path.is_file():
+                    path.unlink()
+                    removed.append(f"{task_id}/{name}")
+                elif path.is_dir():
+                    shutil.rmtree(path)
+                    removed.append(f"{task_id}/{name}")
+        return removed
 
     def _snapshot_integrity_path(self, label: str) -> Path:
         return self.layout.reports / f"{label}_snapshot_integrity.json"
@@ -444,11 +471,13 @@ class Pipeline:
         task_ids: list[str],
         destination: Path,
         marker: Path,
+        reference_solutions_removed: list[str] | None = None,
     ) -> None:
         marker_payload = load_json(marker)
         write_json(
             self._snapshot_integrity_path(label),
             {
+                "reference_solutions_removed": reference_solutions_removed or [],
                 "schema_version": 1,
                 "label": label,
                 "dataset": {
@@ -645,7 +674,7 @@ class Pipeline:
         metrics_path: Path,
         policy_sha256: str,
     ) -> float:
-        from .opencode import load_summary, served_model
+        from .opencode import load_summary, max_infra_errors_for, served_model
 
         payload = load_json(metrics_path)
         expected = {
@@ -669,6 +698,7 @@ class Pipeline:
             health_path=metrics_path.with_name(f"{metrics_path.stem}_health.json"),
             expected_tasks=len(task_ids),
             expected_task_ids=task_ids,
+            max_infra_errors=max_infra_errors_for(self.config, len(task_ids)),
         )
         score = load_score(metrics_path)
         if not math.isclose(score, float(loaded["score"]), rel_tol=0, abs_tol=1e-12):

@@ -6,6 +6,7 @@ import json
 import math
 import os
 from pathlib import Path
+from collections.abc import Mapping
 from typing import Any, Literal
 
 from .config import PipelineConfig
@@ -182,12 +183,45 @@ def _count(summary: dict[str, Any], key: str) -> int:
     return value
 
 
+TIMEOUT_MARKERS = ("wall-clock budget", "idle timeout", "timed out")
+
+
+def is_timeout_error(row: Mapping[str, Any]) -> bool:
+    """An agent that ran out of its wall-clock or idle budget produced a scored failure (reward 0), not an infrastructure error.
+
+    Terminal-Bench and Tmax count such attempts as failures; treating them as unhealthy made every
+    evaluation with one slow task abort (phase-2 run r23 lost its baseline to nine 900 s timeouts).
+    """
+    error = row.get("error")
+    if error is None:
+        return False
+    category = row.get("error_category")
+    if category is not None:
+        return str(category) == "timeout"
+    return any(marker in str(error).lower() for marker in TIMEOUT_MARKERS)
+
+
+def is_scored_row(row: Mapping[str, Any]) -> bool:
+    return (
+        row.get("scored") is True
+        and (row.get("error") is None or is_timeout_error(row))
+        and row.get("verifier_error") is None
+        and row.get("valid_llm_trajectory") is True
+    )
+
+
+def max_infra_errors_for(config: PipelineConfig, task_count: int) -> int:
+    """Number of infrastructure-errored tasks an evaluation may carry (counted as failures)."""
+    return int(math.ceil(config.harness.max_infra_error_fraction * task_count))
+
+
 def load_summary(
     *,
     jobs_dir: Path,
     health_path: Path,
     expected_tasks: int,
     expected_task_ids: list[str] | None = None,
+    max_infra_errors: int = 0,
 ) -> dict[str, Any]:
     summary_path = jobs_dir / "summary.json"
     summary = load_json(summary_path)
@@ -196,26 +230,34 @@ def load_summary(
             f"OpenCode evaluation produced {summary.get('total')!r} tasks; "
             f"expected {expected_tasks}"
         )
-    if _count(summary, "errored") or _count(summary, "verifier_errored"):
-        raise RuntimeError("OpenCode evaluation contains agent or verifier errors")
-    if _ratio(summary, "telemetry_coverage") < 1.0:
+    errored = _count(summary, "errored") + _count(summary, "verifier_errored")
+    if errored > max_infra_errors:
+        raise RuntimeError(
+            "OpenCode evaluation contains agent or verifier errors"
+            + (f" ({errored} > {max_infra_errors} tolerated)" if max_infra_errors else "")
+        )
+    # Errored tasks carry no usage telemetry; coverage must be complete for every other task.
+    if _ratio(summary, "telemetry_coverage") < (expected_tasks - errored) / expected_tasks - 1e-9:
         raise RuntimeError("OpenCode evaluation telemetry coverage is incomplete")
     health = load_json(health_path)
+    infra_error_tasks: list[str] = []
     if expected_task_ids is not None:
         rows = health.get("rows")
         if not isinstance(rows, list) or any(not isinstance(row, dict) for row in rows):
             raise RuntimeError("OpenCode evaluation health summary has no valid rows")
         missing = []
         for task_id in expected_task_ids:
-            valid = any(
+            valid = any(row.get("task_id") == task_id and is_scored_row(row) for row in rows)
+            if valid:
+                continue
+            attempted = any(
                 row.get("task_id") == task_id
-                and row.get("scored") is True
-                and row.get("error") is None
-                and row.get("verifier_error") is None
-                and row.get("valid_llm_trajectory") is True
+                and (row.get("error") is not None or row.get("verifier_error") is not None)
                 for row in rows
             )
-            if not valid:
+            if attempted and len(infra_error_tasks) < max_infra_errors:
+                infra_error_tasks.append(task_id)
+            else:
                 missing.append(task_id)
         if missing:
             raise RuntimeError(
@@ -243,17 +285,26 @@ def load_summary(
                 raise RuntimeError(
                     f"OpenCode evaluation health summary has {key}={value!r}"
                 )
-    score_key = (
-        "score_excl_errors_ratio"
-        if "score_excl_errors_ratio" in summary
-        else "score_ratio"
-    )
+    if infra_error_tasks:
+        # Errored tasks count as failures: passes over every expected task.
+        passed = summary.get("passed")
+        if not isinstance(passed, int) or isinstance(passed, bool) or passed < 0:
+            raise RuntimeError("OpenCode evaluation summary has no integer passed count")
+        score = passed / expected_tasks
+    else:
+        score_key = (
+            "score_excl_errors_ratio"
+            if "score_excl_errors_ratio" in summary
+            else "score_ratio"
+        )
+        score = _ratio(summary, score_key)
     return {
-        "score": _ratio(summary, score_key),
+        "score": score,
         "summary": summary,
         "summary_path": str(summary_path),
         "health": health,
         "health_path": str(health_path),
+        "infra_error_tasks": infra_error_tasks,
     }
 
 
@@ -277,7 +328,9 @@ def evaluate(
         f"{metrics_path.stem}_task_manifest.json"
     )
     run_config_path = metrics_path.with_name(f"{metrics_path.stem}_run_config.json")
-    runner.run(
+    # `bench eval run` exits non-zero when any task errored; the summary decides whether
+    # that is tolerable (see load_summary / harness.max_infra_error_fraction).
+    returncode = runner.run(
         stage,
         build_evaluation_command(
             config=config,
@@ -293,7 +346,12 @@ def evaluate(
             model_role=model_role,
         ),
         env_overrides=evaluation_env(config, required=require_environment),
+        check=False,
     )
+    if not runner.dry_run and returncode and not (jobs_dir / "summary.json").is_file():
+        raise RuntimeError(
+            f"{stage}: bench eval run exited with {returncode} and produced no summary"
+        )
     if runner.dry_run:
         return {
             "mode": "eval",
@@ -317,6 +375,7 @@ def evaluate(
         health_path=health_path,
         expected_tasks=len(task_ids),
         expected_task_ids=task_ids,
+        max_infra_errors=max_infra_errors_for(config, len(task_ids)),
     )
     payload = {
         "mode": "eval",

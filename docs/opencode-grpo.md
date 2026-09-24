@@ -167,6 +167,15 @@ The bridge short-circuits OpenCode's title-generator prompt to a fixed local
 title without a provider call, avoiding helper failures before the first tool
 action.
 
+The bridge batches concurrent chat requests before calling TRL's `/chat/`.
+That endpoint performs synchronous pipe I/O inside its async handler, so
+concurrent HTTP requests are served one at a time per data-parallel worker;
+with one worker an eight-agent evaluation degraded to a few completions per
+minute and tripped the agents' idle watchdog. Requests that share sampling
+parameters and tools are merged into one `messages` list (continuous batching
+inside vLLM) and split back per request; `--batch-max-requests` (16) and
+`--batch-wait-seconds` (0.05) tune it.
+
 ## Validation boundary
 
 The exact-ID reconstruction, action masking, reward forwarding, retry policy,

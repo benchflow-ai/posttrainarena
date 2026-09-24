@@ -17,7 +17,7 @@ from typing import Any, Sequence
 from .config import BENCHFLOW_COMMIT, PipelineConfig
 from .io import CommandRunner, supported_kwargs, write_json
 from .model_bridge import normalize_tool_call_arguments
-from .opencode import ServedModelRole, evaluate, served_model
+from .opencode import ServedModelRole, evaluate, served_model, is_scored_row
 
 
 TASK_HANDLE_PREFIX = "benchflow-task://"
@@ -165,6 +165,32 @@ def reward_group_diagnostics(
         ),
         "groups": group_rows,
     }
+
+
+def pin_weight_sync_device(trainer: Any) -> bool:
+    """Copy each synced weight onto the NCCL communicator's device before broadcast.
+
+    With one trainer process over several GPUs the policy is split across devices, while
+    TRL's vLLM weight-sync communicator is bound to a single device (cuda:0). TRL 1.8
+    broadcasts each parameter where it lives and fails with "communicator is created to
+    work on cuda:0, but the input tensor is on cuda:1" on the first optimizer step.
+    """
+    client = getattr(getattr(trainer, "vllm_generation", None), "vllm_client", None)
+    if client is None or getattr(client, "_pta_weight_sync_pinned", False):
+        return False
+    original = getattr(client, "update_named_param", None)
+    if not callable(original):
+        return False
+
+    def update_named_param(name: str, weights: Any) -> Any:
+        device = getattr(getattr(client, "communicator", None), "device", None)
+        if device is not None and getattr(weights, "device", device) != device:
+            weights = weights.to(device)
+        return original(name, weights)
+
+    client.update_named_param = update_named_param
+    client._pta_weight_sync_pinned = True
+    return True
 
 
 def lora_b_update_diagnostics(model: Any) -> dict[str, Any]:
@@ -1010,13 +1036,7 @@ class OpenCodeRolloutCollector:
             health_row = rows[0]
         else:
             candidates = [
-                row
-                for row in rows
-                if row.get("task_id") == task_id
-                and row.get("scored") is True
-                and row.get("error") is None
-                and row.get("verifier_error") is None
-                and row.get("valid_llm_trajectory") is True
+                row for row in rows if row.get("task_id") == task_id and is_scored_row(row)
             ]
             if not candidates:
                 raise RuntimeError(
@@ -1148,6 +1168,7 @@ def train_grpo(
             target_modules="all-linear",
         ),
     )
+    pin_weight_sync_device(trainer)
     try:
         result = trainer.train()
     finally:

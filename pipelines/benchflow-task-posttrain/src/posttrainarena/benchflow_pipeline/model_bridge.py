@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import copy
 import json
 import logging
@@ -39,8 +40,18 @@ class ModelBridgeConfig:
     max_logprob_context_tokens: int = 16384
     timeout_seconds: float = 900.0
     max_sidecar_entries: int = 2048
+    batch_max_requests: int = 16
+    batch_wait_seconds: float = 0.05
 
     def __post_init__(self) -> None:
+        if (
+            not isinstance(self.batch_max_requests, int)
+            or isinstance(self.batch_max_requests, bool)
+            or self.batch_max_requests < 1
+        ):
+            raise ValueError("batch_max_requests must be a positive integer")
+        if not isinstance(self.batch_wait_seconds, int | float) or self.batch_wait_seconds < 0:
+            raise ValueError("batch_wait_seconds must be a non-negative number")
         if (
             not isinstance(self.max_tokens_per_call, int)
             or isinstance(self.max_tokens_per_call, bool)
@@ -72,56 +83,86 @@ class ModelBridgeConfig:
             raise ValueError("max_sidecar_entries must be a positive integer")
 
 
+def _parse_tool_call_body(body: str) -> dict[str, Any]:
+    if body.startswith("{"):
+        try:
+            payload = json.loads(body)
+        except json.JSONDecodeError as exc:
+            raise RuntimeError(f"Malformed Qwen tool call: {exc}") from exc
+    else:
+        function = FUNCTION_CALL_PATTERN.fullmatch(body)
+        if function is None:
+            raise RuntimeError("Malformed Qwen function-tag tool call")
+        name = function.group(1).strip()
+        arguments: dict[str, str] = {}
+        parameters = function.group(2)
+        consumed = 0
+        for parameter in FUNCTION_PARAMETER_PATTERN.finditer(parameters):
+            if parameters[consumed : parameter.start()].strip():
+                raise RuntimeError("Malformed Qwen function parameter block")
+            parameter_name = parameter.group(1).strip()
+            if not parameter_name:
+                raise RuntimeError("Invalid Qwen function parameter: ''")
+            if parameter_name in arguments:
+                # The policy sometimes repeats a parameter tag; keep the last value
+                # instead of failing the whole completion (which aborts the rollout).
+                logger.warning(
+                    "Duplicate Qwen function parameter %r for %r; keeping the last value",
+                    parameter_name,
+                    name,
+                )
+            arguments[parameter_name] = parameter.group(2).strip()
+            consumed = parameter.end()
+        if parameters[consumed:].strip():
+            raise RuntimeError("Malformed Qwen function parameter block")
+        payload = {"name": name, "arguments": arguments}
+    name = payload.get("name")
+    arguments = payload.get("arguments", {})
+    if not isinstance(name, str) or not name:
+        raise RuntimeError("Qwen tool call has no function name")
+    if not isinstance(arguments, dict):
+        raise RuntimeError("Qwen tool call arguments must be an object")
+    return {"name": name, "arguments": arguments}
+
+
 def parse_qwen_tool_calls(text: str) -> tuple[str | None, list[dict[str, Any]]]:
+    """Split a Qwen completion into assistant text and OpenAI-shaped tool calls.
+
+    A malformed ``<tool_call>`` block is model output, not a bridge fault: it is
+    left in the text (so the agent and the training transcript see what the
+    policy emitted) instead of failing the completion, which would return 500 to
+    OpenCode and abort the rollout.
+    """
     calls: list[dict[str, Any]] = []
+    well_formed: list[tuple[int, int]] = []
     for match in TOOL_CALL_PATTERN.finditer(text):
         body = match.group(1).strip()
-        if body.startswith("{"):
-            try:
-                payload = json.loads(body)
-            except json.JSONDecodeError as exc:
-                raise RuntimeError(f"Malformed Qwen tool call: {exc}") from exc
-        else:
-            function = FUNCTION_CALL_PATTERN.fullmatch(body)
-            if function is None:
-                raise RuntimeError("Malformed Qwen function-tag tool call")
-            name = function.group(1).strip()
-            arguments: dict[str, str] = {}
-            parameters = function.group(2)
-            consumed = 0
-            for parameter in FUNCTION_PARAMETER_PATTERN.finditer(parameters):
-                if parameters[consumed : parameter.start()].strip():
-                    raise RuntimeError("Malformed Qwen function parameter block")
-                parameter_name = parameter.group(1).strip()
-                if not parameter_name or parameter_name in arguments:
-                    raise RuntimeError(
-                        f"Invalid Qwen function parameter: {parameter_name!r}"
-                    )
-                arguments[parameter_name] = parameter.group(2).strip()
-                consumed = parameter.end()
-            if parameters[consumed:].strip():
-                raise RuntimeError("Malformed Qwen function parameter block")
-            payload = {"name": name, "arguments": arguments}
-        name = payload.get("name")
-        arguments = payload.get("arguments", {})
-        if not isinstance(name, str) or not name:
-            raise RuntimeError("Qwen tool call has no function name")
-        if not isinstance(arguments, dict):
-            raise RuntimeError("Qwen tool call arguments must be an object")
+        try:
+            payload = _parse_tool_call_body(body)
+        except RuntimeError as exc:
+            logger.warning("Leaving malformed Qwen tool call in the text: %s", exc)
+            continue
+        well_formed.append(match.span())
         calls.append(
             {
                 "id": f"call_{uuid4().hex}",
                 "type": "function",
                 "function": {
-                    "name": name,
+                    "name": payload["name"],
                     "arguments": json.dumps(
-                        arguments,
+                        payload["arguments"],
                         separators=(",", ":"),
                     ),
                 },
             }
         )
-    remaining = TOOL_CALL_PATTERN.sub("", text).strip()
+    pieces = []
+    cursor = 0
+    for begin, finish in well_formed:
+        pieces.append(text[cursor:begin])
+        cursor = finish
+    pieces.append(text[cursor:])
+    remaining = "".join(pieces).strip()
     return remaining or None, calls
 
 
@@ -566,6 +607,133 @@ def _title_response(*, model: str) -> dict[str, Any]:
     }
 
 
+class ChatBatcher:
+    """Merge concurrent single-conversation `/chat/` calls into one upstream request.
+
+    TRL's `/chat/` endpoint does synchronous pipe I/O inside its async handler, so
+    concurrent HTTP requests are served one at a time per data-parallel worker.
+    Agentic rollouts (many agents, many short turns) therefore need batching on the
+    client side: requests that share sampling parameters and tools are sent as one
+    `messages` list, which vLLM runs with continuous batching, and the outputs are
+    handed back per request. One upstream call is in flight at a time; requests that
+    arrive meanwhile form the next batch.
+    """
+
+    _BATCH_KEYS = (
+        "n",
+        "repetition_penalty",
+        "temperature",
+        "top_p",
+        "top_k",
+        "min_p",
+        "max_tokens",
+        "logprobs",
+        "generation_kwargs",
+        "chat_template_kwargs",
+        "tools",
+    )
+
+    def __init__(
+        self,
+        post: Callable[[dict[str, Any]], Awaitable[dict[str, Any]]],
+        *,
+        max_requests: int = 16,
+        wait_seconds: float = 0.05,
+    ) -> None:
+        self._post = post
+        self._max_requests = max_requests
+        self._wait_seconds = wait_seconds
+        self._queue: asyncio.Queue[tuple[dict[str, Any], asyncio.Future[dict[str, Any]]]] = (
+            asyncio.Queue()
+        )
+        self._worker: asyncio.Task[None] | None = None
+        self.upstream_calls = 0
+        self.largest_batch = 0
+
+    async def call(self, payload: dict[str, Any]) -> dict[str, Any]:
+        messages = payload.get("messages")
+        if not isinstance(messages, list) or len(messages) != 1 or payload.get("n", 1) != 1:
+            return await self._post(payload)
+        future: asyncio.Future[dict[str, Any]] = asyncio.get_running_loop().create_future()
+        await self._queue.put((payload, future))
+        if self._worker is None or self._worker.done():
+            self._worker = asyncio.create_task(self._drain())
+        return await future
+
+    @classmethod
+    def batch_key(cls, payload: dict[str, Any]) -> str:
+        return json.dumps(
+            {key: payload.get(key) for key in cls._BATCH_KEYS}, sort_keys=True, default=str
+        )
+
+    async def _drain(self) -> None:
+        loop = asyncio.get_running_loop()
+        while not self._queue.empty():
+            batch = [await self._queue.get()]
+            deadline = loop.time() + self._wait_seconds
+            while len(batch) < self._max_requests:
+                remaining = deadline - loop.time()
+                if remaining <= 0:
+                    break
+                try:
+                    batch.append(await asyncio.wait_for(self._queue.get(), timeout=remaining))
+                except asyncio.TimeoutError:
+                    break
+            groups: dict[str, list[tuple[dict[str, Any], asyncio.Future[dict[str, Any]]]]] = {}
+            for item in batch:
+                groups.setdefault(self.batch_key(item[0]), []).append(item)
+            for items in groups.values():
+                await self._dispatch(items)
+
+    async def _dispatch(
+        self, items: list[tuple[dict[str, Any], asyncio.Future[dict[str, Any]]]]
+    ) -> None:
+        merged = dict(items[0][0])
+        merged["messages"] = [payload["messages"][0] for payload, _ in items]
+        self.upstream_calls += 1
+        self.largest_batch = max(self.largest_batch, len(items))
+        try:
+            data = await self._post(merged)
+            outputs = [self._slice(data, index, len(items)) for index in range(len(items))]
+        except Exception as error:  # noqa: BLE001 - every waiter must be released
+            for _, future in items:
+                if not future.done():
+                    future.set_exception(error)
+            return
+        for (_, future), output in zip(items, outputs, strict=True):
+            if not future.done():
+                future.set_result(output)
+
+    @staticmethod
+    def _slice(data: dict[str, Any], index: int, count: int) -> dict[str, Any]:
+        prompt_ids = data.get("prompt_ids")
+        completion_ids = data.get("completion_ids")
+        if not (
+            isinstance(prompt_ids, list)
+            and isinstance(completion_ids, list)
+            and len(prompt_ids) == count
+            and len(completion_ids) == count
+        ):
+            raise RuntimeError(
+                f"TRL chat batch returned {len(prompt_ids) if isinstance(prompt_ids, list) else '?'}"
+                f" prompts and {len(completion_ids) if isinstance(completion_ids, list) else '?'}"
+                f" completions for {count} conversations"
+            )
+        output: dict[str, Any] = {
+            "prompt_ids": [prompt_ids[index]],
+            "completion_ids": [completion_ids[index]],
+            "logprobs": None,
+            "logprob_token_ids": None,
+        }
+        for key in ("logprobs", "logprob_token_ids"):
+            value = data.get(key)
+            if isinstance(value, list):
+                if len(value) != count:
+                    raise RuntimeError(f"TRL chat batch returned {len(value)} {key} rows for {count} conversations")
+                output[key] = [value[index]]
+        return output
+
+
 def create_model_bridge_app(
     config: ModelBridgeConfig,
     *,
@@ -585,17 +753,25 @@ def create_model_bridge_app(
     if chat_call is None:
         import httpx
 
-        async def chat_call(payload: dict[str, Any]) -> dict[str, Any]:
-            async with httpx.AsyncClient(timeout=config.timeout_seconds) as client:
-                response = await client.post(
-                    f"{config.upstream_url.rstrip('/')}/chat/",
-                    json=payload,
-                )
-                response.raise_for_status()
-                data = response.json()
+        client = httpx.AsyncClient(timeout=config.timeout_seconds)
+
+        async def post_chat(payload: dict[str, Any]) -> dict[str, Any]:
+            response = await client.post(
+                f"{config.upstream_url.rstrip('/')}/chat/",
+                json=payload,
+            )
+            response.raise_for_status()
+            data = response.json()
             if not isinstance(data, dict):
                 raise RuntimeError("TRL chat response is not an object")
             return data
+
+        batcher = ChatBatcher(
+            post_chat,
+            max_requests=config.batch_max_requests,
+            wait_seconds=config.batch_wait_seconds,
+        )
+        chat_call = batcher.call
 
     app = FastAPI(title="PostTrain Arena TRL model bridge")
     logprob_store: OrderedDict[str, dict[str, Any]] = OrderedDict()
@@ -685,6 +861,8 @@ def serve_model_bridge(
     max_sidecar_entries: int,
     host: str,
     port: int,
+    batch_max_requests: int = 16,
+    batch_wait_seconds: float = 0.05,
 ) -> None:
     import uvicorn
 
@@ -698,6 +876,8 @@ def serve_model_bridge(
             max_context_tokens=max_context_tokens,
             max_logprob_context_tokens=max_logprob_context_tokens,
             max_sidecar_entries=max_sidecar_entries,
+            batch_max_requests=batch_max_requests,
+            batch_wait_seconds=batch_wait_seconds,
         )
     )
     uvicorn.run(app, host=host, port=port)
