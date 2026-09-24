@@ -30,7 +30,7 @@ agent:
   timeout_sec: 900
 verifier:
   timeout_sec: 300
-environment:
+sandbox:
   build_timeout_sec: 600
   cpus: 1
   memory_mb: 1024

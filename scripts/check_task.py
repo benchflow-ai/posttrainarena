@@ -31,7 +31,7 @@ REQUIRED_FRONTMATTER = (
     "metadata",
     "agent",
     "verifier",
-    "environment",
+    "sandbox",
 )
 REQUIRED_METADATA = (
     "author_name",
@@ -91,7 +91,12 @@ def check_task(task_dir: Path) -> list[str]:
         body = text[m.end():]
         top_keys = parse_yaml_keys(frontmatter)
         for required in REQUIRED_FRONTMATTER:
-            if required not in top_keys:
+            if required == "sandbox" and "environment" in top_keys:
+                issues.append(
+                    "task.md frontmatter key 'environment' was renamed to 'sandbox'"
+                    " (BenchFlow 0.7 no longer accepts 'environment')"
+                )
+            elif required not in top_keys:
                 issues.append(f"task.md frontmatter missing: {required}")
         metadata_keys = parse_metadata_keys(frontmatter)
         for required in REQUIRED_METADATA:
