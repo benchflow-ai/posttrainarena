@@ -334,6 +334,84 @@ def test_model_bridge_serves_authenticated_streaming_tool_call() -> None:
     assert "seed" not in captured["payload"]["generation_kwargs"]
 
 
+@pytest.mark.parametrize("stream", [False, True])
+@pytest.mark.parametrize(
+    ("parameter_type", "text", "expected"),
+    [
+        ("integer", "200", 200),
+        ("number", "0.25", 0.25),
+        ("boolean", "true", True),
+        ("boolean", "false", False),
+        ("array", '[1, "two"]', [1, "two"]),
+        ("object", '{"ready": true}', {"ready": True}),
+        ("null", "null", None),
+        ("string", "200", "200"),
+        ("string", "true", "true"),
+        ("string", "null", "null"),
+        ("string", "[1, 2]", "[1, 2]"),
+        (None, "200", "200"),
+        (["integer", "null"], "200", "200"),
+        ("number", "many", "many"),
+    ],
+)
+def test_model_bridge_applies_xml_parameter_schema(
+    stream: bool, parameter_type: Any, text: str, expected: Any
+) -> None:
+    # Real Qwen3.5 rollouts exposed numeric XML arguments being sent as strings.
+    xml = (
+        "<tool_call><function=inspect>"
+        f"<parameter=value>{text}</parameter>"
+        "</function></tool_call>"
+    )
+
+    async def fake_chat(_payload: dict[str, Any]) -> dict[str, Any]:
+        return _upstream(xml)
+
+    app = create_model_bridge_app(
+        ModelBridgeConfig(
+            upstream_url="http://127.0.0.1:8000", tokenizer_id="Qwen/Qwen3.5-9B"
+        ),
+        tokenizer=FakeTokenizer(),
+        chat_call=fake_chat,
+    )
+    client = TestClient(app)
+    schema = {} if parameter_type is None else {"type": parameter_type}
+    response = client.post(
+        "/v1/chat/completions",
+        json={
+            "messages": [{"role": "user", "content": "inspect"}],
+            "tools": [
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "inspect",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {"value": schema},
+                        },
+                    },
+                }
+            ],
+            "stream": stream,
+            "logprobs": True,
+        },
+    )
+    assert response.status_code == 200
+    payload = (
+        json.loads(response.text.splitlines()[0].removeprefix("data: "))
+        if stream
+        else response.json()
+    )
+    choice = payload["choices"][0]
+    message = choice["delta" if stream else "message"]
+    arguments = json.loads(message["tool_calls"][0]["function"]["arguments"])
+    assert arguments == {"value": expected}
+    assert type(arguments["value"]) is type(expected)
+    sidecar = client.get(f"/v1/benchflow/logprobs/{payload['id']}").json()
+    assert sidecar["completion_ids"] == list(xml.encode("utf-8"))
+    assert len(sidecar["logprobs"]["content"]) == len(xml.encode("utf-8"))
+
+
 def test_model_bridge_short_circuits_title_helper_without_provider_call() -> None:
     async def fail_chat(_payload: dict[str, Any]) -> dict[str, Any]:
         raise AssertionError("title helper must not call the model")
@@ -636,7 +714,9 @@ def test_model_bridge_rejects_prompt_with_no_generation_capacity() -> None:
         TestClient(app).post(
             "/v1/chat/completions",
             json={
-                "messages": [{"role": "user", "content": "irreducible OpenCode prompt"}],
+                "messages": [
+                    {"role": "user", "content": "irreducible OpenCode prompt"}
+                ],
                 "logprobs": True,
             },
         )

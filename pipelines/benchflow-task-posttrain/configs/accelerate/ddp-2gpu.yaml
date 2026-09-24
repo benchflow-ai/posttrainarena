@@ -1,0 +1,9 @@
+# Two data-parallel trainer ranks on two GPUs that the vLLM server does not use.
+# Launched as: accelerate launch --config_file <this file> -m ... sft-worker|grpo-worker
+compute_environment: LOCAL_MACHINE
+distributed_type: MULTI_GPU
+num_processes: 2
+num_machines: 1
+mixed_precision: bf16
+gpu_ids: all
+use_cpu: false

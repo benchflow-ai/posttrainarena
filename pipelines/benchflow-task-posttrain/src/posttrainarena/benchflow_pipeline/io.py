@@ -85,9 +85,16 @@ def _resolved_command(command: list[str]) -> tuple[list[str], str | None]:
 class CommandRunner:
     """Execute and record subprocess stages using argv, never shell strings."""
 
-    def __init__(self, *, cwd: Path, dry_run: bool = False) -> None:
+    def __init__(
+        self,
+        *,
+        cwd: Path,
+        dry_run: bool = False,
+        environment: dict[str, str] | None = None,
+    ) -> None:
         self.cwd = cwd
         self.dry_run = dry_run
+        self.environment = environment
         self.commands: list[dict[str, Any]] = []
 
     def run(
@@ -116,8 +123,9 @@ class CommandRunner:
             record["returncode"] = 0
             return 0
         env = None
-        if env_overrides:
-            env = {**os.environ, **env_overrides}
+        if env_overrides or self.environment is not None:
+            base = os.environ if self.environment is None else self.environment
+            env = {**base, **(env_overrides or {})}
         executable_command, resolved_executable = _resolved_command(command)
         if resolved_executable:
             record["resolved_executable"] = resolved_executable

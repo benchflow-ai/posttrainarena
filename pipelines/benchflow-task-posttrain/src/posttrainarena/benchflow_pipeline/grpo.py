@@ -6,34 +6,55 @@ import hashlib
 import json
 import math
 import os
-import gc
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 from collections.abc import Callable, Mapping
 from typing import Any, Sequence
 
+from .checkpoint import TRAIN_METRICS, export_merged_checkpoint, release_gpu_memory
 from .config import BENCHFLOW_COMMIT, PipelineConfig
-from .io import CommandRunner, supported_kwargs, write_json
+from .distributed import (
+    declare_fsdp_layer_classes,
+    gather_peak_gpu_memory_mib,
+    gather_records,
+    is_main_process,
+    num_processes,
+    process_index,
+    rollout_quota,
+    subprocess_environment,
+    wait_for_everyone,
+)
+from .io import CommandRunner, directory_sha256, supported_kwargs, write_json
+from .launcher import stage_summary
 from .model_bridge import normalize_tool_call_arguments
 from .opencode import ServedModelRole, evaluate, served_model
 
 
 TASK_HANDLE_PREFIX = "benchflow-task://"
+IMPLEMENTATION_MODULES = (
+    "checkpoint.py",
+    "config.py",
+    "distributed.py",
+    "grpo.py",
+    "io.py",
+    "launcher.py",
+    "model_bridge.py",
+    "opencode.py",
+    "segmented_rollout.py",
+    "segmented_trainer.py",
+)
 
 
 def effective_generation_batch_size(config: PipelineConfig) -> int:
-    return (
-        config.grpo.generation_batch_size
-        or config.runtime.num_generations * config.harness.concurrency
-    )
+    return config.generation_batch_size
 
 
 def _implementation_sha256() -> str:
     digest = hashlib.sha256()
     module_dir = Path(__file__).resolve().parent
-    for name in ("config.py", "grpo.py", "model_bridge.py", "opencode.py"):
+    for name in IMPLEMENTATION_MODULES:
         path = module_dir / name
         digest.update(name.encode())
         digest.update(b"\0")
@@ -71,6 +92,7 @@ def grpo_training_recipe(config: PipelineConfig) -> dict[str, Any]:
         "lora_dropout": config.grpo.lora_dropout,
         "rollout_attempts": config.grpo.rollout_attempts,
         "require_reward_variance": config.grpo.require_reward_variance,
+        "launch": stage_summary(config, "grpo"),
         "bf16": True,
         "per_device_train_batch_size": 1,
         "loss_type": "dapo",
@@ -168,6 +190,7 @@ def reward_group_diagnostics(
 
 
 def lora_b_update_diagnostics(model: Any) -> dict[str, Any]:
+    """Inspect LoRA-B tensors; every rank must call this, it may gather shards."""
     named_parameters = getattr(model, "named_parameters", None)
     if not callable(named_parameters):
         return {
@@ -186,6 +209,8 @@ def lora_b_update_diagnostics(model: Any) -> dict[str, Any]:
             continue
         tensor_count += 1
         tensor = parameter.detach()
+        if hasattr(tensor, "full_tensor"):
+            tensor = tensor.full_tensor()
         tensor_max = float(tensor.float().abs().max().item()) if tensor.numel() else 0.0
         if not math.isfinite(tensor_max):
             nonfinite_tensor_count += 1
@@ -199,24 +224,6 @@ def lora_b_update_diagnostics(model: Any) -> dict[str, Any]:
         "nonfinite_tensor_count": nonfinite_tensor_count,
         "max_abs": max_abs,
     }
-
-
-def _directory_sha256(path: Path) -> str:
-    files = sorted(
-        item
-        for item in path.rglob("*")
-        if item.is_file() and item.name != "train_metrics.json"
-    )
-    if not files:
-        raise ValueError(f"No checkpoint artifacts in {path}")
-    digest = hashlib.sha256()
-    for item in files:
-        digest.update(str(item.relative_to(path)).encode())
-        digest.update(b"\0")
-        with item.open("rb") as handle:
-            for chunk in iter(lambda: handle.read(1024 * 1024), b""):
-                digest.update(chunk)
-    return digest.hexdigest()
 
 
 def _required_environment(name: str, *, label: str) -> str:
@@ -261,26 +268,26 @@ def build_grpo_dataset(tasks_dir: Path, task_ids: list[str]) -> Any:
     return Dataset.from_list(build_grpo_rows(tasks_dir, task_ids))
 
 
-def _model_init_kwargs(config: PipelineConfig, model: str) -> dict[str, Any]:
-    values: dict[str, Any] = {
-        "trust_remote_code": True,
-        "dtype": "bfloat16",
-    }
+def base_model_kwargs(config: PipelineConfig, model: str) -> dict[str, Any]:
+    """Identity of the policy checkpoint; only the pinned base carries a revision."""
+    values: dict[str, Any] = {"trust_remote_code": True}
     if model == config.model and config.model_revision:
         values["revision"] = config.model_revision
     return values
 
 
+def _model_init_kwargs(config: PipelineConfig, model: str) -> dict[str, Any]:
+    return {**base_model_kwargs(config, model), "dtype": "bfloat16"}
+
+
 def _load_tokenizer(config: PipelineConfig, model: str | Path) -> Any:
     from transformers import AutoTokenizer
 
-    values: dict[str, Any] = {
-        "trust_remote_code": True,
-        "fix_mistral_regex": True,
-    }
-    if str(model) == config.model and config.model_revision:
-        values["revision"] = config.model_revision
-    return AutoTokenizer.from_pretrained(str(model), **values)
+    return AutoTokenizer.from_pretrained(
+        str(model),
+        fix_mistral_regex=True,
+        **base_model_kwargs(config, str(model)),
+    )
 
 
 def _close_weight_communicator(generation: Any) -> None:
@@ -342,13 +349,7 @@ def sync_reference_to_vllm(
         processing_class=tokenizer,
     )
     del model
-    gc.collect()
-    try:
-        import torch
-
-        torch.cuda.empty_cache()
-    except ImportError:
-        pass
+    release_gpu_memory()
     return {
         "reference": model_reference,
         "student_model_env": config.evaluation.student_model_env,
@@ -718,11 +719,19 @@ def _exchange_parts(
 
 
 @dataclass(frozen=True)
+class RolloutSegment:
+    prompt_ids: list[int]
+    completion_ids: list[int]
+    logprobs: list[float]
+
+
+@dataclass(frozen=True)
 class RolloutTokens:
     prompt_ids: list[int]
     completion_ids: list[int]
     logprobs: list[float]
     env_mask: list[int]
+    segments: tuple[RolloutSegment, ...] = ()
 
 
 def trajectory_to_rollout_tokens(
@@ -760,6 +769,7 @@ def trajectory_to_rollout_tokens(
     sampled_logprobs: list[float] = []
     env_mask: list[int] = []
     current_ids: list[int] = []
+    segments: list[RolloutSegment] = []
 
     for index, row in enumerate(rows):
         messages, tools, choice, completion_id = _exchange_parts(row)
@@ -822,6 +832,11 @@ def trajectory_to_rollout_tokens(
             raise RuntimeError(
                 "Model bridge completion IDs do not match sampled-token logprobs"
             )
+        segments.append(
+            RolloutSegment(
+                list(request_ids), list(generated_ids), list(generated_logprobs)
+            )
+        )
         completion_ids.extend(generated_ids)
         sampled_logprobs.extend(generated_logprobs)
         env_mask.extend([1] * len(generated_ids))
@@ -841,6 +856,7 @@ def trajectory_to_rollout_tokens(
         completion_ids=completion_ids,
         logprobs=sampled_logprobs,
         env_mask=env_mask,
+        segments=tuple(segments),
     )
 
 
@@ -852,7 +868,25 @@ class CollectedRollout:
     tokens: RolloutTokens
 
 
+@dataclass(frozen=True)
+class RolloutSlot:
+    """Where one sample sits in the global generation batch, across ranks."""
+
+    generation_call: int
+    index: int
+    rank: int
+    local_index: int
+
+
 class OpenCodeRolloutCollector:
+    """TRL ``rollout_func`` that runs OpenCode for this rank's prompt slice.
+
+    TRL hands every rank a contiguous slice of the global generation batch and
+    gathers rewards in rank order, so a sample's global position is the rank
+    offset plus its local index. The job-wide ``harness.concurrency`` budget is
+    split across ranks rather than multiplied by them.
+    """
+
     def __init__(
         self,
         *,
@@ -866,7 +900,9 @@ class OpenCodeRolloutCollector:
         self.tasks_dir = tasks_dir
         self.jobs_dir = jobs_dir
         self.records: list[dict[str, Any]] = []
-        self._rollout_index = 0
+        self.last_rollouts: list[CollectedRollout] = []
+        self._generation_calls = 0
+        self._samples_seen = 0
 
     def _resolve_bridge_trace(self, completion_id: str) -> dict[str, Any]:
         import httpx
@@ -898,30 +934,45 @@ class OpenCodeRolloutCollector:
                 )
         return payload
 
+    def _slots(self, count: int, trainer: Any) -> list[RolloutSlot]:
+        rank, world = process_index(trainer), num_processes(trainer)
+        first = self._samples_seen + rank * count
+        slots = [
+            RolloutSlot(self._generation_calls, first + offset, rank, offset)
+            for offset in range(count)
+        ]
+        self._generation_calls += 1
+        self._samples_seen += world * count
+        return slots
+
     def __call__(self, prompts: list[Any], trainer: Any) -> dict[str, Any]:
         if not prompts:
             raise ValueError("OpenCode GRPO rollout batch must not be empty")
         tokenizer = trainer.processing_class
-        start_index = self._rollout_index
-        self._rollout_index += len(prompts)
-        requests = [
-            (start_index + offset, task_id_from_prompt(prompt))
-            for offset, prompt in enumerate(prompts)
-        ]
+        slots = self._slots(len(prompts), trainer)
+        quota = rollout_quota(
+            self.config.harness.concurrency,
+            num_processes(trainer),
+            process_index(trainer),
+        )
+        if quota < 1:
+            raise RuntimeError(
+                "harness.concurrency leaves no rollout slot for rank "
+                f"{process_index(trainer)}"
+            )
 
-        def collect(request: tuple[int, str]) -> CollectedRollout:
-            rollout_index, task_id = request
+        def collect(request: tuple[RolloutSlot, Any]) -> CollectedRollout:
+            slot, prompt = request
             return self._collect_one(
-                rollout_index=rollout_index,
-                task_id=task_id,
+                slot=slot,
+                task_id=task_id_from_prompt(prompt),
                 tokenizer=tokenizer,
                 trainer=trainer,
             )
 
-        with ThreadPoolExecutor(
-            max_workers=min(self.config.harness.concurrency, len(requests))
-        ) as executor:
-            collected = list(executor.map(collect, requests))
+        with ThreadPoolExecutor(max_workers=min(quota, len(slots))) as executor:
+            collected = list(executor.map(collect, zip(slots, prompts, strict=True)))
+        self.last_rollouts = collected
         return {
             "prompt_ids": [rollout.tokens.prompt_ids for rollout in collected],
             "completion_ids": [rollout.tokens.completion_ids for rollout in collected],
@@ -935,18 +986,17 @@ class OpenCodeRolloutCollector:
     def _collect_one(
         self,
         *,
-        rollout_index: int,
+        slot: RolloutSlot,
         task_id: str,
         tokenizer: Any,
         trainer: Any,
     ) -> CollectedRollout:
         global_step = int(getattr(trainer.state, "global_step", 0))
-        rank = int(getattr(trainer.accelerator, "process_index", 0))
         rollout_root = (
             self.jobs_dir
             / f"step-{global_step:06d}"
-            / f"rank-{rank:02d}"
-            / f"rollout-{rollout_index:06d}"
+            / f"rank-{slot.rank:02d}"
+            / f"rollout-{slot.index:06d}"
         )
         failures = []
         for attempt in range(1, self.config.grpo.rollout_attempts + 1):
@@ -955,8 +1005,11 @@ class OpenCodeRolloutCollector:
                 metrics_path = attempt_root / "metrics.json"
                 payload = evaluate(
                     config=self.config,
-                    runner=CommandRunner(cwd=self.config.source.parent),
-                    stage=f"grpo_rollout_{global_step:06d}_{rollout_index:06d}",
+                    runner=CommandRunner(
+                        cwd=self.config.source.parent,
+                        environment=subprocess_environment(),
+                    ),
+                    stage=f"grpo_rollout_{global_step:06d}_{slot.index:06d}",
                     model=self.model,
                     model_role="student",
                     tasks_dir=self.tasks_dir,
@@ -969,11 +1022,10 @@ class OpenCodeRolloutCollector:
                     payload=payload,
                     attempt_root=attempt_root,
                     attempt=attempt,
-                    rollout_index=rollout_index,
+                    slot=slot,
                     task_id=task_id,
                     tokenizer=tokenizer,
                     global_step=global_step,
-                    rank=rank,
                 )
                 (attempt_root / "rollout_error.json").unlink(missing_ok=True)
                 return rollout
@@ -996,11 +1048,10 @@ class OpenCodeRolloutCollector:
         payload: dict[str, Any],
         attempt_root: Path,
         attempt: int,
-        rollout_index: int,
+        slot: RolloutSlot,
         task_id: str,
         tokenizer: Any,
         global_step: int,
-        rank: int,
     ) -> CollectedRollout:
         health = payload.get("health")
         rows = health.get("rows") if isinstance(health, dict) else None
@@ -1032,24 +1083,40 @@ class OpenCodeRolloutCollector:
             raise RuntimeError(f"Invalid verifier reward: {reward!r}")
         rollout_dir = Path(str(health_row.get("rollout_dir") or ""))
         trajectory_path = rollout_dir / "trajectory" / "llm_trajectory.jsonl"
+
+        def resolve_trace(completion_id: str) -> dict[str, Any]:
+            trace = self._resolve_bridge_trace(completion_id)
+            trace_name = hashlib.sha256(completion_id.encode()).hexdigest()
+            write_json(
+                attempt_root / "bridge_traces" / f"{trace_name}.json",
+                {**trace, "id": completion_id},
+            )
+            return trace
+
         tokens = trajectory_to_rollout_tokens(
             trajectory_path,
             tokenizer,
             max_completion_tokens=self.config.runtime.max_completion_length,
-            trace_resolver=self._resolve_bridge_trace,
+            trace_resolver=resolve_trace,
         )
         record = {
-            "rollout_index": rollout_index,
-            "group_index": rollout_index // self.config.runtime.num_generations,
+            "rollout_index": slot.index,
+            "group_index": slot.index // self.config.runtime.num_generations,
+            "generation_call": slot.generation_call,
+            "local_index": slot.local_index,
             "task_id": task_id,
             "reward": float(reward),
             "rollout_dir": str(rollout_dir),
             "attempt": attempt,
             "global_step": global_step,
-            "rank": rank,
+            "rank": slot.rank,
             "prompt_tokens": len(tokens.prompt_ids),
             "completion_tokens": len(tokens.completion_ids),
             "action_tokens": sum(tokens.env_mask),
+            "sampled_action_tokens": sum(
+                len(segment.completion_ids) for segment in tokens.segments
+            ),
+            "causal_segments": len(tokens.segments),
         }
         write_json(attempt_root / "rollout.json", record)
         write_json(
@@ -1059,6 +1126,7 @@ class OpenCodeRolloutCollector:
                 "completion_ids": tokens.completion_ids,
                 "logprobs": tokens.logprobs,
                 "action_mask": tokens.env_mask,
+                "segments": [asdict(segment) for segment in tokens.segments],
                 "reward": float(reward),
             },
         )
@@ -1071,7 +1139,48 @@ class OpenCodeRolloutCollector:
         )
 
 
-def train_grpo(
+def _require_effective_update(
+    *,
+    jobs_dir: Path,
+    metrics: Mapping[str, Any],
+    reward_diagnostics: Mapping[str, Any],
+    update_diagnostics: Mapping[str, Any],
+) -> None:
+    train_loss = metrics.get("train_loss")
+    if (
+        not isinstance(train_loss, int | float)
+        or isinstance(train_loss, bool)
+        or not math.isfinite(float(train_loss))
+    ):
+        raise RuntimeError("GRPO training did not produce a finite train_loss")
+    if reward_diagnostics["incomplete_group_count"]:
+        raise RuntimeError(
+            "GRPO produced incomplete reward groups; inspect "
+            f"{jobs_dir / 'training_diagnostics.json'}"
+        )
+    if not reward_diagnostics["nonzero_variance_group_count"]:
+        raise RuntimeError(
+            "GRPO produced zero within-group reward variance; increase "
+            "runtime.num_generations or improve reward shaping"
+        )
+    if not update_diagnostics["available"]:
+        raise RuntimeError("GRPO could not inspect LoRA-B update tensors")
+    if update_diagnostics["nonfinite_tensor_count"]:
+        raise RuntimeError("GRPO produced non-finite LoRA-B update tensors")
+    if not update_diagnostics["nonzero_tensor_count"]:
+        raise RuntimeError(
+            "GRPO reward variance was nonzero but every LoRA-B tensor remained zero"
+        )
+
+
+def _checkpoint_sha256(config: PipelineConfig, model: str) -> str:
+    path = Path(model)
+    if path.is_dir():
+        return directory_sha256(path)
+    return hashlib.sha256(f"{model}@{config.model_revision or ''}".encode()).hexdigest()
+
+
+def train_grpo_adapter(
     *,
     config: PipelineConfig,
     model: str,
@@ -1079,12 +1188,13 @@ def train_grpo(
     task_ids: list[str],
     jobs_dir: Path,
     adapter_dir: Path,
-    output_dir: Path,
     run_name: str,
 ) -> dict[str, Any]:
-    from peft import LoraConfig, PeftModel
+    """Run GRPO on every rank; the main process publishes adapter and metrics."""
+    from peft import LoraConfig
     from transformers import AutoModelForCausalLM
     from trl import GRPOConfig, GRPOTrainer
+    from .segmented_trainer import segmented_grpo_trainer_class
 
     dataset = build_grpo_dataset(tasks_dir, task_ids)
     collector = OpenCodeRolloutCollector(
@@ -1122,19 +1232,24 @@ def train_grpo(
         "gradient_accumulation_steps": config.grpo.gradient_accumulation_steps,
         "gradient_checkpointing": config.grpo.gradient_checkpointing,
         "torch_empty_cache_steps": 1,
+        "ddp_timeout": config.grpo.ddp_timeout,
         "generation_batch_size": generation_batch_size,
         "learning_rate": config.grpo.learning_rate,
         "save_strategy": "no",
         "num_generations": config.runtime.num_generations,
-        "model_init_kwargs": _model_init_kwargs(config, model),
     }
     if config.grpo.max_steps is None:
         values["num_train_epochs"] = config.grpo.num_train_epochs
     else:
         values["max_steps"] = config.grpo.max_steps
-    trainer = GRPOTrainer(
-        model=model,
-        args=GRPOConfig(**supported_kwargs(GRPOConfig, values)),
+    args = GRPOConfig(**supported_kwargs(GRPOConfig, values))
+    policy = AutoModelForCausalLM.from_pretrained(
+        model, **_model_init_kwargs(config, model)
+    )
+    fsdp_layer_classes = declare_fsdp_layer_classes(policy)
+    trainer = segmented_grpo_trainer_class(GRPOTrainer)(
+        model=policy,
+        args=args,
         train_dataset=dataset,
         reward_funcs=[verifier_reward],
         rollout_func=collector,
@@ -1152,92 +1267,36 @@ def train_grpo(
         result = trainer.train()
     finally:
         _close_weight_communicator(getattr(trainer, "vllm_generation", None))
+    records = gather_records(trainer, collector.records)
     reward_diagnostics = reward_group_diagnostics(
-        collector.records,
+        records,
         num_generations=config.runtime.num_generations,
     )
     update_diagnostics = lora_b_update_diagnostics(trainer.model)
     training_log = list(
         getattr(getattr(trainer, "state", None), "log_history", []) or []
     )
-    jobs_dir.mkdir(parents=True, exist_ok=True)
-    write_json(
-        jobs_dir / "training_diagnostics.json",
-        {
-            "training_recipe": grpo_training_recipe(config),
-            "reward_groups": reward_diagnostics,
-            "lora_b_update": update_diagnostics,
-            "metrics": result.metrics,
-            "training_log": training_log,
-        },
-    )
+    recipe = grpo_training_recipe(config)
+    if is_main_process(trainer):
+        write_json(
+            jobs_dir / "training_diagnostics.json",
+            {
+                "training_recipe": recipe,
+                "reward_groups": reward_diagnostics,
+                "lora_b_update": update_diagnostics,
+                "metrics": result.metrics,
+                "training_log": training_log,
+            },
+        )
     if config.grpo.require_reward_variance:
-        train_loss = result.metrics.get("train_loss")
-        if (
-            not isinstance(train_loss, int | float)
-            or isinstance(train_loss, bool)
-            or not math.isfinite(float(train_loss))
-        ):
-            raise RuntimeError("GRPO training did not produce a finite train_loss")
-        if reward_diagnostics["incomplete_group_count"]:
-            raise RuntimeError(
-                "GRPO produced incomplete reward groups; inspect "
-                f"{jobs_dir / 'training_diagnostics.json'}"
-            )
-        if not reward_diagnostics["nonzero_variance_group_count"]:
-            raise RuntimeError(
-                "GRPO produced zero within-group reward variance; increase "
-                "runtime.num_generations or improve reward shaping"
-            )
-        if not update_diagnostics["available"]:
-            raise RuntimeError("GRPO could not inspect LoRA-B update tensors")
-        if update_diagnostics["nonfinite_tensor_count"]:
-            raise RuntimeError("GRPO produced non-finite LoRA-B update tensors")
-        if not update_diagnostics["nonzero_tensor_count"]:
-            raise RuntimeError(
-                "GRPO reward variance was nonzero but every LoRA-B tensor remained zero"
-            )
+        _require_effective_update(
+            jobs_dir=jobs_dir,
+            metrics=result.metrics,
+            reward_diagnostics=reward_diagnostics,
+            update_diagnostics=update_diagnostics,
+        )
     adapter_dir.mkdir(parents=True, exist_ok=True)
     trainer.save_model(str(adapter_dir))
-    processing_class = getattr(trainer, "processing_class", None)
-    if processing_class is not None:
-        processing_class.save_pretrained(str(adapter_dir))
-    write_json(
-        adapter_dir / "adapter_dependency.json",
-        {
-            "schema_version": 1,
-            "stage": "grpo",
-            "base_checkpoint": model,
-            "published_base_sibling": "../sft-merged",
-            "original_base_model": config.model,
-            "original_base_revision": config.model_revision,
-        },
-    )
-    del trainer
-    gc.collect()
-    try:
-        import torch
-
-        torch.cuda.empty_cache()
-    except ImportError:
-        pass
-    base = AutoModelForCausalLM.from_pretrained(
-        model,
-        **_model_init_kwargs(config, model),
-    )
-    merged = PeftModel.from_pretrained(base, str(adapter_dir)).merge_and_unload()
-    output_dir.mkdir(parents=True, exist_ok=True)
-    merged.save_pretrained(str(output_dir), safe_serialization=True)
-    if processing_class is not None:
-        processing_class.save_pretrained(str(output_dir))
-    model_path = Path(model)
-    base_checkpoint_sha256 = (
-        _directory_sha256(model_path)
-        if model_path.is_dir()
-        else hashlib.sha256(
-            f"{model}@{config.model_revision or ''}".encode()
-        ).hexdigest()
-    )
     payload = {
         "mode": "grpo",
         "harness": config.harness.agent,
@@ -1248,21 +1307,21 @@ def train_grpo(
         ),
         "max_steps": config.grpo.max_steps,
         "generation_batch_size": generation_batch_size,
-        "training_recipe": grpo_training_recipe(config),
+        "training_recipe": recipe,
         "reward_group_diagnostics": reward_diagnostics,
         "lora_b_update_diagnostics": update_diagnostics,
         "training_log": training_log,
         "quantization": None,
+        "fsdp_layer_classes": fsdp_layer_classes,
+        "peak_gpu_memory_mib": gather_peak_gpu_memory_mib(trainer),
+        "ddp_timeout": config.grpo.ddp_timeout,
         "metrics": result.metrics,
         "jobs_dir": str(jobs_dir),
         "adapter_dir": str(adapter_dir),
-        "merged_model_dir": str(output_dir),
-        "base_checkpoint_sha256": base_checkpoint_sha256,
-        "adapter_sha256": _directory_sha256(adapter_dir),
-        "merged_model_sha256": _directory_sha256(output_dir),
+        "base_checkpoint_sha256": _checkpoint_sha256(config, model),
         "resume_policy": "restart-stage",
-        "rollout_count": len(collector.records),
-        "rollouts": collector.records,
+        "rollout_count": len(records),
+        "rollouts": records,
         "rollout_contract": {
             "token_ids": "training-tokenizer-aligned",
             "logprobs": "provider-sampled",
@@ -1272,5 +1331,52 @@ def train_grpo(
             "vllm_server_base_url_env": config.grpo.vllm_server_base_url_env,
         },
     }
-    write_json(output_dir / "train_metrics.json", payload)
+    if is_main_process(trainer):
+        processing_class = getattr(trainer, "processing_class", None)
+        if processing_class is not None:
+            processing_class.save_pretrained(str(adapter_dir))
+        write_json(
+            adapter_dir / "adapter_dependency.json",
+            {
+                "schema_version": 1,
+                "stage": "grpo",
+                "base_checkpoint": model,
+                "published_base_sibling": "../sft-merged",
+                "original_base_model": config.model,
+                "original_base_revision": config.model_revision,
+            },
+        )
+        write_json(adapter_dir / TRAIN_METRICS, payload)
+    wait_for_everyone(trainer)
+    del trainer, policy
+    release_gpu_memory()
     return payload
+
+
+def train_grpo(
+    *,
+    config: PipelineConfig,
+    model: str,
+    tasks_dir: Path,
+    task_ids: list[str],
+    jobs_dir: Path,
+    adapter_dir: Path,
+    output_dir: Path,
+    run_name: str,
+) -> dict[str, Any]:
+    """One-process GRPO: train the adapter, then merge it on the CPU."""
+    train_grpo_adapter(
+        config=config,
+        model=model,
+        tasks_dir=tasks_dir,
+        task_ids=task_ids,
+        jobs_dir=jobs_dir,
+        adapter_dir=adapter_dir,
+        run_name=run_name,
+    )
+    return export_merged_checkpoint(
+        base_model=model,
+        base_kwargs=base_model_kwargs(config, model),
+        adapter_dir=adapter_dir,
+        output_dir=output_dir,
+    )

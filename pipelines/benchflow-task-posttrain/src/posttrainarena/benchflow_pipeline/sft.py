@@ -1,15 +1,22 @@
-"""Tool-aware LoRA SFT and standalone checkpoint merge."""
+"""Tool-aware LoRA SFT: rank-aware adapter training plus one-process merge."""
 
 from __future__ import annotations
 
-import gc
 import json
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
+from .checkpoint import TRAIN_METRICS, export_merged_checkpoint, release_gpu_memory
 from .config import PipelineConfig
-from .io import directory_sha256, file_sha256, supported_kwargs, write_json
+from .distributed import (
+    declare_fsdp_layer_classes,
+    gather_peak_gpu_memory_mib,
+    is_main_process,
+    wait_for_everyone,
+)
+from .io import file_sha256, supported_kwargs, write_json
+from .launcher import stage_summary
 
 
 def load_trl_rows(path: Path) -> list[dict[str, Any]]:
@@ -116,22 +123,28 @@ def build_tokenized_sft_rows(
     }
 
 
-def train_sft(
+def base_model_kwargs(config: PipelineConfig) -> dict[str, Any]:
+    """Identity of the pinned base checkpoint, for loading model and tokenizer."""
+    values: dict[str, Any] = {"trust_remote_code": True}
+    if config.model_revision:
+        values["revision"] = config.model_revision
+    return values
+
+
+def train_sft_adapter(
     *,
     config: PipelineConfig,
     train_jsonl: Path,
     adapter_dir: Path,
-    output_dir: Path,
     run_name: str,
 ) -> dict[str, Any]:
+    """Train the LoRA adapter on every rank; the main process publishes it."""
     from datasets import Dataset
-    from peft import LoraConfig, PeftModel
+    from peft import LoraConfig
     from transformers import AutoModelForCausalLM, AutoTokenizer
     from trl import SFTConfig, SFTTrainer
 
-    model_kwargs: dict[str, Any] = {"trust_remote_code": True}
-    if config.model_revision:
-        model_kwargs["revision"] = config.model_revision
+    model_kwargs = base_model_kwargs(config)
     tokenizer = AutoTokenizer.from_pretrained(config.model, **model_kwargs)
     if tokenizer is None:
         raise RuntimeError(f"Tokenizer failed to load for {config.model}")
@@ -145,12 +158,14 @@ def train_sft(
     model = AutoModelForCausalLM.from_pretrained(
         config.model, dtype="bfloat16", **model_kwargs
     )
+    fsdp_layer_classes = declare_fsdp_layer_classes(model)
     values = {
         "output_dir": str(adapter_dir),
         "learning_rate": config.sft.learning_rate,
         "per_device_train_batch_size": 1,
         "gradient_accumulation_steps": config.sft.gradient_accumulation_steps,
         "gradient_checkpointing": config.sft.gradient_checkpointing,
+        "ddp_timeout": config.sft.ddp_timeout,
         "bf16": True,
         "logging_steps": 1,
         "save_strategy": "no",
@@ -184,31 +199,6 @@ def train_sft(
     result = trainer.train()
     adapter_dir.mkdir(parents=True, exist_ok=True)
     trainer.save_model(str(adapter_dir))
-    tokenizer.save_pretrained(str(adapter_dir))
-    write_json(
-        adapter_dir / "adapter_dependency.json",
-        {
-            "schema_version": 1,
-            "stage": "sft",
-            "base_model": config.model,
-            "base_revision": config.model_revision,
-        },
-    )
-    del trainer, model
-    gc.collect()
-    try:
-        import torch
-
-        torch.cuda.empty_cache()
-    except ImportError:
-        pass
-    base = AutoModelForCausalLM.from_pretrained(
-        config.model, dtype="bfloat16", **model_kwargs
-    )
-    merged = PeftModel.from_pretrained(base, str(adapter_dir)).merge_and_unload()
-    output_dir.mkdir(parents=True, exist_ok=True)
-    merged.save_pretrained(str(output_dir), safe_serialization=True)
-    tokenizer.save_pretrained(str(output_dir))
     metrics = {
         "mode": "sft",
         "base_model": config.model,
@@ -220,12 +210,50 @@ def train_sft(
         ),
         "max_steps": config.sft.max_steps,
         "quantization": None,
+        "launch": stage_summary(config, "sft"),
+        "fsdp_layer_classes": fsdp_layer_classes,
+        "peak_gpu_memory_mib": gather_peak_gpu_memory_mib(trainer),
+        "ddp_timeout": config.sft.ddp_timeout,
         "metrics": result.metrics,
         "adapter_dir": str(adapter_dir),
-        "merged_model_dir": str(output_dir),
         "train_jsonl_sha256": file_sha256(train_jsonl),
-        "adapter_sha256": directory_sha256(adapter_dir),
-        "merged_model_sha256": directory_sha256(output_dir),
     }
-    write_json(output_dir / "train_metrics.json", metrics)
+    if is_main_process(trainer):
+        tokenizer.save_pretrained(str(adapter_dir))
+        write_json(
+            adapter_dir / "adapter_dependency.json",
+            {
+                "schema_version": 1,
+                "stage": "sft",
+                "base_model": config.model,
+                "base_revision": config.model_revision,
+            },
+        )
+        write_json(adapter_dir / TRAIN_METRICS, metrics)
+    wait_for_everyone(trainer)
+    del trainer, model
+    release_gpu_memory()
     return metrics
+
+
+def train_sft(
+    *,
+    config: PipelineConfig,
+    train_jsonl: Path,
+    adapter_dir: Path,
+    output_dir: Path,
+    run_name: str,
+) -> dict[str, Any]:
+    """One-process SFT: train the adapter, then merge it on the CPU."""
+    train_sft_adapter(
+        config=config,
+        train_jsonl=train_jsonl,
+        adapter_dir=adapter_dir,
+        run_name=run_name,
+    )
+    return export_merged_checkpoint(
+        base_model=config.model,
+        base_kwargs=base_model_kwargs(config),
+        adapter_dir=adapter_dir,
+        output_dir=output_dir,
+    )
