@@ -36,7 +36,8 @@ task_list = "task-lists/lhtb-38.txt"
 [runtime]
 sandbox = "daytona"
 sandbox_user = "none"  # root: Terminal-Bench and TMax tasks are written for root (Harbor convention)
-# Trainer-side token budget per trajectory. PENDING the 64K/128K context grid. Above ~64K the
+# Trainer-side token budget per trajectory: 64K. The Sept 24 context grid saw no context failures at
+# 64K or 128K; half its tasks hit the 30-minute limit instead (docs/recipe-v2.md). Above ~64K the
 # trainer's full-vocabulary logits (248,320 x tokens) need a chunked loss; longer trajectories are
 # truncated, not dropped (rollout_failure_policy = "mask").
 max_completion_length = 65536
