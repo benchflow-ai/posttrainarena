@@ -26,7 +26,7 @@ def test_benchflow_dependency_pins_match_runtime_commit() -> None:
 
     assert len(benchflow_dependencies) == 2
     assert all(f"@{BENCHFLOW_COMMIT}" in item for item in benchflow_dependencies)
-    assert "opencode-ai@1.17.20" in AGENTS["opencode"].install_cmd
+    assert "opencode-ai@1.18.11" in AGENTS["opencode"].install_cmd
     assert "opencode-ai@latest" not in AGENTS["opencode"].install_cmd
 
 

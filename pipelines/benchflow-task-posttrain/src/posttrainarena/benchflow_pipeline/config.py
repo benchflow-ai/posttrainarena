@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 
-BENCHFLOW_COMMIT = "2a97db55947d6742b765ad34ddd91d74c20d625f"
+BENCHFLOW_COMMIT = "6614f922ad49322386b9d6083a827a3d58126710"
 GrpoRunPolicy = Literal["on_reward", "always"]
 HarnessSkillMode = Literal["no-skill", "with-skill"]
 UsageTrackingPolicy = Literal["required"]
