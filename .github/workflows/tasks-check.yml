@@ -6,9 +6,9 @@ name: tasks-check
 #
 #  1. structural — scripts/check_task.py (~1s): task.md frontmatter,
 #     environment/Dockerfile, verifier/ and oracle/ layout.
-#  2. submissions — scripts/check_submission.py: team manifest, track
-#     bounds (warn below min until the Phase 2 freeze, fail above max),
-#     per-package structure.
+#  2. submissions — scripts/check_submission.py: team manifest, package
+#     count (environments 1–200, the hosted Arena's range; legacy skills
+#     warn below 20, fail above 100), per-package structure.
 #
 # Deeper validation — schema, oracle execution, instruction-quality
 # screening, the leakage audit — runs in the managed pipeline after a
