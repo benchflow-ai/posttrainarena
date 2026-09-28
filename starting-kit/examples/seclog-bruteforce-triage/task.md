@@ -4,7 +4,9 @@ metadata:
   author_name: Xiangyi Li
   author_email: xiangyi@benchflow.ai
   difficulty: medium
-  category: cybersecurity
+  category: security
+  license: AGPL-3.0-only
+  origin: original
   subcategory: log-triage
   category_confidence: high
   task_type:

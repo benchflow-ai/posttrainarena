@@ -5,7 +5,10 @@ metadata:
   author_email: xiangyi@benchflow.ai
   difficulty: medium
   legacy_category: financial-analysis
-  category: finance-economics
+  category: data-processing
+  license: Apache-2.0
+  origin: adapted
+  origin_url: https://github.com/benchflow-ai/skillsbench/tree/main/tasks/weighted-gdp-calc
   subcategory: macroeconomic-analysis
   category_confidence: high
   secondary_category: office-white-collar

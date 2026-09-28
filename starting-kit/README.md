@@ -30,29 +30,28 @@ this README is a short index to what is here.
 
 ## Examples
 
-| Task | Author | Category | Difficulty |
-|---|---|---|---|
-| [`dogfood-hello-text`](./examples/dogfood-hello-text) | Xiangyi Li | software-engineering | easy |
-| [`skillsbench-3d-scan-calc`](./examples/skillsbench-3d-scan-calc) | Wengao Ye | industrial-physical-systems | hard |
-| [`skillsbench-citation-check`](./examples/skillsbench-citation-check) | Xuandong Zhao | office-white-collar | medium |
-| [`skillsbench-weighted-gdp-calc`](./examples/skillsbench-weighted-gdp-calc) | Xiangyi Li | finance-economics | medium |
-| [`seclog-bruteforce-triage`](./examples/seclog-bruteforce-triage) | Xiangyi Li | cybersecurity | medium |
-| [`subtitle-overlap-qc`](./examples/subtitle-overlap-qc) | Xiangyi Li | media-content-production | medium |
-| [`sensor-calibration-fit`](./examples/sensor-calibration-fit) | Xiangyi Li | industrial-physical-systems | medium |
-| [`shift-schedule-verify`](./examples/shift-schedule-verify) | Xiangyi Li | mathematics-or-formal-reasoning | medium |
+| Task | Author | Category | Origin | License | Difficulty |
+|---|---|---|---|---|---|
+| [`dogfood-hello-text`](./examples/dogfood-hello-text) | Xiangyi Li | software-engineering | original | AGPL-3.0-only | easy |
+| [`skillsbench-3d-scan-calc`](./examples/skillsbench-3d-scan-calc) | Wengao Ye | scientific-computing | adapted | Apache-2.0 | hard |
+| [`skillsbench-citation-check`](./examples/skillsbench-citation-check) | Xuandong Zhao | personal-assistant | adapted | Apache-2.0 | medium |
+| [`skillsbench-weighted-gdp-calc`](./examples/skillsbench-weighted-gdp-calc) | Xiangyi Li | data-processing | adapted | Apache-2.0 | medium |
+| [`seclog-bruteforce-triage`](./examples/seclog-bruteforce-triage) | Xiangyi Li | security | original | AGPL-3.0-only | medium |
+| [`subtitle-overlap-qc`](./examples/subtitle-overlap-qc) | Xiangyi Li | video-processing | original | AGPL-3.0-only | medium |
+| [`sensor-calibration-fit`](./examples/sensor-calibration-fit) | Xiangyi Li | scientific-computing | original | AGPL-3.0-only | medium |
+| [`shift-schedule-verify`](./examples/shift-schedule-verify) | Xiangyi Li | optimization | original | AGPL-3.0-only | medium |
 
 The three `skillsbench-*` tasks were ported from
 [SkillsBench](https://skillsbench.ai) as the first reference set; the
 rest were authored while dogfooding the submission flow.
 
-The examples use SkillsBench category slugs in task frontmatter. Follow the current authoring specification; structural checks alone do not validate every vocabulary value or establish compatibility with an executor.
+Each task declares who wrote it, under what license, what kind of task it is and where it came from, in the `metadata:` block of `task.md`: `author_name`, `author_email`, `license` (an SPDX identifier), `category` and `origin` (`original`, `adapted` with an `origin_url`, or `generated`). `category` is one of the 18 values the Arena's validator accepts, which follow Terminal-Bench 2's categories: `software-engineering`, `system-administration`, `security`, `scientific-computing`, `data-science`, `data-processing`, `data-querying`, `file-operations`, `debugging`, `machine-learning`, `model-training`, `mathematics`, `optimization`, `games`, `personal-assistant`, `video-processing`, `tool-use`, `other`. The Arena's validation warns, without blocking, about a missing or invalid field; the fields are how contributors are credited and how results are analysed by category. The three `skillsbench-*` ports are adapted from SkillsBench and keep its Apache-2.0 license; the other examples are original and use this repository's AGPL-3.0-only. `scripts/check_task.py` checks structure only, not these values.
 
 ## Authoring your own
 
 1. Copy [`template/`](./template) into your team entry under
    `submissions/<your-team>/envs/<your-env-name>/`.
-2. Fill in `task.md`, `environment/Dockerfile` and any seed data,
-   `verifier/test_outputs.py`, and `oracle/solve.sh`.
+2. Fill in `task.md` (including `license`, `category` and `origin`), `environment/Dockerfile` and any seed data, `verifier/test_outputs.py`, and `oracle/solve.sh`.
 3. Validate: `python3 scripts/check_task.py <your envs dir>`, then
    `scripts/run_local.sh <your env>` (oracle replay must score 1.0)
    and `scripts/run_local.sh <your env> --skip-oracle` (empty trial

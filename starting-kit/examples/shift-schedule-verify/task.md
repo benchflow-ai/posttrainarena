@@ -3,7 +3,9 @@ version: "1.0"
 metadata:
   author_name: Xiangyi Li
   author_email: xiangyi@benchflow.ai
-  category: mathematics-or-formal-reasoning
+  category: optimization
+  license: AGPL-3.0-only
+  origin: original
   difficulty: medium
   task_type:
   - verification
