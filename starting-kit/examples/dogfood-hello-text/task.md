@@ -4,6 +4,8 @@ metadata:
   author_name: Xiangyi Li
   author_email: xiangyi@benchflow.ai
   category: software-engineering
+  license: AGPL-3.0-only
+  origin: original
   difficulty: easy
   # This demo's required output is given verbatim in the prompt by design
   # (a "write exactly this object" task) — there is no held-out answer, so the

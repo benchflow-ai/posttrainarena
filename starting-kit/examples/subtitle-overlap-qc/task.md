@@ -3,7 +3,9 @@ version: "1.0"
 metadata:
   author_name: Xiangyi Li
   author_email: xiangyi@benchflow.ai
-  category: media-content-production
+  category: video-processing
+  license: AGPL-3.0-only
+  origin: original
   difficulty: medium
   tags: [subtitles, srt, quality-control, timing, captions, media]
 agent:

@@ -5,7 +5,10 @@ metadata:
   author_email: csxuandongzhao@gmail.com
   difficulty: medium
   legacy_category: research
-  category: office-white-collar
+  category: personal-assistant
+  license: Apache-2.0
+  origin: adapted
+  origin_url: https://github.com/benchflow-ai/skillsbench/tree/main/tasks/citation-check
   subcategory: academic-bibliography-verification
   category_confidence: high
   secondary_category: software-engineering

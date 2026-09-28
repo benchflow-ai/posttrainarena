@@ -3,7 +3,14 @@ version: "1.0"
 metadata:
   author_name: Your Name
   author_email: you@example.com
-  category: natural-science   # one of the eight domains — see /docs/spec
+  license: Apache-2.0         # SPDX identifier of the license you release this task under
+  # category is one of: software-engineering, system-administration, security,
+  # scientific-computing, data-science, data-processing, data-querying,
+  # file-operations, debugging, machine-learning, model-training, mathematics,
+  # optimization, games, personal-assistant, video-processing, tool-use, other
+  category: data-processing
+  origin: original            # original | adapted (then set origin_url) | generated
+  # origin_url: https://github.com/example/source-task   # what you adapted it from
   difficulty: medium          # easy | medium | hard
   tags: [your, tags, here]
 agent:

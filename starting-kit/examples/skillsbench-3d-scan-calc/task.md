@@ -5,7 +5,10 @@ metadata:
   author_email: wengao.ye@kellogg.ox.ac.uk
   difficulty: hard
   legacy_category: engineering
-  category: industrial-physical-systems
+  category: scientific-computing
+  license: Apache-2.0
+  origin: adapted
+  origin_url: https://github.com/benchflow-ai/skillsbench/tree/main/tasks/3d-scan-calc
   subcategory: 3d-printing-mass-calculation
   category_confidence: high
   secondary_category: software-engineering
