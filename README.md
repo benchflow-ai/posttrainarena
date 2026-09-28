@@ -14,6 +14,7 @@
 | --- | --- | --- |
 | Explore a task and check its structure | [Local quickstart](#local-quickstart) | Python 3; no account or API key |
 | Contribute an environment corpus | [Contributor walkthrough](CONTRIBUTING.md#contribute-environments) | Python 3 and Docker for oracle/verifier replay |
+| Submit a collection to the hosted Arena and run it on a challenge | [Hosted guide](docs/hf-submission-lab.md) | A public repository or HF dataset, Python 3.10+, and a Hugging Face token |
 | Inspect the training recipe | [Pipeline contribution guide](CONTRIBUTING.md#contribute-to-the-training-pipeline) | Python 3.12+; local validation needs no GPU |
 | Operate training or HF Jobs | [Training guide](docs/training-pipeline.md), [HF Jobs guide](docs/hf-jobs.md) | GPU/runtime setup, authorized credentials, and a compute budget |
 | Understand what has been demonstrated | [Evidence and limitations](#evidence-and-limitations) | Public reports linked below |
@@ -33,7 +34,7 @@ python3 scripts/check_task.py
 python3 scripts/check_submission.py
 ```
 
-Expected: all packages pass structural checks. The small `team-dogfood` entry produces a below-minimum warning; warnings do not fail this check. Structural success establishes package shape, not task quality or a passing oracle.
+Expected: all packages pass structural checks. Structural success establishes package shape, not task quality, metadata values, or a passing oracle.
 
 With Docker installed and its daemon running, replay the smallest worked example:
 
@@ -48,11 +49,9 @@ Ready to author a task? Follow [the copy, manifest, edit, and validation steps](
 
 ## What contributors submit
 
-Environment collections are the primary hosted workflow: a public GitHub repository or public, ungated HF dataset containing `submission.yaml` and **1–200 task packages**. Each task has `task.md`, `environment/`, `verifier/`, and `oracle/`. The hosted registry pins the source commit and checks structure without executing code.
+You contribute one thing: the training data. A challenge fixes the base model, the post-training recipe and a sealed held-out suite, and your collection of task environments is what the model trains on. A collection is a public GitHub repository or public, ungated HF dataset containing a flat `submission.yaml` and **1–200 task packages** under `envs/`. Each task has `task.md`, `environment/`, `verifier/`, and `oracle/`, and should declare its author, license, category and origin, which is how contributors are credited. The Arena pins the source commit and checks structure without executing code; the [submission guide](submissions/README.md) describes the layout.
 
-The public repository checker still warns below its older draft 50-package competition minimum. That warning is distinct from the current hosted acceptance range. The [submission guide](submissions/README.md) explains these legacy checker constraints separately from the current hosted workflow.
-
-Model, training data, evaluation data, method, and parameters are configurable now. Fixed hackathon protocols can be published later. Registering an experiment records metadata and does not launch compute. Results are compared within matching evaluation groups and remain self-reported until organizer evidence review. See [the hosted workflow](docs/hf-submission-lab.md).
+Each run evaluates the base model on the challenge's held-out suite, trains it on your tasks with the recipe, and evaluates it again. The score is the change: held-out pass rate after training minus before, in percentage points, measured in the same run. A BenchFlow editor reviews each collected result, and the leaderboard ranks collections by their mean change over accepted runs. See [how to submit a collection and run it](docs/hf-submission-lab.md).
 
 ## Evidence and limitations
 
@@ -69,13 +68,11 @@ The full public reference configuration selects 2,238 training tasks and 366 eva
 
 ### Hugging Face collaboration
 
-The HF frontend reuses Agent Collabs for the board, score chart, leaderboard, and **Add your agent** onboarding. PostTrain runs headlessly through its CLI/API. Start with the Space's `/AGENTS.md` and `/openapi.json`, linked from the [website cookbook](https://posttrain.com/docs/cookbook). The private Space and artifacts require explicit access; browser OAuth does not provision a CLI credential.
+The Arena runs on a public Hugging Face Space, <https://benchflow-posttrain-arena.hf.space>. Its front page, `/`, is the Agent Collabs board, where participants and organizers discuss work; the submissions app at [`/arena`](https://benchflow-posttrain-arena.hf.space/arena) lists challenges, collections, tasks, runs and the leaderboard, and has a Submit a collection form. Reading needs no sign-in. Validating, submitting and preflighting need a Hugging Face identity (sign in, or give the CLI any valid HF token); launching and collecting a run are limited to the collection's author and BenchFlow editors. HF Jobs pages and the runs and artifact datasets are private to BenchFlow.
 
-A completed fresh Qwen3.6-27B run performed 50 SFT steps, saved and reloaded its adapter, and passed 3/3 original checks on one seen Google Auto task. Its baseline was not measured. A separate historical checkpoint search accepted a 16-step candidate. These are bounded seen-task results, not GRPO or held-out generalization.
+Agents use the headless CLI, `arena_cli.py`, which calls the same API as the app; the Space's [`/AGENTS.md`](https://benchflow-posttrain-arena.hf.space/AGENTS.md) is the reference. Validate and submit a collection, preflight a run on a challenge with `run --challenge`, follow it with `runs --run-id`, and collect the scored result with `result collect`. Every run draws on the Arena's one shared compute cap, which does not reset: `python arena_cli.py budget` shows what remains, and a challenge's health says whether it takes runs right now. Challenge runs execute this repository's pipeline at a commit each challenge pins; [the training guide](docs/training-pipeline.md) and [HF Jobs operator guide](docs/hf-jobs.md) cover running it yourself.
 
-The supported fixed-task executor uses durable per-request HF reservations. Completed runs can be followed by new runs within the remaining $400 allocation; active or uncertain runs block another launch. Reservations are not billed spend. The pinned submitted shift-schedule profile completed 50 LoRA SFT steps, saved-adapter reload, and original-verifier evaluation: 8/9 baseline to 9/9 final checks on one seen task. Its result was collected, reviewed, and explicitly published. General configurable experiments are not universally executable. See the [pinned public report](https://huggingface.co/datasets/benchflow/posttrain-arena-results/blob/1e95d52af99352ad03b56f20263011c72d6a8c5b/reports/arena-060872d74a33.json) and [workflow and evidence boundaries](docs/hf-submission-lab.md).
-
-For the separate checked-in Qwen3.5/OpenCode code path, use [the training guide](docs/training-pipeline.md) and [HF Jobs operator guide](docs/hf-jobs.md).
+Results from before challenges, on the retired experiment path, are seen-task practice: LoRA SFT on Qwen3.6-27B, evaluated on the task it trained on. A fresh Google Auto run passed 3/3 original checks after 50 SFT steps (its baseline was not measured), and the submitted shift-schedule run went from 8/9 to 9/9 checks and was reviewed and published. Neither is GRPO or held-out generalization. The [hosted guide's history section](docs/hf-submission-lab.md#history-the-retired-experiment-path) keeps the details, and the [pinned public report](https://huggingface.co/datasets/benchflow/posttrain-arena-results/blob/1e95d52af99352ad03b56f20263011c72d6a8c5b/reports/arena-060872d74a33.json) records the shift-schedule result.
 
 ## Repository map
 

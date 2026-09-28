@@ -16,6 +16,11 @@ This is the same shape `bench tasks check --level publication-grade`
 enforces locally; remove this script and swap CI to the benchflow CLI
 once upstream lands the new format on main.
 
+It checks structure only: that the files, keys and prompt section exist,
+not their contents. The untouched template passes, placeholders and all.
+scripts/run_local.sh replays the oracle and an empty trial, and the Arena's
+validate checks the metadata values (category, license, origin).
+
 Exit code: 0 if every task validates, 1 if any task has issues.
 """
 from __future__ import annotations
@@ -160,10 +165,20 @@ def main(argv: list[str]) -> int:
             for i in issues:
                 print(f"  → {i}")
         else:
-            print(f"✓ {task_dir.name} — valid")
+            print(f"✓ {task_dir.name} — structure valid")
     if not any_seen:
         print("no task directories found")
         return 1
+    print(
+        "This checks structure only: that the required files, frontmatter keys and "
+        "'## prompt' section exist, not their contents (the template's placeholders pass) "
+        "or whether the verifier and oracle work."
+    )
+    if overall_ok:
+        print(
+            "Next: scripts/run_local.sh <task> (the oracle must score 1) and "
+            "scripts/run_local.sh <task> --skip-oracle (an empty trial must not)."
+        )
     return 0 if overall_ok else 1
 
 

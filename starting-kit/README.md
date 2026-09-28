@@ -6,12 +6,7 @@ This directory defines the participant-facing **PostTrain task package** format.
 It is intentionally runnable with Python and Docker and does not require
 BenchFlow, TRL, or OpenEnv for authoring checks.
 
-The separate public BenchFlow + TRL pipeline can consume selected task packages.
-Hosted training requires a supported execution profile; package authoring or registration does not automatically start training. Authors do not implement OpenEnv in their packages;
-the organizer can expose snapshotted BenchFlow tasks through the separate
-`openenv-serve` compatibility service. See
-[`docs/architecture-status.md`](../docs/architecture-status.md) for the exact
-boundary.
+The public BenchFlow + TRL pipeline in this repository trains on packages in this format: in the hosted Arena, a run on a challenge trains on a submitted collection's eligible tasks. Submitting a collection does not start training; a run is preflighted and launched separately (see [submitting a collection and running it](../docs/hf-submission-lab.md)). Authors do not implement OpenEnv in their packages; the organizer can expose snapshotted BenchFlow tasks through the separate `openenv-serve` compatibility service. See [`docs/architecture-status.md`](../docs/architecture-status.md) for the exact boundary.
 
 Every directory under [`examples/`](./examples) is one **example task
 package**, authored
@@ -23,7 +18,7 @@ trial). These are reference material for the starting kit — they are
 environments. The [`submissions/`](../submissions) guide explains the manifest,
 local checker warnings, and CLI registration.
 
-A pinned public dataset copy of the shift-schedule example has [completed hosted execution and independent verifier replay](../docs/hf-submission-lab.md#recorded-evidence). That evidence applies to the linked source commit and profile, not every example or later local edits.
+On the retired experiment path, a pinned public dataset copy of the shift-schedule example completed a hosted seen-task run with independent verifier replay ([recorded evidence](../docs/hf-submission-lab.md#recorded-evidence)). That evidence applies to the linked source commit, not every example or later local edits.
 
 The full authoring reference lives at <https://posttrain.com/docs/spec>;
 this README is a short index to what is here.
@@ -56,7 +51,7 @@ Each task declares who wrote it, under what license, what kind of task it is and
    `scripts/run_local.sh <your env>` (oracle replay must score 1.0)
    and `scripts/run_local.sh <your env> --skip-oracle` (empty trial
    must not).
-4. Register the pinned public collection through the [hosted CLI/API](../docs/hf-submission-lab.md), or open a pull request to contribute examples or tooling to this repository.
+4. Validate and submit the pinned public collection with the Arena's CLI, then preflight a run on a challenge ([how](../docs/hf-submission-lab.md)); or open a pull request to contribute examples or tooling to this repository.
 
 See [CONTRIBUTING.md](../CONTRIBUTING.md) for the submission model
 (current collection bounds and hosted/local boundaries) and the review checklist.

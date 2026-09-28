@@ -16,10 +16,9 @@ Validates:
 - environment packages pass the same structural check as the
   starting-kit examples (delegated to scripts/check_task.py)
 - skill packages contain a SKILL.md
-- entry count is within the track's bounds: environments 50/100/200
-  min/rec/max per entry, skills 20/50/100. Counts above max are errors;
-  counts below min are warnings until the Phase 2 freeze (the published
-  rules allow lowering the environments minimum to 25).
+- entry count is within the track's bounds: environments 1–200 per entry,
+  the hosted Arena's range; legacy skills 20–100. Counts above the maximum
+  are errors; a skills entry below 20 gets a warning.
 
 Directories whose name starts with "_" are skipped (scratch space).
 Exit code: 0 if every entry validates (warnings allowed), 1 otherwise.
@@ -34,10 +33,11 @@ from check_task import check_task  # noqa: E402
 
 REQUIRED_FIELDS = ("team_name", "contact_email", "track")
 
-# track -> (min, recommended, max) packages per entry
+# track -> (min, max) packages per entry. Environments: the hosted Arena accepts
+# 1-200 task packages per collection. Skills: the legacy format's bounds.
 TRACK_BOUNDS = {
-    "environments": (50, 100, 200),
-    "skills": (20, 50, 100),
+    "environments": (1, 200),
+    "skills": (20, 100),
 }
 
 
@@ -91,15 +91,15 @@ def check_entry(entry: Path) -> tuple[list[str], list[str]]:
             if not (pkg / "SKILL.md").exists():
                 errors.append(f"skills/{pkg.name}: missing SKILL.md")
 
-    lo, _rec, hi = TRACK_BOUNDS[track]
+    lo, hi = TRACK_BOUNDS[track]
     if not packages:
         errors.append(f"entry declares track '{track}' but contains no packages under {root.name}/")
     elif len(packages) > hi:
         errors.append(f"{len(packages)} packages exceeds the {track} maximum of {hi} per entry")
     elif len(packages) < lo:
         warnings.append(
-            f"{len(packages)} packages is below the {track} minimum of {lo} "
-            "(warning until the Phase 2 freeze)"
+            f"{len(packages)} packages is below the legacy {track} track's minimum of {lo} "
+            "(a warning, not an error)"
         )
 
     return errors, warnings
@@ -127,7 +127,7 @@ def main(argv: list[str]) -> int:
             for e in errors:
                 print(f"  → {e}")
         else:
-            print(f"✓ {entry.name} — valid")
+            print(f"✓ {entry.name} — structure valid")
         for w in warnings:
             print(f"  ! {w}")
     return 0 if overall_ok else 1
