@@ -4,7 +4,9 @@ metadata:
   author_name: Xiangyi Li
   author_email: xiangyi@benchflow.ai
   difficulty: medium
-  category: office-white-collar
+  category: data-processing
+  license: AGPL-3.0-only
+  origin: original
   subcategory: expense-policy-audit
   category_confidence: high
   task_type:
