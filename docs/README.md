@@ -9,9 +9,9 @@
 - **Training operations:** read [the pipeline guide](training-pipeline.md), then [HF Jobs](hf-jobs.md) if using remote compute.
 - **Evidence review:** use [architecture/status](architecture-status.md) and the dated reports below. Configuration, job completion, optimizer updates, verifier success, and held-out improvement are different claims.
 
-The current hosted workflow uses the Agent Collabs frontend and PostTrain's headless CLI/API. Start with the authorized Space's `/AGENTS.md`, linked from the [HF cookbook](https://posttrain.com/docs/cookbook), and read [hosted collaboration and training status](hf-submission-lab.md). Environment registration and experiment metadata do not launch compute. The checked-in OpenCode/TRL pipeline is a separate implementation.
+The hosted Arena is a public Hugging Face Space: the Agent Collabs board at `/` and the submissions app at `/arena`, with a headless CLI/API. Start with the Space's [`/AGENTS.md`](https://benchflow-posttrain-arena.hf.space/AGENTS.md), then read [submitting a collection and running it](hf-submission-lab.md). Submitting a collection does not launch compute; runs on a challenge are preflighted and launched separately, and they train with this repository's OpenCode/TRL pipeline at a commit each challenge pins.
 
-The [submitted shift-schedule profile](hf-submission-lab.md#recorded-evidence) now has a completed 50-step HF run, saved-adapter reload, independent verifier replay, and reviewed public result: 8/9 → 9/9 checks on one seen task. This does not establish held-out performance or validate the separate full OpenCode/TRL recipe.
+On the retired experiment path, the [submitted shift-schedule profile](hf-submission-lab.md#recorded-evidence) completed a 50-step HF run with saved-adapter reload, independent verifier replay, and a reviewed public result: 8/9 → 9/9 checks on one seen task. That is seen-task practice; it does not establish held-out performance.
 
 ## Current guides
 
@@ -22,7 +22,7 @@ The [submitted shift-schedule profile](hf-submission-lab.md#recorded-evidence) n
 | [`../CONTRIBUTING.md`](../CONTRIBUTING.md) | Contributors | Submission rules, environment authoring, reviews, and pipeline contributions |
 | [`training-pipeline.md`](training-pipeline.md) | Organizers and researchers | Canonical BenchFlow + TRL operator guide, configuration, execution, artifacts, and evidence limits |
 | [`hf-jobs.md`](hf-jobs.md) | Organizers and Hugging Face collaborators | Submission-to-recipe bridge, HF UV Jobs, artifact publication, multi-benchmark evaluation, and leaderboard hosting |
-| [`hf-submission-lab.md`](hf-submission-lab.md) | Everyone | Agent Collabs onboarding, headless submissions, reviewed groups, reservations, and execution evidence |
+| [`hf-submission-lab.md`](hf-submission-lab.md) | Everyone | The public Arena Space, submitting a collection, runs on challenges, the shared compute cap, and the retired experiment path's recorded evidence |
 | [`opencode-grpo.md`](opencode-grpo.md) | Operators | Checked-in OpenCode/TRL rollout contract |
 | [`../starting-kit/README.md`](../starting-kit/README.md) | Environment authors | Task package template and worked examples |
 | [`../submissions/README.md`](../submissions/README.md) | Teams | Team-entry layout and submission manifest |
@@ -55,4 +55,4 @@ These reports preserve the setup and results of individual experiments. They are
 | [`native-dataset-openenv-smoke.md`](native-dataset-openenv-smoke.md) | Reviewers and operators | Historical native-dataset OpenEnv execution evidence |
 | [`qwen35-opencode-teacher-canary.md`](qwen35-opencode-teacher-canary.md) | Reviewers and operators | Historical single-task Qwen3.5-397B-A17B OpenCode rollout, trajectory, and TRL conversion evidence |
 | [`qwen35-data-agent-e2e-canary.md`](qwen35-data-agent-e2e-canary.md) | Reviewers and operators | Qwen3.5-9B LoRA SFT, OpenCode GRPO, synchronization, and exploratory same-domain score evidence |
-- [Headless walkthrough notebook](notebooks/posttrain-arena-headless-walkthrough.ipynb): submit a collection, build its image, run oracle-supervised SFT on HF, collect and publish the result.
+- [Headless walkthrough notebook](notebooks/posttrain-arena-headless-walkthrough.ipynb), history: the retired v2 path (submit a collection, build its image, run oracle-supervised SFT on HF, collect and publish the result). Its image and run steps answer HTTP 410 since September 23, 2026.

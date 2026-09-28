@@ -9,7 +9,7 @@ Start with one working task, a focused pipeline fix, or a documentation improvem
 - [Contribute to the training pipeline](#contribute-to-the-training-pipeline)
 - [Prepare a pull request](#prepare-a-pull-request)
 
-The current hosted workflow accepts environment collections and configurable experiments through the headless CLI/API. Model, training data, evaluation data, method, and parameters are configurable now; future fixed hackathon protocols do not gate registration. Structural acceptance does not allocate training or establish a verified result. See [hosted collaboration and execution](docs/hf-submission-lab.md).
+The hosted Arena accepts environment collections. You control one variable, the training data: a challenge fixes the base model, the post-training recipe and a sealed held-out suite, and a run scores your collection by the held-out change it produces (pass rate after training minus before, measured in the same run). Submitting a collection does not launch training; a run on a challenge is preflighted, launched and collected separately. See [submitting a collection and running it](docs/hf-submission-lab.md).
 
 ## Contribute environments
 
@@ -27,7 +27,7 @@ track: environments
 YAML
 ```
 
-Use a descriptive package name such as `finance-fed-minutes-classify`. The hosted registry accepts **1–200 environment packages** in a collection. The public repository checker still emits an older draft-minimum warning below 50 and fails above 200; that warning does not impose a 50-package minimum on hosted submissions. See the [collection contract](submissions/README.md).
+Use a descriptive package name such as `finance-fed-minutes-classify`. The Arena accepts **1–200 environment packages** in a collection, and `scripts/check_submission.py` checks the same range. See the [collection contract](submissions/README.md).
 
 ### 2. Complete the task package
 
@@ -60,7 +60,7 @@ Both Docker commands must exit successfully. For `--skip-oracle`, success means 
 | Check | Proves | Does not prove |
 | --- | --- | --- |
 | `check_task.py` | Required files, selected frontmatter keys, and prompt section exist | Full YAML schema, allowed vocabulary, or instruction quality |
-| `check_submission.py` | Manifest, package structure, and upper size bound pass | Hosted registration, runtime correctness, or training allocation |
+| `check_submission.py` | Manifest, package structure, and the 1–200 package range pass | Hosted registration, runtime correctness, or training allocation |
 | Oracle replay | Reference solution receives reward `1.0` | Task difficulty or verifier robustness |
 | Empty-trial replay | Doing nothing does not receive full reward | Resistance to other shortcuts, leakage, or reward hacking |
 
@@ -77,7 +77,7 @@ Before requesting review, check that:
 - Task assets have appropriate licenses, provenance, and no credentials or private data.
 - The declared network policy matches actual task needs.
 
-For a public contribution, include both replay results in your pull request. To register the collection in the hosted arena, use its CLI/API to validate and submit the pinned public repository or dataset; a pull request is not required for hosted registration. Follow [the hosted guide](docs/hf-submission-lab.md) for agent onboarding, matching experiment configuration, supported execution profiles, and evidence review. The pinned shift-schedule profile has a [completed, independently replayed example](docs/hf-submission-lab.md#recorded-evidence); that evidence does not make arbitrary collections executable. Deeper difficulty, leakage, and adversarial review remain separate from local structural checks.
+For a public contribution, include both replay results in your pull request. Entering the hosted Arena needs no pull request: validate and submit the pinned public repository or dataset with the Arena's CLI (`arena_cli.py validate`, then `submit`), preflight a run on a challenge with `run --challenge`, and after an authorized launch follow it with `runs --run-id` and collect the scored result with `result collect`. [The hosted guide](docs/hf-submission-lab.md) walks through each step, and the Space's [`/AGENTS.md`](https://benchflow-posttrain-arena.hf.space/AGENTS.md) is the reference. The Arena's static quality gates run at validation; its dynamic gates (image build, oracle, no-op, and difficulty band) are run by an organizer. Deeper difficulty, leakage, and adversarial review remain separate from local structural checks.
 
 ## Legacy skill-package tooling
 
@@ -117,7 +117,7 @@ python -m py_compile pipelines/benchflow-task-posttrain/src/posttrainarena/bench
 
 The test extra installs substantial dependencies and pinned upstream Git packages; the tests are designed as no-spend contracts. Keep new tests free of paid service calls. New recipes must pin model/dataset revisions, specify task lists, and document expected compute. Preserve module boundaries: BenchFlow owns tasks and sandbox/verifier lifecycle, OpenCode owns agent interaction, and TRL owns optimization. OpenEnv is a separate protocol adapter.
 
-Use the [HF Jobs guide](docs/hf-jobs.md) for the checked-in OpenCode/TRL launcher. The [hosted Agent Collabs workflow](docs/hf-submission-lab.md) is a separate CLI/API implementation with bounded execution profiles; public repository access does not grant Space access or authorize a job. Do not equate completed planner output with training, adapter reload with task success, or seen-task success with held-out generalization.
+Use the [HF Jobs guide](docs/hf-jobs.md) for the checked-in OpenCode/TRL launcher. The hosted Arena's challenge runs execute this pipeline (`posttrainarena-train run`) at a commit each challenge pins, so a change here reaches challenge runs only once a challenge pins a commit that includes it ([hosted guide](docs/hf-submission-lab.md)). Repository access does not authorize a hosted run. Do not equate completed planner output with training, adapter reload with task success, or seen-task success with held-out generalization.
 
 ## Prepare a pull request
 

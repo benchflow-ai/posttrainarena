@@ -2,15 +2,15 @@
 
 <!-- markdownlint-disable MD013 MD060 -->
 
-The current hosted workflow accepts **1–200 environment packages** from a public GitHub repository or public, ungated HF dataset. Each collection contains a flat `submission.yaml` and `envs/`. The headless CLI/API validates its structure and pins its source revision without executing repository code. Start with [hosted collaboration and execution](../docs/hf-submission-lab.md).
+The hosted Arena accepts **1–200 environment packages** from a public GitHub repository or public, ungated HF dataset. Each collection contains a flat `submission.yaml` and `envs/`. The Arena validates its structure and pins its source revision without executing repository code, through its CLI or its Submit a collection form. Start with [submitting a collection and running it](../docs/hf-submission-lab.md).
 
-Model, training data, evaluation data, method, and parameters are configurable today. Registration records metadata; it does not launch training. Hosted execution requires a supported profile and explicit compute authorization. Participant scores need organizer evidence review, and public-feed publication is separate. Fixed hackathon protocols can be published later; there is no current 50-package minimum, phase-freeze requirement, or universal managed-training guarantee for hosted collections.
+Submitting registers the collection; it does not launch training. A collection trains on a challenge, which fixes the base model, the post-training recipe and a sealed held-out suite: preflight a run with `arena_cli.py run --challenge`, launch it only with explicit authorization to spend compute, follow it with `runs --run-id`, and collect the scored result with `result collect`. The score is the held-out change (pass rate after training minus before, measured in the same run), and a result ranks after a BenchFlow editor accepts it. There is no 50-package minimum or phase freeze.
 
-The [pinned shift-schedule example](../docs/hf-submission-lab.md#recorded-evidence) completed the hosted run → collection → review → publication path, with baseline 8/9 and final 9/9 checks on one seen task. Other sources still need a supported execution profile; registration alone does not provide one.
+Results recorded before challenges, such as the [shift-schedule run](../docs/hf-submission-lab.md#recorded-evidence) (8/9 to 9/9 checks on one seen task), came from the retired experiment path and are seen-task practice, not held-out scores.
 
 ## Existing local checker behavior
 
-The self-contained scripts retain some historical competition constraints. `check_submission.py` accepts at least one environment package, warns below 50, and rejects more than 200. Its warning does not override the hosted 1–200 range. It also recognizes legacy `track: skills` packages, warning below 20 and rejecting more than 100; that format does not establish a current hosted skill track or evaluator.
+`check_submission.py` checks the same 1–200 range as the Arena: it rejects an environments entry with no package or more than 200. It also recognizes legacy `track: skills` packages, warning below 20 and rejecting more than 100; that format does not establish a current hosted skill track or evaluator.
 
 OpenEnv implementation is not required inside a submitted package. The separate checked-in pipeline provides an adapter; see [architecture/status](../docs/architecture-status.md) for that implementation's boundaries.
 
@@ -47,11 +47,11 @@ Each environment package follows the same contract as the
 [CONTRIBUTING.md](../CONTRIBUTING.md) for the full walkthrough,
 validation ladder, and reviewer checklist.
 
-Use the hosted CLI to validate and submit your pinned collection, then register a matching experiment. The manifest and task author fields provide attribution; current registration does not claim blind competition grading. Structural validation and local replay are different evidence, and neither queues a hosted job.
+Use the Arena's CLI to validate and submit your pinned collection, then preflight a run on a challenge; see [submitting a collection and running it](../docs/hf-submission-lab.md). The manifest and each task's credit metadata (author, license, category and origin) provide attribution. Structural validation and local replay are different evidence, and neither queues a hosted job.
 
 ## Separate checked-in pipeline preparation
 
-The public Qwen3.5/OpenCode pipeline has a `prepare-submission` utility. This is separate from the hosted Agent Collabs registry and its execution profiles. After installing that pipeline, an operator can upload an environment entry and emit a pinned recipe:
+The public Qwen3.5/OpenCode pipeline has a `prepare-submission` utility for operators who run the pipeline themselves. The hosted Arena does not need it: a challenge run snapshots the submitted collection itself. After installing that pipeline, an operator can upload an environment entry and emit a pinned recipe:
 
 ```bash
 posttrainarena-train prepare-submission \
