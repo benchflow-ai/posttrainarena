@@ -64,7 +64,7 @@ scripts/run_local.sh submissions/your-team/envs/your-env-name --skip-oracle
 | Oracle replay | Reference solution receives reward `1.0` | Task difficulty or verifier robustness |
 | Empty-trial replay | Doing nothing does not receive full reward | Resistance to other shortcuts, leakage, or reward hacking |
 
-The Docker harness disables trial networking by default. Use `--network` only when the task needs it and document why. Image builds may access the network to install dependencies. On macOS, install GNU coreutils for `gtimeout` if you need the harness's wall-clock cap; without `timeout`/`gtimeout`, the harness warns and continues without that cap.
+The Docker harness disables trial networking by default. Use `--network` only when the task needs it and document why. When a task sets `allow_internet: false`, `check_task.py` warns about a verifier that downloads tools or fetches data when it runs, which fails without network: install tools in `environment/Dockerfile`, and keep data the verifier reads under `verifier/`, which reaches the sandbox with the verifier after the agent finishes. Image builds may access the network to install dependencies. On macOS, install GNU coreutils for `gtimeout` if you need the harness's wall-clock cap; without `timeout`/`gtimeout`, the harness warns and continues without that cap.
 
 ### 4. Review task quality
 
