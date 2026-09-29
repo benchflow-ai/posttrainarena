@@ -46,11 +46,8 @@ Each task declares who wrote it, under what license, what kind of task it is and
 
 1. Copy [`template/`](./template) into your team entry under
    `submissions/<your-team>/envs/<your-env-name>/`.
-2. Fill in `task.md` (including `license`, `category` and `origin`), `environment/Dockerfile` and any seed data, `verifier/test_outputs.py`, and `oracle/solve.sh`.
-3. Validate: `python3 scripts/check_task.py <your envs dir>`, then
-   `scripts/run_local.sh <your env>` (oracle replay must score 1.0)
-   and `scripts/run_local.sh <your env> --skip-oracle` (empty trial
-   must not).
+2. Fill in `task.md` (including `license`, `category` and `origin`), `environment/Dockerfile` and any seed data, `verifier/test_outputs.py`, and `oracle/solve.sh`. Keep the Dockerfile's `pytest` line: `verifier/test.sh` runs your checks with the pytest installed in the image, because the task's sandbox has no network (`allow_internet: false`).
+3. Validate: `python3 scripts/check_task.py <your envs dir>` (it also warns about a verifier that downloads when it runs while the task turns the network off), then `scripts/run_local.sh <your env>` (oracle replay must score 1.0) and `scripts/run_local.sh <your env> --skip-oracle` (empty trial must not).
 4. Validate and submit the pinned public collection with the Arena's CLI, then preflight a run on a challenge ([how](../docs/hf-submission-lab.md)); or open a pull request to contribute examples or tooling to this repository.
 
 See [CONTRIBUTING.md](../CONTRIBUTING.md) for the submission model

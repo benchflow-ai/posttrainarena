@@ -1,8 +1,13 @@
 #!/bin/bash
-# Verifier entry point. Standard PostTrain Arena / Benchflow shim:
+# Verifier entry point. Standard PostTrain Arena / BenchFlow shim:
 # runs pytest against verifier/test_outputs.py, then writes the canonical
-# reward artifacts. You should not need to edit this file — put your
-# checks in test_outputs.py.
+# reward artifacts. You should not need to edit this file: put your checks
+# in test_outputs.py.
+#
+# pytest and pytest-json-ctrf come from the task's image (environment/Dockerfile
+# installs them), so the checks run without network: the sandbox has none
+# (allow_internet: false in task.md). Only an image without pytest makes this
+# script download it with uv, which works only where the sandbox has network.
 
 VERIFIER_DIR="${BENCHFLOW_VERIFIER_DIR:-/verifier}"
 if [ ! -d "$VERIFIER_DIR" ] && [ -d /tests ]; then
@@ -16,7 +21,8 @@ PYTEST_BIN="${BENCHFLOW_PYTEST_BIN:-pytest}"
 
 mkdir -p "$(dirname "$REWARD_TEXT")" "$(dirname "$REWARD_JSON")" "$(dirname "$CTRF_JSON")"
 
-if [ "${BENCHFLOW_SKIP_VERIFIER_DEPS:-0}" = "1" ]; then
+if [ "${BENCHFLOW_SKIP_VERIFIER_DEPS:-0}" = "1" ] || command -v "$PYTEST_BIN" >/dev/null 2>&1; then
+  # pytest from the image (environment/Dockerfile installs it): no network needed.
   "$PYTEST_BIN" --ctrf "$CTRF_JSON" "$VERIFIER_DIR/test_outputs.py" -rA -v
 else
   apt-get update
