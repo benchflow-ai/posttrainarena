@@ -35,7 +35,8 @@ The local submission checker ignores entry directory names starting with `_`. Us
 ## Validating locally
 
 ```bash
-python3 scripts/check_submission.py            # manifest + bounds + structure
+python3 scripts/check_submission.py            # manifest + bounds + structure, every entry
+python3 scripts/check_submission.py submissions/<team-entry>   # one collection (any folder with submission.yaml and envs/)
 python3 scripts/check_task.py submissions/<team-entry>/envs
 scripts/run_local.sh submissions/<team-entry>/envs/<env>   # oracle replay
 scripts/run_local.sh submissions/<team-entry>/envs/<env> --skip-oracle
