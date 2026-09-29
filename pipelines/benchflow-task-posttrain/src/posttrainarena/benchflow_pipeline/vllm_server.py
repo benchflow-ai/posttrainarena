@@ -7,11 +7,28 @@ import ipaddress
 import os
 import signal
 import sys
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from multiprocessing.connection import Connection
 from typing import Any
 
 from trl.scripts.vllm_serve import WeightSyncWorkerExtension
+
+DISABLE_CUSTOM_ALL_REDUCE_ENV = "POSTTRAINARENA_VLLM_DISABLE_CUSTOM_ALL_REDUCE"
+
+
+def disable_custom_all_reduce(environ: Mapping[str, str] | None = None) -> bool:
+    """Read the opt-out for vLLM's CUDA-IPC custom all-reduce kernel.
+
+    Tensor-parallel serving inside some containers (HF Jobs a100x8 with a
+    CUDA_VISIBLE_DEVICES subset, for example) fails with
+    ``custom_all_reduce.cuh: invalid argument`` while NCCL still works.
+    Set ``POSTTRAINARENA_VLLM_DISABLE_CUSTOM_ALL_REDUCE=1`` to fall back to
+    NCCL all-reduce; the default keeps vLLM's behaviour.
+    """
+    value = (environ if environ is not None else os.environ).get(
+        DISABLE_CUSTOM_ALL_REDUCE_ENV, ""
+    )
+    return value.strip().lower() in {"1", "true", "yes", "on"}
 
 
 def server_weight_name(model: Any, name: str) -> str:
@@ -92,6 +109,7 @@ def llm_worker(
             trust_remote_code=script_args.trust_remote_code,
             model_impl=script_args.vllm_model_impl,
             distributed_executor_backend=script_args.distributed_executor_backend,
+            disable_custom_all_reduce=disable_custom_all_reduce(),
             logprobs_mode="processed_logprobs",
             speculative_config=(
                 json.loads(script_args.speculative_config)

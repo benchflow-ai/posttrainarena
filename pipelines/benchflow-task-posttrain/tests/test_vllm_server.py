@@ -6,6 +6,8 @@ from types import SimpleNamespace
 import pytest
 
 from posttrainarena.benchflow_pipeline.vllm_server import (
+    DISABLE_CUSTOM_ALL_REDUCE_ENV,
+    disable_custom_all_reduce,
     llm_worker,
     server_weight_name,
     validate_control_host,
@@ -72,7 +74,14 @@ def test_worker_closes_communicator_when_parent_pipe_closes(
         def close(self):
             calls.append("connection.close")
 
-    monkeypatch.setitem(sys.modules, "vllm", SimpleNamespace(LLM=lambda **_: FakeLlm()))
+    seen_kwargs: dict[str, object] = {}
+
+    def fake_llm(**kwargs):
+        seen_kwargs.update(kwargs)
+        return FakeLlm()
+
+    monkeypatch.setitem(sys.modules, "vllm", SimpleNamespace(LLM=fake_llm))
+    monkeypatch.setenv(DISABLE_CUSTOM_ALL_REDUCE_ENV, "1")
     args = SimpleNamespace(
         model="model",
         revision="revision",
@@ -93,3 +102,11 @@ def test_worker_closes_communicator_when_parent_pipe_closes(
     llm_worker(args, 0, 12345, FakeConnection())
 
     assert calls == ["close_communicator", "connection.close"]
+    assert seen_kwargs["disable_custom_all_reduce"] is True
+
+
+def test_disable_custom_all_reduce_defaults_off() -> None:
+    assert disable_custom_all_reduce({}) is False
+    assert disable_custom_all_reduce({DISABLE_CUSTOM_ALL_REDUCE_ENV: "0"}) is False
+    assert disable_custom_all_reduce({DISABLE_CUSTOM_ALL_REDUCE_ENV: "1"}) is True
+    assert disable_custom_all_reduce({DISABLE_CUSTOM_ALL_REDUCE_ENV: "true"}) is True
