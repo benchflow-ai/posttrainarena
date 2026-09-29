@@ -83,7 +83,7 @@ TOOL_HOSTS = {
     "security.debian.org", "archive.ubuntu.com", "security.ubuntu.com", "dl-cdn.alpinelinux.org", "registry.npmjs.org",
     "nodejs.org", "deb.nodesource.com", "crates.io", "static.rust-lang.org", "sh.rustup.rs", "go.dev", "dl.google.com",
     "proxy.golang.org", "repo.anaconda.com", "conda.anaconda.org", "get.docker.com", "download.docker.com",
-    "cloud.r-project.org", "cran.r-project.org", "opam.ocaml.org",
+    "cloud.r-project.org", "cran.r-project.org", "opam.ocaml.org", "coq.inria.fr",
 }
 # curl's and wget's short options that take a value (in a cluster like -fsSLo FILE, the value follows the letter).
 CURL_VALUE_OPTS, WGET_VALUE_OPTS = set("AbcCdDeEFHKmoPQrtTuUwxXyYz"), set("aABDeiIloOPQRtTUwX")
@@ -307,8 +307,9 @@ def shell_fetches(text: str) -> tuple[list[str], list[str]]:
             if remote and all(tool_address(u) for u in remote):
                 continue   # an installer, a package or a release binary: the tools warning's
             to_file = out not in (None, "-", "/dev/stdout")
-            if (to_file and out != "/dev/null") or (not to_file and (substituted or (target and target not in SHELLS))):
-                spans.append((m.start(), m.start() + len(command), command))
+            piped = not to_file and target and target not in SHELLS
+            if (to_file and out != "/dev/null") or (not to_file and substituted) or piped:
+                spans.append((m.start(), m.start() + len(command), command + (f" | {target}" if piped else "")))
         for m in GIT_CLONE.finditer(line):
             command, _ = command_at(line, m.start())
             words, i, source = words_of(expand(command, names)), 0, None
