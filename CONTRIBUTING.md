@@ -44,14 +44,14 @@ The template's verifier is a placeholder. Replace it with checks that reject mis
 ### 3. Validate structure and behavior
 
 ```bash
-# Fast structural checks; Python standard library only.
+# Fast structural checks. Python standard library only.
 python3 scripts/check_task.py submissions/your-team/envs
 python3 scripts/check_submission.py submissions/your-team
 
 # Requires Docker and a running daemon. Oracle must score 1.0.
 scripts/run_local.sh submissions/your-team/envs/your-env-name
 
-# Empty trial must not score 1.0; normally it scores 0.0.
+# Empty trial must not score 1.0. Normally it scores 0.0.
 scripts/run_local.sh submissions/your-team/envs/your-env-name --skip-oracle
 ```
 

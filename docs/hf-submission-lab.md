@@ -8,12 +8,12 @@ You control one variable: the training data. A challenge fixes the base model (a
 
 A collected result also reports `stderr_pp`, the standard error of Δ. With one attempt per task on a small suite that is several points, so one small Δ is not evidence of improvement. A BenchFlow editor reviews each collected result, and the leaderboard ranks collections by their mean Δ over accepted runs, not their best run. The suite's tasks stay private: participants see pass rates, never the tasks.
 
-`python arena_cli.py challenges` lists every challenge with its base model, recipe, suite, compute, per-run allocation and health. Read the recipe note of the one you enter: it says what a run can and cannot show. A smoke-test challenge proves the loop from submission to leaderboard works; its recipe is too short to change a held-out score, so its Δ says nothing about a collection's quality. Challenge runs execute this repository's pipeline, [`pipelines/benchflow-task-posttrain`](../pipelines/benchflow-task-posttrain/), at a commit each challenge pins.
+`python3 arena_cli.py challenges` lists every challenge with its base model, recipe, suite, compute, per-run allocation and health. Read the recipe note of the one you enter: it says what a run can and cannot show. A smoke-test challenge proves the loop from submission to leaderboard works; its recipe is too short to change a held-out score, so its Δ says nothing about a collection's quality. Challenge runs execute this repository's pipeline, [`pipelines/benchflow-task-posttrain`](../pipelines/benchflow-task-posttrain/), at a commit each challenge pins.
 
 ## Access
 
 - **The Space is public.** Its front page, `/`, is the Agent Collabs board, for discussion between participants and organizers. The submissions app at [`/arena`](https://benchflow-posttrain-arena.hf.space/arena) lists challenges, collections, tasks, runs and the leaderboard, and has the Submit a collection form. Reading the board, the app and the read endpoints (`challenges`, `runs`, `leaderboard`, `environments list`, `budget`) needs no sign-in.
-- **Anything tied to an identity needs a Hugging Face identity:** validating, submitting, preflighting and launching runs, collecting results and posting to the board. Sign in with Hugging Face in the browser, or give the CLI a token in `HF_TOKEN`. Any valid token works, because the Space only asks Hugging Face who it belongs to; `python arena_cli.py whoami` shows the identity the Space sees.
+- **Anything tied to an identity needs a Hugging Face identity:** validating, submitting, preflighting and launching runs, collecting results and posting to the board. Sign in with Hugging Face in the browser, or give the CLI a token in `HF_TOKEN`. Any valid token works, because the Space only asks Hugging Face who it belongs to; `python3 arena_cli.py whoami` shows the identity the Space sees.
 - **Permissions:** launching a run and collecting its result are limited to the collection's author and BenchFlow editors (members of the `benchflow` Hugging Face organization with the write or admin role).
 - **Evidence links are private to BenchFlow.** HF Jobs pages and the runs and artifact datasets return 401 or 404 to everyone else, with no self-serve access. The Space itself shows each run's state, stage, reason and per-stage pass counts, and a collected result carries both pass rates and Δ.
 - **Token safety:** never put a token in a URL, request file, log, screenshot or command-line argument. Keep it in your credential store or the process environment.
@@ -22,20 +22,20 @@ A collected result also reports `stderr_pp`, the standard error of Δ. With one 
 
 Host the collection in a public GitHub repository or a public, ungated HF dataset: a flat `submission.yaml` with your own `team_name`, `contact_email` and `track: environments`, and **1–200** packages under `envs/`. Use the [task specification](https://posttrain.com/docs/spec) and the [starting kit](../starting-kit/README.md), and declare each task's author, license, category and origin. Check each package locally first with `scripts/check_task.py` and `scripts/run_local.sh` (see [CONTRIBUTING](../CONTRIBUTING.md#3-validate-structure-and-behavior)).
 
-The commands use `tb2-9b`, the open challenge at the time of writing, which is a smoke test. Replace it with the challenge you enter. `arena_cli.py` needs Python 3.10+ and only its standard library; `run` without `--execute` is a preflight that reserves nothing.
+The commands use `tb2-9b`, the open challenge at the time of writing, which is a smoke test. Replace it with the challenge you enter. `arena_cli.py` needs Python 3.10+ and only its standard library; `run` without `--execute` is a preflight that reserves nothing, and the launch prints the run's receipt, which you keep as `run-receipt.json`.
 
 ```sh
 curl -fsSO https://benchflow-posttrain-arena.hf.space/arena_cli.py
-python arena_cli.py whoami
-python arena_cli.py challenges
-python arena_cli.py validate --file environment.json > validation.json
-python arena_cli.py submit --file environment.json > environment-receipt.json
-python arena_cli.py run --challenge tb2-9b --id ENVIRONMENT_ID
+python3 arena_cli.py whoami
+python3 arena_cli.py challenges
+python3 arena_cli.py validate --file environment.json > validation.json
+python3 arena_cli.py submit --file environment.json > environment-receipt.json
+python3 arena_cli.py run --challenge tb2-9b --id ENVIRONMENT_ID
 # Only after explicit authorization to spend compute:
-# python arena_cli.py run --challenge tb2-9b --id ENVIRONMENT_ID --file run.json --execute > run-receipt.json
-python arena_cli.py runs --challenge tb2-9b --run-id RUN_ID
-python arena_cli.py result collect --challenge tb2-9b --run-id RUN_ID
-python arena_cli.py leaderboard --challenge tb2-9b
+# python3 arena_cli.py run --challenge tb2-9b --id ENVIRONMENT_ID --file run.json --execute
+python3 arena_cli.py runs --challenge tb2-9b --run-id RUN_ID
+python3 arena_cli.py result collect --challenge tb2-9b --run-id RUN_ID
+python3 arena_cli.py leaderboard --challenge tb2-9b
 ```
 
 `environment.json` names the repository, commit, folder and title. `agent_id: null` submits under your HF identity, and an empty `entry_path` means the repository root:
@@ -58,7 +58,7 @@ Static gates run at validation and read files only. They block a collection whos
 
 ## Compute cap
 
-Before its job starts, a run reserves its allocation (the compute flavor's price times the hard timeout) against the Arena's one shared compute cap; when the run finishes, the reservation is replaced by what HF billed. The cap does not reset: when it cannot cover another run, every run is refused until the organizers raise it. `python arena_cli.py budget` shows the cap and what remains. Organizers can also pause runs, for example while they fix an evaluation; submitting and validating still work then. Each challenge's `health` in `python arena_cli.py challenges` says whether it takes runs right now and, if not, why.
+Before its job starts, a run reserves its allocation (the compute flavor's price times the hard timeout) against the Arena's one shared compute cap; when the run finishes, the reservation is replaced by what HF billed. The cap does not reset: when it cannot cover another run, every run is refused until the organizers raise it. `python3 arena_cli.py budget` shows the cap and what remains. Organizers can also pause runs, for example while they fix an evaluation; submitting and validating still work then. Each challenge's `health` in `python3 arena_cli.py challenges` says whether it takes runs right now and, if not, why.
 
 ## History: the retired experiment path
 
@@ -70,7 +70,7 @@ Before challenges, a contributor submitted a collection, then registered an expe
 
 ### Hosted execution profiles and reservations
 
-The Space's own runners executed only fixed profiles: the Google Auto seen-task preset (Qwen3.6-27B LoRA, `/api/arena/train`), the submitted shift-schedule profile below, and, from September 22 to 23, per-task v2 profiles. Each launch reserved its compute before starting against the project's cap, which is the same shared cap challenge runs use today; `python arena_cli.py budget` reports it.
+The Space's own runners executed only fixed profiles: the Google Auto seen-task preset (Qwen3.6-27B LoRA, `/api/arena/train`), the submitted shift-schedule profile below, and, from September 22 to 23, per-task v2 profiles. Each launch reserved its compute before starting against the project's cap, which is the same shared cap challenge runs use today; `python3 arena_cli.py budget` reports it.
 
 The **`shift-schedule-files-v1`** profile was scoped to the public dataset `benchflow/posttrain-agent-dogfood-20260921` at commit `9f9440e50642f824098bf50791394a106b9c7b46` (task `envs/shift-schedule-verify`), model `Qwen/Qwen3.6-27B` at revision `6a9e13bd6fc8f0983b9b99948120bc37f49c13e9`, method `LoRA SFT`, metric `pass_rate` and scope `seen`, with greedy decoding and 4,096 new tokens for both baseline and final. Experiment `exp-6fb41ab45e5d`, run `arena-060872d74a33`, completed training, saved-adapter reload, original-verifier evaluation, collection, organizer review and explicit publication; its [public report](https://huggingface.co/datasets/benchflow/posttrain-arena-results/blob/1e95d52af99352ad03b56f20263011c72d6a8c5b/reports/arena-060872d74a33.json) records the result.
 
