@@ -83,6 +83,9 @@ class HarnessConfig:
     agent_idle_timeout_sec: int = 300
     agent_timeout_sec: int = 900
     reasoning_effort: str | None = None
+    # Sandbox infrastructure errors (provider timeouts, agent install failures) are counted as
+    # failures instead of aborting the evaluation, up to this fraction of the task set.
+    max_infra_error_fraction: float = 0.1
 
 
 @dataclass(frozen=True)
@@ -206,6 +209,13 @@ class PipelineConfig:
             errors.append("harness.agent_idle_timeout_sec must be positive")
         if not _is_positive_int(self.harness.agent_timeout_sec):
             errors.append("harness.agent_timeout_sec must be positive")
+        fraction = self.harness.max_infra_error_fraction
+        if (
+            not isinstance(fraction, int | float)
+            or isinstance(fraction, bool)
+            or not 0 <= float(fraction) <= 0.5
+        ):
+            errors.append("harness.max_infra_error_fraction must be between 0 and 0.5")
         if self.harness.reasoning_effort is not None and (
             not isinstance(self.harness.reasoning_effort, str)
             or not self.harness.reasoning_effort.strip()
