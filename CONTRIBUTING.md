@@ -46,7 +46,7 @@ The template's verifier is a placeholder. Replace it with checks that reject mis
 ```bash
 # Fast structural checks; Python standard library only.
 python3 scripts/check_task.py submissions/your-team/envs
-python3 scripts/check_submission.py
+python3 scripts/check_submission.py submissions/your-team   # or no argument: every entry in submissions/
 
 # Requires Docker and a running daemon. Oracle must score 1.0.
 scripts/run_local.sh submissions/your-team/envs/your-env-name

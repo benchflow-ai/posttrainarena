@@ -20,11 +20,18 @@ Validates:
   the hosted Arena's range; legacy skills 20–100. Counts above the maximum
   are errors; a skills entry below 20 gets a warning.
 
+Usage:
+    python3 scripts/check_submission.py                  # every entry under submissions/
+    python3 scripts/check_submission.py my-collection    # one collection: the folder that holds submission.yaml
+    python3 scripts/check_submission.py some/folder      # every collection in a folder of collections
+
 Directories whose name starts with "_" are skipped (scratch space).
-Exit code: 0 if every entry validates (warnings allowed), 1 otherwise.
+Exit code: 0 if every entry validates (warnings allowed), 1 otherwise, 2 for a
+usage error such as a folder that does not exist.
 """
 from __future__ import annotations
 
+import argparse
 import sys
 from pathlib import Path
 
@@ -105,18 +112,58 @@ def check_entry(entry: Path) -> tuple[list[str], list[str]]:
     return errors, warnings
 
 
-def main(argv: list[str]) -> int:
-    root = Path(argv[1]) if len(argv) > 1 else Path("submissions")
-    if not root.is_dir():
-        print(f"no {root}/ directory — nothing to check")
-        return 0
+def collections_in(folder: Path) -> tuple[list[Path], str | None]:
+    """The collections a folder argument names: itself when it holds submission.yaml, else its subfolders (a folder of
+    collections, like submissions/). The second value explains a folder that is a task package or an envs/ folder."""
+    if (folder / "submission.yaml").is_file():
+        return [folder], None
+    if (folder / "task.md").is_file():
+        return [], (f"{folder} is a task package, not a collection. Check it with scripts/check_task.py {folder}; "
+                    "a collection is the folder that holds submission.yaml and envs/.")
+    children = sorted(p for p in folder.iterdir() if p.is_dir() and not p.name.startswith("_"))
+    if any((c / "task.md").is_file() for c in children) and not any((c / "submission.yaml").is_file() for c in children):
+        return [], (f"{folder} holds task packages, not collections. Pass the collection folder, the one that holds "
+                    f"submission.yaml and envs/, or check the tasks with scripts/check_task.py {folder}")
+    return children, None
 
-    entries = sorted(
-        p for p in root.iterdir() if p.is_dir() and not p.name.startswith("_")
-    )
-    if not entries:
-        print("no team submissions yet")
-        return 0
+
+def main(argv: list[str]) -> int:
+    parser = argparse.ArgumentParser(
+        prog="check_submission.py",
+        description="Check team collections' structure: submission.yaml (team_name, contact_email, track), then every "
+                    "package under envs/ (the same check as scripts/check_task.py) and the package count (environments 1-200).",
+        epilog="This checks structure only, not metadata values or whether a task works: scripts/run_local.sh replays the "
+               "oracle and an empty trial, and the Arena's validate checks category, license and origin.")
+    parser.add_argument("folders", nargs="*", metavar="FOLDER",
+                        help="a collection (the folder that holds submission.yaml and envs/) or a folder of collections; "
+                             "default: submissions/")
+    args = parser.parse_args(argv[1:])
+    for folder in args.folders:
+        if not Path(folder).is_dir():
+            parser.error(f"{folder}: no such folder")
+    if not args.folders:
+        root = Path("submissions")
+        if not root.is_dir():
+            print(f"no {root}/ directory — nothing to check")
+            return 0
+        entries, why = collections_in(root)
+        if why:
+            print(f"✗ {why}")
+            return 1
+        if not entries:
+            print("no team submissions yet")
+            return 0
+    else:
+        entries = []
+        for folder in args.folders:
+            found, why = collections_in(Path(folder))
+            if why:
+                print(f"✗ {why}")
+                return 1
+            if not found:
+                print(f"✗ {folder} holds no collection: a collection is a folder with submission.yaml and envs/.")
+                return 1
+            entries += found
 
     overall_ok = True
     for entry in entries:
