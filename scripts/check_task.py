@@ -21,6 +21,14 @@ not their contents. The untouched template passes, placeholders and all.
 scripts/run_local.sh replays the oracle and an empty trial, and the Arena's
 validate checks the metadata values (category, license, origin).
 
+One content check warns without failing: a verifier/test.sh that downloads
+when it runs (apt-get, curl, pip or uv installs, uvx) while task.md sets
+allow_internet: false. In a sandbox without network, which is how
+scripts/run_local.sh and the Arena's oracle and no-op controls run a task,
+the download fails or hangs, so even the reference solution can't pass. A test.sh that
+runs pytest from the image when the image has it (command -v pytest) and a
+Dockerfile that installs pytest pass, as the template does.
+
 Exit code: 0 if every task validates, 1 if any task has issues.
 """
 from __future__ import annotations
@@ -43,6 +51,16 @@ REQUIRED_METADATA = (
     "author_email",
     "category",
 )
+
+# What verifier/test.sh downloads with when it runs: package installs, curl or wget, uvx and the like.
+DOWNLOADS = re.compile(
+    r"\b(?P<install>(?:apt-get|apt|apk|yum|dnf|pip3?|uv|conda|mamba|npm|pnpm|yarn|gem|cargo|go)\s+(?:-\S+\s+)*"
+    r"(?:install|add|get|sync|tool))\b"
+    r"|\b(?P<fetch>curl|wget|uvx|pipx\s+run|npx|git\s+clone)\b"
+)
+# A test.sh that runs pytest from the image when the image has it (the template's `command -v "$PYTEST_BIN"`).
+PYTEST_IN_IMAGE = re.compile(r"\b(?:command\s+-v|which|type\s+-[pP]|hash)\s+[\"']?(?:\$\{?PYTEST_BIN\}?|pytest)(?![\w-])")
+OFFLINE = {"false", "no", "off", "0"}
 
 
 def parse_yaml_keys(block: str) -> set[str]:
@@ -77,6 +95,79 @@ def parse_metadata_keys(block: str) -> set[str]:
             if ":" in stripped:
                 keys.add(stripped.split(":", 1)[0].strip())
     return keys
+
+
+def block_values(frontmatter: str, block: str) -> dict[str, str]:
+    """Scalar keys directly under a top-level block (`environment:`, `sandbox:`), comments dropped."""
+    values: dict[str, str] = {}
+    inside, indent = False, None
+    for line in frontmatter.splitlines():
+        if not line.strip() or line.lstrip().startswith("#"):
+            continue
+        if not line[0].isspace():
+            key, _, rest = line.partition(":")
+            inside, indent = key.strip() == block and not rest.strip(), None
+            continue
+        if not inside or ":" not in line:
+            continue
+        depth = len(line) - len(line.lstrip())
+        indent = depth if indent is None else indent
+        if depth == indent:
+            key, _, raw = line.strip().partition(":")
+            values[key.strip()] = re.split(r"\s+#", raw, maxsplit=1)[0].strip().strip("\"'")
+    return values
+
+
+def offline(frontmatter: str) -> bool:
+    """True when task.md turns the sandbox's network off: allow_internet: false under environment: (or sandbox:, in
+    BenchFlow's own format), or BenchFlow's network_mode: no-network."""
+    for block in ("environment", "sandbox"):
+        values = block_values(frontmatter, block)
+        if values.get("allow_internet", "").lower() in OFFLINE or values.get("network_mode", "").lower() == "no-network":
+            return True
+    return False
+
+
+def image_installs_pytest(dockerfile: str) -> bool:
+    """A RUN instruction of the Dockerfile installs pytest (pip, uv, apt's python3-pytest ...)."""
+    joined = re.sub(r"\\\n", " ", dockerfile)
+    return any(
+        re.match(r"\s*RUN\b", line, re.I) and re.search(r"\binstall\b", line) and re.search(r"(?<![\w.])pytest(?!\w)", line)
+        for line in joined.splitlines()
+    )
+
+
+def warnings_for(task_dir: Path) -> list[str]:
+    """Content problems that don't fail the check: a verifier that needs the network the task turns off."""
+    task_md, test_sh = task_dir / "task.md", task_dir / "verifier" / "test.sh"
+    if not task_md.is_file() or not test_sh.is_file():
+        return []
+    m = FRONTMATTER_RE.match(task_md.read_text(encoding="utf-8", errors="replace"))
+    if not m or not offline(m.group(1)):
+        return []
+    code = [line for line in test_sh.read_text(encoding="utf-8", errors="replace").splitlines()
+            if line.strip() and not line.lstrip().startswith("#")]
+    tools = []
+    for line in code:
+        for hit in DOWNLOADS.finditer(line):
+            words = (hit.group("install") or hit.group("fetch")).split()
+            tools.append(f"{words[0]} {words[-1]}" if hit.group("install") else " ".join(words))
+    tools = list(dict.fromkeys(tools))
+    if not tools:
+        return []
+    dockerfile = task_dir / "environment" / "Dockerfile"
+    has_pytest = dockerfile.is_file() and image_installs_pytest(dockerfile.read_text(encoding="utf-8", errors="replace"))
+    fallback = any(PYTEST_IN_IMAGE.search(line) for line in code)
+    if fallback and has_pytest:
+        return []   # the download is a fallback for an image without pytest; this image has it
+    why = (" (it runs pytest from the image when the image has it, but environment/Dockerfile doesn't install pytest)"
+           if fallback else "")
+    return [
+        f"verifier/test.sh downloads when it runs ({', '.join(tools)}){why}, but task.md sets allow_internet: false. "
+        "In a sandbox without network (scripts/run_local.sh, the Arena's oracle and no-op controls) the download fails "
+        "or hangs, so even the reference solution can't pass. Install what the verifier needs in environment/Dockerfile and run it "
+        "from the image, as starting-kit/template does (pytest==8.4.1 and pytest-json-ctrf==0.3.5)."
+    ]
 
 
 def check_task(task_dir: Path) -> list[str]:
@@ -166,13 +257,16 @@ def main(argv: list[str]) -> int:
                 print(f"  → {i}")
         else:
             print(f"✓ {task_dir.name} — structure valid")
+        for w in warnings_for(task_dir):
+            print(f"  ⚠ warning: {w}")
     if not any_seen:
         print("no task directories found")
         return 1
     print(
         "This checks structure only: that the required files, frontmatter keys and "
         "'## prompt' section exist, not their contents (the template's placeholders pass) "
-        "or whether the verifier and oracle work."
+        "or whether the verifier and oracle work. Its one content check, a verifier that "
+        "downloads while the task turns the network off, is a warning."
     )
     if overall_ok:
         print(

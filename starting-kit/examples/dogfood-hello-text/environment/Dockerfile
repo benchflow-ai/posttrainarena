@@ -9,6 +9,11 @@ RUN apt-get update && apt-get install -y \
     python3-pip \
     && rm -rf /var/lib/apt/lists/*
 
+# pytest and its ctrf plugin, which verifier/test.sh runs the checks with: the task's sandbox has no network.
+RUN pip3 install --break-system-packages --no-cache-dir \
+    pytest==8.4.1 \
+    pytest-json-ctrf==0.3.5
+
 WORKDIR /root
 
 # Install task-specific Python deps. Pin everything.
