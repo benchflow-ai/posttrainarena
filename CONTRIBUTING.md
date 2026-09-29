@@ -46,7 +46,7 @@ The template's verifier is a placeholder. Replace it with checks that reject mis
 ```bash
 # Fast structural checks; Python standard library only.
 python3 scripts/check_task.py submissions/your-team/envs
-python3 scripts/check_submission.py submissions/your-team   # or no argument: every entry in submissions/
+python3 scripts/check_submission.py submissions/your-team
 
 # Requires Docker and a running daemon. Oracle must score 1.0.
 scripts/run_local.sh submissions/your-team/envs/your-env-name
@@ -55,7 +55,7 @@ scripts/run_local.sh submissions/your-team/envs/your-env-name
 scripts/run_local.sh submissions/your-team/envs/your-env-name --skip-oracle
 ```
 
-Both Docker commands must exit successfully. For `--skip-oracle`, success means the verifier rejected the empty trial. A missing reward file is a harness/verifier failure, not a valid zero score.
+`check_submission.py` with no argument checks every entry in `submissions/`. Both Docker commands must exit successfully. For `--skip-oracle`, success means the verifier rejected the empty trial. A missing reward file is a harness/verifier failure, not a valid zero score.
 
 | Check | Proves | Does not prove |
 | --- | --- | --- |
