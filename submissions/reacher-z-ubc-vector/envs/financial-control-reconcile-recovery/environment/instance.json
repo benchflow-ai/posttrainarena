@@ -1,0 +1,107 @@
+{
+  "operation": "join_reconcile",
+  "variant": "recovery",
+  "tolerance": "0.02",
+  "rows": [
+    {
+      "key": "K1",
+      "side": "ledger",
+      "amount": 23.38,
+      "record_id": "R-001"
+    },
+    {
+      "key": "K1",
+      "side": "control",
+      "amount": 67.84,
+      "record_id": "R-002"
+    },
+    {
+      "key": "K2",
+      "side": "ledger",
+      "amount": 39.17,
+      "record_id": "R-003"
+    },
+    {
+      "key": "K2",
+      "side": "control",
+      "amount": 93.0,
+      "record_id": "R-004"
+    },
+    {
+      "key": "K3",
+      "side": "ledger",
+      "amount": 53.43,
+      "record_id": "R-005"
+    },
+    {
+      "key": "K3",
+      "side": "control",
+      "amount": 75.85,
+      "record_id": "R-006"
+    },
+    {
+      "key": "K4",
+      "side": "ledger",
+      "amount": 84.57,
+      "record_id": "R-007"
+    },
+    {
+      "key": "K4",
+      "side": "control",
+      "amount": 83.49,
+      "record_id": "R-008"
+    },
+    {
+      "key": "K5",
+      "side": "ledger",
+      "amount": 28.51,
+      "record_id": "R-009"
+    },
+    {
+      "key": "K5",
+      "side": "control",
+      "amount": 74.2,
+      "record_id": "R-010"
+    },
+    {
+      "key": "K6",
+      "side": "ledger",
+      "amount": 24.7,
+      "record_id": "R-011"
+    },
+    {
+      "key": "K6",
+      "side": "control",
+      "amount": 96.35,
+      "record_id": "R-012"
+    },
+    {
+      "key": "K7",
+      "side": "ledger",
+      "amount": 94.2,
+      "record_id": "R-013"
+    },
+    {
+      "key": "K7",
+      "side": "control",
+      "amount": 61.9,
+      "record_id": "R-014"
+    },
+    {
+      "key": "K8",
+      "side": "ledger",
+      "amount": 35.37,
+      "record_id": "R-015"
+    },
+    {
+      "key": "K8",
+      "side": "control",
+      "amount": 50.45,
+      "record_id": "R-016"
+    }
+  ],
+  "prior_answer": {
+    "obsolete_result": true,
+    "stale_summary": 0
+  }
+}

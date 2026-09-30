@@ -1,0 +1,130 @@
+{
+  "operation": "source_precedence",
+  "variant": "recovery",
+  "rows": [
+    {
+      "claim": "C1",
+      "source_id": "SRC-1",
+      "authority_rank": 1,
+      "statement": "Finding-1039-0",
+      "admissible": false,
+      "record_id": "R-001"
+    },
+    {
+      "claim": "C2",
+      "source_id": "SRC-2",
+      "authority_rank": 2,
+      "statement": "Finding-1039-1",
+      "admissible": true,
+      "record_id": "R-002"
+    },
+    {
+      "claim": "C3",
+      "source_id": "SRC-3",
+      "authority_rank": 3,
+      "statement": "Finding-1039-2",
+      "admissible": true,
+      "record_id": "R-003"
+    },
+    {
+      "claim": "C4",
+      "source_id": "SRC-4",
+      "authority_rank": 4,
+      "statement": "Finding-1039-3",
+      "admissible": true,
+      "record_id": "R-004"
+    },
+    {
+      "claim": "C5",
+      "source_id": "SRC-5",
+      "authority_rank": 1,
+      "statement": "Finding-1039-4",
+      "admissible": true,
+      "record_id": "R-005"
+    },
+    {
+      "claim": "C6",
+      "source_id": "SRC-6",
+      "authority_rank": 2,
+      "statement": "Finding-1039-5",
+      "admissible": false,
+      "record_id": "R-006"
+    },
+    {
+      "claim": "C1",
+      "source_id": "SRC-7",
+      "authority_rank": 3,
+      "statement": "Finding-1039-6",
+      "admissible": true,
+      "record_id": "R-007"
+    },
+    {
+      "claim": "C2",
+      "source_id": "SRC-8",
+      "authority_rank": 4,
+      "statement": "Finding-1039-7",
+      "admissible": true,
+      "record_id": "R-008"
+    },
+    {
+      "claim": "C3",
+      "source_id": "SRC-9",
+      "authority_rank": 1,
+      "statement": "Finding-1039-8",
+      "admissible": true,
+      "record_id": "R-009"
+    },
+    {
+      "claim": "C4",
+      "source_id": "SRC-10",
+      "authority_rank": 2,
+      "statement": "Finding-1039-9",
+      "admissible": true,
+      "record_id": "R-010"
+    },
+    {
+      "claim": "C5",
+      "source_id": "SRC-11",
+      "authority_rank": 3,
+      "statement": "Finding-1039-10",
+      "admissible": false,
+      "record_id": "R-011"
+    },
+    {
+      "claim": "C6",
+      "source_id": "SRC-12",
+      "authority_rank": 4,
+      "statement": "Finding-1039-11",
+      "admissible": true,
+      "record_id": "R-012"
+    },
+    {
+      "claim": "C1",
+      "source_id": "SRC-13",
+      "authority_rank": 1,
+      "statement": "Finding-1039-12",
+      "admissible": true,
+      "record_id": "R-013"
+    },
+    {
+      "claim": "C2",
+      "source_id": "SRC-14",
+      "authority_rank": 2,
+      "statement": "Finding-1039-13",
+      "admissible": true,
+      "record_id": "R-014"
+    },
+    {
+      "claim": "C3",
+      "source_id": "SRC-15",
+      "authority_rank": 3,
+      "statement": "Finding-1039-14",
+      "admissible": true,
+      "record_id": "R-015"
+    }
+  ],
+  "prior_answer": {
+    "obsolete_result": true,
+    "stale_summary": 0
+  }
+}

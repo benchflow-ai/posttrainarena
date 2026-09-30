@@ -1,0 +1,222 @@
+{
+  "operation": "trimmed_mean",
+  "variant": "adversarial",
+  "rows": [
+    {
+      "sensor": "S1",
+      "value": 10.673,
+      "record_id": "R-001",
+      "is_distractor": false
+    },
+    {
+      "sensor": "S2",
+      "value": 12.513,
+      "record_id": "R-002",
+      "is_distractor": true
+    },
+    {
+      "sensor": "S3",
+      "value": 30.058,
+      "record_id": "R-003",
+      "is_distractor": false
+    },
+    {
+      "sensor": "S1",
+      "value": 9.537,
+      "record_id": "R-004",
+      "is_distractor": false
+    },
+    {
+      "sensor": "S2",
+      "value": 11.669,
+      "record_id": "R-005",
+      "is_distractor": false
+    },
+    {
+      "sensor": "S3",
+      "value": 12.343,
+      "record_id": "R-006",
+      "is_distractor": false
+    },
+    {
+      "sensor": "S1",
+      "value": 9.128,
+      "record_id": "R-007",
+      "is_distractor": false
+    },
+    {
+      "sensor": "S2",
+      "value": 12.621,
+      "record_id": "R-008",
+      "is_distractor": false
+    },
+    {
+      "sensor": "S3",
+      "value": 13.554,
+      "record_id": "R-009",
+      "is_distractor": false
+    },
+    {
+      "sensor": "S1",
+      "value": 9.27,
+      "record_id": "R-010",
+      "is_distractor": false
+    },
+    {
+      "sensor": "S2",
+      "value": 11.862,
+      "record_id": "R-011",
+      "is_distractor": false
+    },
+    {
+      "sensor": "S3",
+      "value": 12.609,
+      "record_id": "R-012",
+      "is_distractor": false
+    },
+    {
+      "sensor": "S1",
+      "value": 12.174,
+      "record_id": "R-013",
+      "is_distractor": false
+    },
+    {
+      "sensor": "S2",
+      "value": 12.13,
+      "record_id": "R-014",
+      "is_distractor": false
+    },
+    {
+      "sensor": "S3",
+      "value": 14.795,
+      "record_id": "R-015",
+      "is_distractor": false
+    },
+    {
+      "sensor": "S1",
+      "value": 10.656,
+      "record_id": "R-016",
+      "is_distractor": false
+    },
+    {
+      "sensor": "S2",
+      "value": 10.971,
+      "record_id": "R-017",
+      "is_distractor": false
+    },
+    {
+      "sensor": "S3",
+      "value": 14.029,
+      "record_id": "R-018",
+      "is_distractor": false
+    },
+    {
+      "sensor": "S1",
+      "value": 9.306,
+      "record_id": "R-019",
+      "is_distractor": false
+    },
+    {
+      "sensor": "S2",
+      "value": 13.261,
+      "record_id": "R-020",
+      "is_distractor": false
+    },
+    {
+      "sensor": "S3",
+      "value": 14.087,
+      "record_id": "R-021",
+      "is_distractor": false
+    },
+    {
+      "sensor": "S1",
+      "value": 10.721,
+      "record_id": "R-022",
+      "is_distractor": false
+    },
+    {
+      "sensor": "S2",
+      "value": 13.319,
+      "record_id": "R-023",
+      "is_distractor": false
+    },
+    {
+      "sensor": "S3",
+      "value": 14.387,
+      "record_id": "R-024",
+      "is_distractor": false
+    },
+    {
+      "sensor": "S1",
+      "value": 11.214,
+      "record_id": "R-025",
+      "is_distractor": false
+    },
+    {
+      "sensor": "S2",
+      "value": 11.44,
+      "record_id": "R-026",
+      "is_distractor": false
+    },
+    {
+      "sensor": "S3",
+      "value": 14.959,
+      "record_id": "R-027",
+      "is_distractor": false
+    },
+    {
+      "sensor": "S1",
+      "value": 10.435,
+      "record_id": "R-028",
+      "is_distractor": false
+    },
+    {
+      "sensor": "S2",
+      "value": 10.356,
+      "record_id": "R-029",
+      "is_distractor": false
+    },
+    {
+      "sensor": "S3",
+      "value": 12.91,
+      "record_id": "R-030",
+      "is_distractor": false
+    },
+    {
+      "sensor": "S1",
+      "value": 9.209,
+      "record_id": "R-031",
+      "is_distractor": false
+    },
+    {
+      "sensor": "S2",
+      "value": 26.544,
+      "record_id": "R-032",
+      "is_distractor": false
+    },
+    {
+      "sensor": "S3",
+      "value": 14.669,
+      "record_id": "R-033",
+      "is_distractor": false
+    },
+    {
+      "sensor": "S1",
+      "value": 12.308,
+      "record_id": "R-034",
+      "is_distractor": false
+    },
+    {
+      "sensor": "S2",
+      "value": 12.495,
+      "record_id": "R-035",
+      "is_distractor": true
+    },
+    {
+      "sensor": "S3",
+      "value": 14.392,
+      "record_id": "R-036",
+      "is_distractor": false
+    }
+  ]
+}

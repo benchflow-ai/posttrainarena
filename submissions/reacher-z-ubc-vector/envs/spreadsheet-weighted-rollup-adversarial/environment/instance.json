@@ -1,0 +1,111 @@
+{
+  "operation": "weighted_rollup",
+  "variant": "adversarial",
+  "rows": [
+    {
+      "group": "A",
+      "quantity": 8,
+      "unit_value": 25.69,
+      "record_id": "R-001",
+      "is_distractor": false
+    },
+    {
+      "group": "B",
+      "quantity": 7,
+      "unit_value": 18.12,
+      "record_id": "R-002",
+      "is_distractor": true
+    },
+    {
+      "group": "C",
+      "quantity": 5,
+      "unit_value": 12.72,
+      "record_id": "R-003",
+      "is_distractor": false
+    },
+    {
+      "group": "A",
+      "quantity": 3,
+      "unit_value": 16.65,
+      "record_id": "R-004",
+      "is_distractor": false
+    },
+    {
+      "group": "B",
+      "quantity": 6,
+      "unit_value": 13.03,
+      "record_id": "R-005",
+      "is_distractor": false
+    },
+    {
+      "group": "C",
+      "quantity": 4,
+      "unit_value": 26.26,
+      "record_id": "R-006",
+      "is_distractor": false
+    },
+    {
+      "group": "A",
+      "quantity": 1,
+      "unit_value": 10.91,
+      "record_id": "R-007",
+      "is_distractor": false
+    },
+    {
+      "group": "B",
+      "quantity": 1,
+      "unit_value": 12.21,
+      "record_id": "R-008",
+      "is_distractor": false
+    },
+    {
+      "group": "C",
+      "quantity": 2,
+      "unit_value": 9.95,
+      "record_id": "R-009",
+      "is_distractor": false
+    },
+    {
+      "group": "A",
+      "quantity": 2,
+      "unit_value": 10.85,
+      "record_id": "R-010",
+      "is_distractor": false
+    },
+    {
+      "group": "B",
+      "quantity": 2,
+      "unit_value": 28.37,
+      "record_id": "R-011",
+      "is_distractor": false
+    },
+    {
+      "group": "C",
+      "quantity": 4,
+      "unit_value": 28.22,
+      "record_id": "R-012",
+      "is_distractor": false
+    },
+    {
+      "group": "A",
+      "quantity": 7,
+      "unit_value": 31.32,
+      "record_id": "R-013",
+      "is_distractor": false
+    },
+    {
+      "group": "B",
+      "quantity": 9,
+      "unit_value": 3.41,
+      "record_id": "R-014",
+      "is_distractor": true
+    },
+    {
+      "group": "C",
+      "quantity": 5,
+      "unit_value": 27.44,
+      "record_id": "R-015",
+      "is_distractor": false
+    }
+  ]
+}

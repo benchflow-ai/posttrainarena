@@ -1,0 +1,91 @@
+{
+  "operation": "greedy_capacity",
+  "variant": "adversarial",
+  "capacity": 48,
+  "rows": [
+    {
+      "id": "J-1",
+      "priority": 4,
+      "demand": 5,
+      "record_id": "R-001",
+      "is_distractor": false
+    },
+    {
+      "id": "J-2",
+      "priority": 3,
+      "demand": 5,
+      "record_id": "R-002",
+      "is_distractor": true
+    },
+    {
+      "id": "J-3",
+      "priority": 1,
+      "demand": 3,
+      "record_id": "R-003",
+      "is_distractor": false
+    },
+    {
+      "id": "J-4",
+      "priority": 4,
+      "demand": 3,
+      "record_id": "R-004",
+      "is_distractor": false
+    },
+    {
+      "id": "J-5",
+      "priority": 5,
+      "demand": 6,
+      "record_id": "R-005",
+      "is_distractor": false
+    },
+    {
+      "id": "J-6",
+      "priority": 3,
+      "demand": 6,
+      "record_id": "R-006",
+      "is_distractor": false
+    },
+    {
+      "id": "J-7",
+      "priority": 1,
+      "demand": 8,
+      "record_id": "R-007",
+      "is_distractor": false
+    },
+    {
+      "id": "J-8",
+      "priority": 4,
+      "demand": 7,
+      "record_id": "R-008",
+      "is_distractor": false
+    },
+    {
+      "id": "J-9",
+      "priority": 5,
+      "demand": 8,
+      "record_id": "R-009",
+      "is_distractor": false
+    },
+    {
+      "id": "J-10",
+      "priority": 2,
+      "demand": 5,
+      "record_id": "R-010",
+      "is_distractor": false
+    },
+    {
+      "id": "J-11",
+      "priority": 4,
+      "demand": 9,
+      "record_id": "R-011",
+      "is_distractor": true
+    },
+    {
+      "id": "J-12",
+      "priority": 4,
+      "demand": 3,
+      "record_id": "R-012",
+      "is_distractor": false
+    }
+  ]
+}

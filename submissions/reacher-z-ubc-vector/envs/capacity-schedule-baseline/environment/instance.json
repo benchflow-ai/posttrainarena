@@ -1,0 +1,79 @@
+{
+  "operation": "greedy_capacity",
+  "variant": "baseline",
+  "capacity": 44,
+  "rows": [
+    {
+      "id": "J-1",
+      "priority": 5,
+      "demand": 11,
+      "record_id": "R-001"
+    },
+    {
+      "id": "J-2",
+      "priority": 1,
+      "demand": 3,
+      "record_id": "R-002"
+    },
+    {
+      "id": "J-3",
+      "priority": 3,
+      "demand": 8,
+      "record_id": "R-003"
+    },
+    {
+      "id": "J-4",
+      "priority": 1,
+      "demand": 8,
+      "record_id": "R-004"
+    },
+    {
+      "id": "J-5",
+      "priority": 3,
+      "demand": 10,
+      "record_id": "R-005"
+    },
+    {
+      "id": "J-6",
+      "priority": 4,
+      "demand": 10,
+      "record_id": "R-006"
+    },
+    {
+      "id": "J-7",
+      "priority": 3,
+      "demand": 3,
+      "record_id": "R-007"
+    },
+    {
+      "id": "J-8",
+      "priority": 4,
+      "demand": 5,
+      "record_id": "R-008"
+    },
+    {
+      "id": "J-9",
+      "priority": 1,
+      "demand": 5,
+      "record_id": "R-009"
+    },
+    {
+      "id": "J-10",
+      "priority": 2,
+      "demand": 12,
+      "record_id": "R-010"
+    },
+    {
+      "id": "J-11",
+      "priority": 5,
+      "demand": 3,
+      "record_id": "R-011"
+    },
+    {
+      "id": "J-12",
+      "priority": 5,
+      "demand": 6,
+      "record_id": "R-012"
+    }
+  ]
+}

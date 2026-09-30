@@ -1,0 +1,126 @@
+{
+  "operation": "weighted_rollup",
+  "variant": "conflict",
+  "rows": [
+    {
+      "group": "A",
+      "quantity": 9,
+      "unit_value": 19.87,
+      "record_id": "R-001",
+      "logical_key": "L-000",
+      "source_priority": 1
+    },
+    {
+      "group": "B",
+      "quantity": 4,
+      "unit_value": 6.31,
+      "record_id": "R-002",
+      "logical_key": "L-000",
+      "source_priority": 2
+    },
+    {
+      "group": "C",
+      "quantity": 5,
+      "unit_value": 16.52,
+      "record_id": "R-003",
+      "logical_key": "L-001",
+      "source_priority": 1
+    },
+    {
+      "group": "A",
+      "quantity": 2,
+      "unit_value": 23.22,
+      "record_id": "R-004",
+      "logical_key": "L-001",
+      "source_priority": 2
+    },
+    {
+      "group": "B",
+      "quantity": 7,
+      "unit_value": 17.3,
+      "record_id": "R-005",
+      "logical_key": "L-002",
+      "source_priority": 1
+    },
+    {
+      "group": "C",
+      "quantity": 4,
+      "unit_value": 8.76,
+      "record_id": "R-006",
+      "logical_key": "L-002",
+      "source_priority": 2
+    },
+    {
+      "group": "A",
+      "quantity": 1,
+      "unit_value": 14.63,
+      "record_id": "R-007",
+      "logical_key": "L-003",
+      "source_priority": 1
+    },
+    {
+      "group": "B",
+      "quantity": 9,
+      "unit_value": 22.29,
+      "record_id": "R-008",
+      "logical_key": "L-003",
+      "source_priority": 2
+    },
+    {
+      "group": "C",
+      "quantity": 3,
+      "unit_value": 11.36,
+      "record_id": "R-009",
+      "logical_key": "L-004",
+      "source_priority": 1
+    },
+    {
+      "group": "A",
+      "quantity": 5,
+      "unit_value": 4.4,
+      "record_id": "R-010",
+      "logical_key": "L-004",
+      "source_priority": 2
+    },
+    {
+      "group": "B",
+      "quantity": 9,
+      "unit_value": 30.14,
+      "record_id": "R-011",
+      "logical_key": "L-005",
+      "source_priority": 1
+    },
+    {
+      "group": "C",
+      "quantity": 8,
+      "unit_value": 20.67,
+      "record_id": "R-012",
+      "logical_key": "L-005",
+      "source_priority": 2
+    },
+    {
+      "group": "A",
+      "quantity": 2,
+      "unit_value": 5.04,
+      "record_id": "R-013",
+      "logical_key": "L-006",
+      "source_priority": 1
+    },
+    {
+      "group": "B",
+      "quantity": 2,
+      "unit_value": 21.35,
+      "record_id": "R-014",
+      "logical_key": "L-006",
+      "source_priority": 2
+    },
+    {
+      "group": "C",
+      "quantity": 7,
+      "unit_value": 11.4,
+      "record_id": "R-015",
+      "logical_key": "L-007",
+      "source_priority": 1
+    }
+  ]
+}

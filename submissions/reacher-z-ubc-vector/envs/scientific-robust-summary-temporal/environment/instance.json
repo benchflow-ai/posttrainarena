@@ -1,0 +1,223 @@
+{
+  "operation": "trimmed_mean",
+  "variant": "temporal",
+  "rows": [
+    {
+      "sensor": "S1",
+      "value": 11.412,
+      "record_id": "R-001",
+      "effective_at": "2026-08-10T12:00:00"
+    },
+    {
+      "sensor": "S2",
+      "value": 11.047,
+      "record_id": "R-002",
+      "effective_at": "2026-08-11T12:00:00"
+    },
+    {
+      "sensor": "S3",
+      "value": 28.391,
+      "record_id": "R-003",
+      "effective_at": "2026-08-12T12:00:00"
+    },
+    {
+      "sensor": "S1",
+      "value": 8.511,
+      "record_id": "R-004",
+      "effective_at": "2026-08-13T12:00:00"
+    },
+    {
+      "sensor": "S2",
+      "value": 12.774,
+      "record_id": "R-005",
+      "effective_at": "2026-08-14T12:00:00"
+    },
+    {
+      "sensor": "S3",
+      "value": 12.661,
+      "record_id": "R-006",
+      "effective_at": "2026-08-15T12:00:00"
+    },
+    {
+      "sensor": "S1",
+      "value": 9.786,
+      "record_id": "R-007",
+      "effective_at": "2026-08-16T12:00:00"
+    },
+    {
+      "sensor": "S2",
+      "value": 11.903,
+      "record_id": "R-008",
+      "effective_at": "2026-08-17T12:00:00"
+    },
+    {
+      "sensor": "S3",
+      "value": 14.224,
+      "record_id": "R-009",
+      "effective_at": "2026-08-18T12:00:00"
+    },
+    {
+      "sensor": "S1",
+      "value": 9.747,
+      "record_id": "R-010",
+      "effective_at": "2026-08-19T12:00:00"
+    },
+    {
+      "sensor": "S2",
+      "value": 12.02,
+      "record_id": "R-011",
+      "effective_at": "2026-08-20T12:00:00"
+    },
+    {
+      "sensor": "S3",
+      "value": 14.774,
+      "record_id": "R-012",
+      "effective_at": "2026-08-21T12:00:00"
+    },
+    {
+      "sensor": "S1",
+      "value": 9.742,
+      "record_id": "R-013",
+      "effective_at": "2026-08-10T12:00:00"
+    },
+    {
+      "sensor": "S2",
+      "value": 11.702,
+      "record_id": "R-014",
+      "effective_at": "2026-08-11T12:00:00"
+    },
+    {
+      "sensor": "S3",
+      "value": 13.155,
+      "record_id": "R-015",
+      "effective_at": "2026-08-12T12:00:00"
+    },
+    {
+      "sensor": "S1",
+      "value": 10.298,
+      "record_id": "R-016",
+      "effective_at": "2026-08-13T12:00:00"
+    },
+    {
+      "sensor": "S2",
+      "value": 12.207,
+      "record_id": "R-017",
+      "effective_at": "2026-08-14T12:00:00"
+    },
+    {
+      "sensor": "S3",
+      "value": 14.813,
+      "record_id": "R-018",
+      "effective_at": "2026-08-15T12:00:00"
+    },
+    {
+      "sensor": "S1",
+      "value": 10.001,
+      "record_id": "R-019",
+      "effective_at": "2026-08-16T12:00:00"
+    },
+    {
+      "sensor": "S2",
+      "value": 11.406,
+      "record_id": "R-020",
+      "effective_at": "2026-08-17T12:00:00"
+    },
+    {
+      "sensor": "S3",
+      "value": 14.851,
+      "record_id": "R-021",
+      "effective_at": "2026-08-18T12:00:00"
+    },
+    {
+      "sensor": "S1",
+      "value": 9.751,
+      "record_id": "R-022",
+      "effective_at": "2026-08-19T12:00:00"
+    },
+    {
+      "sensor": "S2",
+      "value": 13.537,
+      "record_id": "R-023",
+      "effective_at": "2026-08-20T12:00:00"
+    },
+    {
+      "sensor": "S3",
+      "value": 13.453,
+      "record_id": "R-024",
+      "effective_at": "2026-08-21T12:00:00"
+    },
+    {
+      "sensor": "S1",
+      "value": 10.445,
+      "record_id": "R-025",
+      "effective_at": "2026-08-10T12:00:00"
+    },
+    {
+      "sensor": "S2",
+      "value": 13.423,
+      "record_id": "R-026",
+      "effective_at": "2026-08-11T12:00:00"
+    },
+    {
+      "sensor": "S3",
+      "value": 13.197,
+      "record_id": "R-027",
+      "effective_at": "2026-08-12T12:00:00"
+    },
+    {
+      "sensor": "S1",
+      "value": 10.65,
+      "record_id": "R-028",
+      "effective_at": "2026-08-13T12:00:00"
+    },
+    {
+      "sensor": "S2",
+      "value": 13.03,
+      "record_id": "R-029",
+      "effective_at": "2026-08-14T12:00:00"
+    },
+    {
+      "sensor": "S3",
+      "value": 13.498,
+      "record_id": "R-030",
+      "effective_at": "2026-08-15T12:00:00"
+    },
+    {
+      "sensor": "S1",
+      "value": 9.919,
+      "record_id": "R-031",
+      "effective_at": "2026-08-16T12:00:00"
+    },
+    {
+      "sensor": "S2",
+      "value": 26.627,
+      "record_id": "R-032",
+      "effective_at": "2026-08-17T12:00:00"
+    },
+    {
+      "sensor": "S3",
+      "value": 13.427,
+      "record_id": "R-033",
+      "effective_at": "2026-08-18T12:00:00"
+    },
+    {
+      "sensor": "S1",
+      "value": 8.597,
+      "record_id": "R-034",
+      "effective_at": "2026-08-19T12:00:00"
+    },
+    {
+      "sensor": "S2",
+      "value": 11.425,
+      "record_id": "R-035",
+      "effective_at": "2026-08-20T12:00:00"
+    },
+    {
+      "sensor": "S3",
+      "value": 15.242,
+      "record_id": "R-036",
+      "effective_at": "2026-08-21T12:00:00"
+    }
+  ],
+  "as_of": "2026-08-18T12:00:00"
+}

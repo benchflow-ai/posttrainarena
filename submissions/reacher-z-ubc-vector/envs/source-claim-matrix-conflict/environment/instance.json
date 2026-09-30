@@ -1,0 +1,156 @@
+{
+  "operation": "source_precedence",
+  "variant": "conflict",
+  "rows": [
+    {
+      "claim": "C1",
+      "source_id": "SRC-1",
+      "authority_rank": 1,
+      "statement": "Finding-1037-0",
+      "admissible": false,
+      "record_id": "R-001",
+      "logical_key": "L-000",
+      "source_priority": 1
+    },
+    {
+      "claim": "C2",
+      "source_id": "SRC-2",
+      "authority_rank": 2,
+      "statement": "Finding-1037-1",
+      "admissible": true,
+      "record_id": "R-002",
+      "logical_key": "L-000",
+      "source_priority": 2
+    },
+    {
+      "claim": "C3",
+      "source_id": "SRC-3",
+      "authority_rank": 3,
+      "statement": "Finding-1037-2",
+      "admissible": true,
+      "record_id": "R-003",
+      "logical_key": "L-001",
+      "source_priority": 1
+    },
+    {
+      "claim": "C4",
+      "source_id": "SRC-4",
+      "authority_rank": 4,
+      "statement": "Finding-1037-3",
+      "admissible": true,
+      "record_id": "R-004",
+      "logical_key": "L-001",
+      "source_priority": 2
+    },
+    {
+      "claim": "C5",
+      "source_id": "SRC-5",
+      "authority_rank": 1,
+      "statement": "Finding-1037-4",
+      "admissible": true,
+      "record_id": "R-005",
+      "logical_key": "L-002",
+      "source_priority": 1
+    },
+    {
+      "claim": "C6",
+      "source_id": "SRC-6",
+      "authority_rank": 2,
+      "statement": "Finding-1037-5",
+      "admissible": false,
+      "record_id": "R-006",
+      "logical_key": "L-002",
+      "source_priority": 2
+    },
+    {
+      "claim": "C1",
+      "source_id": "SRC-7",
+      "authority_rank": 3,
+      "statement": "Finding-1037-6",
+      "admissible": true,
+      "record_id": "R-007",
+      "logical_key": "L-003",
+      "source_priority": 1
+    },
+    {
+      "claim": "C2",
+      "source_id": "SRC-8",
+      "authority_rank": 4,
+      "statement": "Finding-1037-7",
+      "admissible": true,
+      "record_id": "R-008",
+      "logical_key": "L-003",
+      "source_priority": 2
+    },
+    {
+      "claim": "C3",
+      "source_id": "SRC-9",
+      "authority_rank": 1,
+      "statement": "Finding-1037-8",
+      "admissible": true,
+      "record_id": "R-009",
+      "logical_key": "L-004",
+      "source_priority": 1
+    },
+    {
+      "claim": "C4",
+      "source_id": "SRC-10",
+      "authority_rank": 2,
+      "statement": "Finding-1037-9",
+      "admissible": true,
+      "record_id": "R-010",
+      "logical_key": "L-004",
+      "source_priority": 2
+    },
+    {
+      "claim": "C5",
+      "source_id": "SRC-11",
+      "authority_rank": 3,
+      "statement": "Finding-1037-10",
+      "admissible": false,
+      "record_id": "R-011",
+      "logical_key": "L-005",
+      "source_priority": 1
+    },
+    {
+      "claim": "C6",
+      "source_id": "SRC-12",
+      "authority_rank": 4,
+      "statement": "Finding-1037-11",
+      "admissible": true,
+      "record_id": "R-012",
+      "logical_key": "L-005",
+      "source_priority": 2
+    },
+    {
+      "claim": "C1",
+      "source_id": "SRC-13",
+      "authority_rank": 1,
+      "statement": "Finding-1037-12",
+      "admissible": true,
+      "record_id": "R-013",
+      "logical_key": "L-006",
+      "source_priority": 1
+    },
+    {
+      "claim": "C2",
+      "source_id": "SRC-14",
+      "authority_rank": 2,
+      "statement": "Finding-1037-13",
+      "admissible": true,
+      "record_id": "R-014",
+      "logical_key": "L-006",
+      "source_priority": 2
+    },
+    {
+      "claim": "C3",
+      "source_id": "SRC-15",
+      "authority_rank": 3,
+      "statement": "Finding-1037-14",
+      "admissible": true,
+      "record_id": "R-015",
+      "logical_key": "L-007",
+      "source_priority": 1
+    }
+  ]
+}

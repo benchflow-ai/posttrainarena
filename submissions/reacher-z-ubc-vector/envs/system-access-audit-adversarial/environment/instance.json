@@ -1,0 +1,125 @@
+{
+  "operation": "policy_filter",
+  "variant": "adversarial",
+  "allowed_by_role": {
+    "reader": [
+      "read"
+    ],
+    "editor": [
+      "read",
+      "write"
+    ],
+    "admin": [
+      "read",
+      "write",
+      "admin"
+    ]
+  },
+  "rows": [
+    {
+      "id": "A-1",
+      "role": "reader",
+      "granted": "read",
+      "record_id": "R-001",
+      "is_distractor": false
+    },
+    {
+      "id": "A-2",
+      "role": "editor",
+      "granted": "read",
+      "record_id": "R-002",
+      "is_distractor": true
+    },
+    {
+      "id": "A-3",
+      "role": "admin",
+      "granted": "read",
+      "record_id": "R-003",
+      "is_distractor": false
+    },
+    {
+      "id": "A-4",
+      "role": "reader",
+      "granted": "read",
+      "record_id": "R-004",
+      "is_distractor": false
+    },
+    {
+      "id": "A-5",
+      "role": "editor",
+      "granted": "write",
+      "record_id": "R-005",
+      "is_distractor": false
+    },
+    {
+      "id": "A-6",
+      "role": "admin",
+      "granted": "read",
+      "record_id": "R-006",
+      "is_distractor": false
+    },
+    {
+      "id": "A-7",
+      "role": "reader",
+      "granted": "admin",
+      "record_id": "R-007",
+      "is_distractor": false
+    },
+    {
+      "id": "A-8",
+      "role": "editor",
+      "granted": "admin",
+      "record_id": "R-008",
+      "is_distractor": false
+    },
+    {
+      "id": "A-9",
+      "role": "admin",
+      "granted": "read",
+      "record_id": "R-009",
+      "is_distractor": false
+    },
+    {
+      "id": "A-10",
+      "role": "reader",
+      "granted": "write",
+      "record_id": "R-010",
+      "is_distractor": false
+    },
+    {
+      "id": "A-11",
+      "role": "editor",
+      "granted": "admin",
+      "record_id": "R-011",
+      "is_distractor": false
+    },
+    {
+      "id": "A-12",
+      "role": "admin",
+      "granted": "write",
+      "record_id": "R-012",
+      "is_distractor": false
+    },
+    {
+      "id": "A-13",
+      "role": "reader",
+      "granted": "write",
+      "record_id": "R-013",
+      "is_distractor": false
+    },
+    {
+      "id": "A-14",
+      "role": "editor",
+      "granted": "write",
+      "record_id": "R-014",
+      "is_distractor": true
+    },
+    {
+      "id": "A-15",
+      "role": "admin",
+      "granted": "read",
+      "record_id": "R-015",
+      "is_distractor": false
+    }
+  ]
+}

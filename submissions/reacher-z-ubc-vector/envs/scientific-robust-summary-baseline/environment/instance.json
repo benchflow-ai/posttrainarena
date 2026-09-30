@@ -1,0 +1,186 @@
+{
+  "operation": "trimmed_mean",
+  "variant": "baseline",
+  "rows": [
+    {
+      "sensor": "S1",
+      "value": 9.832,
+      "record_id": "R-001"
+    },
+    {
+      "sensor": "S2",
+      "value": 12.186,
+      "record_id": "R-002"
+    },
+    {
+      "sensor": "S3",
+      "value": 29.475,
+      "record_id": "R-003"
+    },
+    {
+      "sensor": "S1",
+      "value": 10.97,
+      "record_id": "R-004"
+    },
+    {
+      "sensor": "S2",
+      "value": 12.228,
+      "record_id": "R-005"
+    },
+    {
+      "sensor": "S3",
+      "value": 12.943,
+      "record_id": "R-006"
+    },
+    {
+      "sensor": "S1",
+      "value": 9.373,
+      "record_id": "R-007"
+    },
+    {
+      "sensor": "S2",
+      "value": 11.979,
+      "record_id": "R-008"
+    },
+    {
+      "sensor": "S3",
+      "value": 13.181,
+      "record_id": "R-009"
+    },
+    {
+      "sensor": "S1",
+      "value": 10.182,
+      "record_id": "R-010"
+    },
+    {
+      "sensor": "S2",
+      "value": 12.28,
+      "record_id": "R-011"
+    },
+    {
+      "sensor": "S3",
+      "value": 13.063,
+      "record_id": "R-012"
+    },
+    {
+      "sensor": "S1",
+      "value": 9.638,
+      "record_id": "R-013"
+    },
+    {
+      "sensor": "S2",
+      "value": 11.671,
+      "record_id": "R-014"
+    },
+    {
+      "sensor": "S3",
+      "value": 14.251,
+      "record_id": "R-015"
+    },
+    {
+      "sensor": "S1",
+      "value": 11.03,
+      "record_id": "R-016"
+    },
+    {
+      "sensor": "S2",
+      "value": 10.966,
+      "record_id": "R-017"
+    },
+    {
+      "sensor": "S3",
+      "value": 13.521,
+      "record_id": "R-018"
+    },
+    {
+      "sensor": "S1",
+      "value": 11.898,
+      "record_id": "R-019"
+    },
+    {
+      "sensor": "S2",
+      "value": 12.233,
+      "record_id": "R-020"
+    },
+    {
+      "sensor": "S3",
+      "value": 14.582,
+      "record_id": "R-021"
+    },
+    {
+      "sensor": "S1",
+      "value": 8.908,
+      "record_id": "R-022"
+    },
+    {
+      "sensor": "S2",
+      "value": 11.504,
+      "record_id": "R-023"
+    },
+    {
+      "sensor": "S3",
+      "value": 12.875,
+      "record_id": "R-024"
+    },
+    {
+      "sensor": "S1",
+      "value": 10.805,
+      "record_id": "R-025"
+    },
+    {
+      "sensor": "S2",
+      "value": 13.369,
+      "record_id": "R-026"
+    },
+    {
+      "sensor": "S3",
+      "value": 15.921,
+      "record_id": "R-027"
+    },
+    {
+      "sensor": "S1",
+      "value": 11.332,
+      "record_id": "R-028"
+    },
+    {
+      "sensor": "S2",
+      "value": 12.203,
+      "record_id": "R-029"
+    },
+    {
+      "sensor": "S3",
+      "value": 16.001,
+      "record_id": "R-030"
+    },
+    {
+      "sensor": "S1",
+      "value": 10.515,
+      "record_id": "R-031"
+    },
+    {
+      "sensor": "S2",
+      "value": 26.876,
+      "record_id": "R-032"
+    },
+    {
+      "sensor": "S3",
+      "value": 13.896,
+      "record_id": "R-033"
+    },
+    {
+      "sensor": "S1",
+      "value": 9.576,
+      "record_id": "R-034"
+    },
+    {
+      "sensor": "S2",
+      "value": 11.351,
+      "record_id": "R-035"
+    },
+    {
+      "sensor": "S3",
+      "value": 14.406,
+      "record_id": "R-036"
+    }
+  ]
+}

@@ -1,0 +1,100 @@
+{
+  "operation": "weighted_rollup",
+  "variant": "recovery",
+  "rows": [
+    {
+      "group": "A",
+      "quantity": 7,
+      "unit_value": 5.19,
+      "record_id": "R-001"
+    },
+    {
+      "group": "B",
+      "quantity": 9,
+      "unit_value": 22.79,
+      "record_id": "R-002"
+    },
+    {
+      "group": "C",
+      "quantity": 9,
+      "unit_value": 21.12,
+      "record_id": "R-003"
+    },
+    {
+      "group": "A",
+      "quantity": 4,
+      "unit_value": 12.25,
+      "record_id": "R-004"
+    },
+    {
+      "group": "B",
+      "quantity": 1,
+      "unit_value": 23.01,
+      "record_id": "R-005"
+    },
+    {
+      "group": "C",
+      "quantity": 3,
+      "unit_value": 27.36,
+      "record_id": "R-006"
+    },
+    {
+      "group": "A",
+      "quantity": 6,
+      "unit_value": 4.06,
+      "record_id": "R-007"
+    },
+    {
+      "group": "B",
+      "quantity": 4,
+      "unit_value": 23.62,
+      "record_id": "R-008"
+    },
+    {
+      "group": "C",
+      "quantity": 3,
+      "unit_value": 23.44,
+      "record_id": "R-009"
+    },
+    {
+      "group": "A",
+      "quantity": 3,
+      "unit_value": 6.6,
+      "record_id": "R-010"
+    },
+    {
+      "group": "B",
+      "quantity": 9,
+      "unit_value": 11.74,
+      "record_id": "R-011"
+    },
+    {
+      "group": "C",
+      "quantity": 5,
+      "unit_value": 2.93,
+      "record_id": "R-012"
+    },
+    {
+      "group": "A",
+      "quantity": 7,
+      "unit_value": 5.63,
+      "record_id": "R-013"
+    },
+    {
+      "group": "B",
+      "quantity": 1,
+      "unit_value": 28.15,
+      "record_id": "R-014"
+    },
+    {
+      "group": "C",
+      "quantity": 5,
+      "unit_value": 18.57,
+      "record_id": "R-015"
+    }
+  ],
+  "prior_answer": {
+    "obsolete_result": true,
+    "stale_summary": 0
+  }
+}

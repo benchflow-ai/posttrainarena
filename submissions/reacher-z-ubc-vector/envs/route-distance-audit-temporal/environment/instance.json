@@ -1,0 +1,42 @@
+{
+  "operation": "route_distance",
+  "variant": "temporal",
+  "route": [
+    "A",
+    "B",
+    "C",
+    "D",
+    "E"
+  ],
+  "rows": [
+    {
+      "from": "A",
+      "to": "B",
+      "distance": 7.77,
+      "record_id": "R-001",
+      "effective_at": "2026-08-10T12:00:00"
+    },
+    {
+      "from": "B",
+      "to": "C",
+      "distance": 4.19,
+      "record_id": "R-002",
+      "effective_at": "2026-08-11T12:00:00"
+    },
+    {
+      "from": "C",
+      "to": "D",
+      "distance": 7.03,
+      "record_id": "R-003",
+      "effective_at": "2026-08-12T12:00:00"
+    },
+    {
+      "from": "D",
+      "to": "E",
+      "distance": 4.25,
+      "record_id": "R-004",
+      "effective_at": "2026-08-13T12:00:00"
+    }
+  ],
+  "as_of": "2026-08-18T12:00:00"
+}

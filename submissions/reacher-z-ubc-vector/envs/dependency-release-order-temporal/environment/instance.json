@@ -1,0 +1,46 @@
+{
+  "operation": "topological_order",
+  "variant": "temporal",
+  "rows": [
+    {
+      "node": "ingest",
+      "depends_on": [],
+      "record_id": "R-001",
+      "effective_at": "2026-08-10T12:00:00"
+    },
+    {
+      "node": "validate",
+      "depends_on": [
+        "ingest"
+      ],
+      "record_id": "R-002",
+      "effective_at": "2026-08-11T12:00:00"
+    },
+    {
+      "node": "transform",
+      "depends_on": [
+        "validate"
+      ],
+      "record_id": "R-003",
+      "effective_at": "2026-08-12T12:00:00"
+    },
+    {
+      "node": "audit",
+      "depends_on": [
+        "validate"
+      ],
+      "record_id": "R-004",
+      "effective_at": "2026-08-13T12:00:00"
+    },
+    {
+      "node": "publish",
+      "depends_on": [
+        "transform",
+        "audit"
+      ],
+      "record_id": "R-005",
+      "effective_at": "2026-08-14T12:00:00"
+    }
+  ],
+  "as_of": "2026-08-18T12:00:00"
+}

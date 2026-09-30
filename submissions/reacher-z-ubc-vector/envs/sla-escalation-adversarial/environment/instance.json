@@ -1,0 +1,43 @@
+{
+  "operation": "deadline_status",
+  "variant": "adversarial",
+  "as_of": "2026-08-18T12:00:00",
+  "rows": [
+    {
+      "id": "CASE-1",
+      "deadline": "2026-08-16T12:00:00",
+      "record_id": "R-001",
+      "is_distractor": false
+    },
+    {
+      "id": "CASE-2",
+      "deadline": "2026-08-17T12:00:00",
+      "record_id": "R-002",
+      "is_distractor": true
+    },
+    {
+      "id": "CASE-3",
+      "deadline": "2026-08-18T12:00:00",
+      "record_id": "R-003",
+      "is_distractor": false
+    },
+    {
+      "id": "CASE-4",
+      "deadline": "2026-08-19T12:00:00",
+      "record_id": "R-004",
+      "is_distractor": false
+    },
+    {
+      "id": "CASE-5",
+      "deadline": "2026-08-20T12:00:00",
+      "record_id": "R-005",
+      "is_distractor": true
+    },
+    {
+      "id": "CASE-6",
+      "deadline": "2026-08-21T12:00:00",
+      "record_id": "R-006",
+      "is_distractor": false
+    }
+  ]
+}

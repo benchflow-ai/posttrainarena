@@ -1,0 +1,90 @@
+{
+  "operation": "interval_overlap",
+  "variant": "adversarial",
+  "rows": [
+    {
+      "id": "SEG-1",
+      "start": 0,
+      "end": 8,
+      "record_id": "R-001",
+      "is_distractor": false
+    },
+    {
+      "id": "SEG-2",
+      "start": 10,
+      "end": 21,
+      "record_id": "R-002",
+      "is_distractor": true
+    },
+    {
+      "id": "SEG-3",
+      "start": 20,
+      "end": 28,
+      "record_id": "R-003",
+      "is_distractor": false
+    },
+    {
+      "id": "SEG-4",
+      "start": 30,
+      "end": 38,
+      "record_id": "R-004",
+      "is_distractor": false
+    },
+    {
+      "id": "SEG-5",
+      "start": 40,
+      "end": 48,
+      "record_id": "R-005",
+      "is_distractor": false
+    },
+    {
+      "id": "SEG-6",
+      "start": 50,
+      "end": 61,
+      "record_id": "R-006",
+      "is_distractor": false
+    },
+    {
+      "id": "SEG-7",
+      "start": 60,
+      "end": 68,
+      "record_id": "R-007",
+      "is_distractor": false
+    },
+    {
+      "id": "SEG-8",
+      "start": 70,
+      "end": 78,
+      "record_id": "R-008",
+      "is_distractor": false
+    },
+    {
+      "id": "SEG-9",
+      "start": 80,
+      "end": 88,
+      "record_id": "R-009",
+      "is_distractor": false
+    },
+    {
+      "id": "SEG-10",
+      "start": 90,
+      "end": 101,
+      "record_id": "R-010",
+      "is_distractor": false
+    },
+    {
+      "id": "SEG-11",
+      "start": 100,
+      "end": 108,
+      "record_id": "R-011",
+      "is_distractor": true
+    },
+    {
+      "id": "SEG-12",
+      "start": 110,
+      "end": 118,
+      "record_id": "R-012",
+      "is_distractor": false
+    }
+  ]
+}

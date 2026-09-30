@@ -1,0 +1,41 @@
+{
+  "operation": "route_distance",
+  "variant": "recovery",
+  "route": [
+    "A",
+    "B",
+    "C",
+    "D",
+    "E"
+  ],
+  "rows": [
+    {
+      "from": "A",
+      "to": "B",
+      "distance": 2.12,
+      "record_id": "R-001"
+    },
+    {
+      "from": "B",
+      "to": "C",
+      "distance": 8.56,
+      "record_id": "R-002"
+    },
+    {
+      "from": "C",
+      "to": "D",
+      "distance": 1.03,
+      "record_id": "R-003"
+    },
+    {
+      "from": "D",
+      "to": "E",
+      "distance": 6.35,
+      "record_id": "R-004"
+    }
+  ],
+  "prior_answer": {
+    "obsolete_result": true,
+    "stale_summary": 0
+  }
+}

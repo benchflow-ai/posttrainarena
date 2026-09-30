@@ -1,0 +1,119 @@
+{
+  "operation": "join_reconcile",
+  "variant": "adversarial",
+  "tolerance": "0.02",
+  "rows": [
+    {
+      "key": "K1",
+      "side": "ledger",
+      "amount": 39.64,
+      "record_id": "R-001",
+      "is_distractor": false
+    },
+    {
+      "key": "K1",
+      "side": "control",
+      "amount": 21.33,
+      "record_id": "R-002",
+      "is_distractor": true
+    },
+    {
+      "key": "K2",
+      "side": "ledger",
+      "amount": 72.47,
+      "record_id": "R-003",
+      "is_distractor": false
+    },
+    {
+      "key": "K2",
+      "side": "control",
+      "amount": 31.02,
+      "record_id": "R-004",
+      "is_distractor": false
+    },
+    {
+      "key": "K3",
+      "side": "ledger",
+      "amount": 88.73,
+      "record_id": "R-005",
+      "is_distractor": false
+    },
+    {
+      "key": "K3",
+      "side": "control",
+      "amount": 84.15,
+      "record_id": "R-006",
+      "is_distractor": false
+    },
+    {
+      "key": "K4",
+      "side": "ledger",
+      "amount": 33.03,
+      "record_id": "R-007",
+      "is_distractor": false
+    },
+    {
+      "key": "K4",
+      "side": "control",
+      "amount": 43.52,
+      "record_id": "R-008",
+      "is_distractor": false
+    },
+    {
+      "key": "K5",
+      "side": "ledger",
+      "amount": 28.82,
+      "record_id": "R-009",
+      "is_distractor": false
+    },
+    {
+      "key": "K5",
+      "side": "control",
+      "amount": 77.1,
+      "record_id": "R-010",
+      "is_distractor": false
+    },
+    {
+      "key": "K6",
+      "side": "ledger",
+      "amount": 61.81,
+      "record_id": "R-011",
+      "is_distractor": false
+    },
+    {
+      "key": "K6",
+      "side": "control",
+      "amount": 46.71,
+      "record_id": "R-012",
+      "is_distractor": false
+    },
+    {
+      "key": "K7",
+      "side": "ledger",
+      "amount": 76.56,
+      "record_id": "R-013",
+      "is_distractor": false
+    },
+    {
+      "key": "K7",
+      "side": "control",
+      "amount": 63.37,
+      "record_id": "R-014",
+      "is_distractor": false
+    },
+    {
+      "key": "K8",
+      "side": "ledger",
+      "amount": 37.41,
+      "record_id": "R-015",
+      "is_distractor": true
+    },
+    {
+      "key": "K8",
+      "side": "control",
+      "amount": 85.99,
+      "record_id": "R-016",
+      "is_distractor": false
+    }
+  ]
+}

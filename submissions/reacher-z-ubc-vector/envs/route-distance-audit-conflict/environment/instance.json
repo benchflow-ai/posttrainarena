@@ -1,0 +1,45 @@
+{
+  "operation": "route_distance",
+  "variant": "conflict",
+  "route": [
+    "A",
+    "B",
+    "C",
+    "D",
+    "E"
+  ],
+  "rows": [
+    {
+      "from": "A",
+      "to": "B",
+      "distance": 9.44,
+      "record_id": "R-001",
+      "logical_key": "L-000",
+      "source_priority": 1
+    },
+    {
+      "from": "B",
+      "to": "C",
+      "distance": 6.73,
+      "record_id": "R-002",
+      "logical_key": "L-000",
+      "source_priority": 2
+    },
+    {
+      "from": "C",
+      "to": "D",
+      "distance": 2.1,
+      "record_id": "R-003",
+      "logical_key": "L-001",
+      "source_priority": 1
+    },
+    {
+      "from": "D",
+      "to": "E",
+      "distance": 2.13,
+      "record_id": "R-004",
+      "logical_key": "L-001",
+      "source_priority": 2
+    }
+  ]
+}
