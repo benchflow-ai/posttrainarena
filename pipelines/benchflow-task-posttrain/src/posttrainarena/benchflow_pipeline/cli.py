@@ -11,7 +11,7 @@ from pathlib import Path
 
 os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
 
-from .config import load_config
+from .config import SANDBOXES, load_config
 from .pipeline import Pipeline
 
 
@@ -168,7 +168,7 @@ def build_parser() -> argparse.ArgumentParser:
     serve = subparsers.add_parser("openenv-serve")
     serve.add_argument("--tasks-dir", type=Path, required=True)
     serve.add_argument("--include-task", action="append", default=[])
-    serve.add_argument("--environment", choices=("docker", "daytona"), default="docker")
+    serve.add_argument("--environment", choices=SANDBOXES, default="docker")
     serve.add_argument("--sandbox-user", default="agent")
     serve.add_argument("--jobs-dir", type=Path, default=Path("jobs/openenv"))
     serve.add_argument("--host", default="0.0.0.0")

@@ -122,6 +122,8 @@ The example recipe requires:
 
 - `HF_TOKEN` for task snapshots and optional artifact publication
 - `DAYTONA_API_KEY` for `runtime.sandbox = "daytona"`
+- nothing extra for `runtime.sandbox = "hf-sandbox"` (Hugging Face Sandboxes run on `HF_TOKEN`); it needs BenchFlow
+  installed from `BENCHFLOW_HF_SANDBOX_COMMIT` (see `config.py`), and tasks must name a prebuilt `docker_image`
 - `OPENROUTER_API_KEY` for the Qwen3.5-397B-A17B OpenCode teacher
 - `BENCHFLOW_BASE_MODEL` and `BENCHFLOW_ADAPTER_MODEL` for the served base and
   current-student model aliases

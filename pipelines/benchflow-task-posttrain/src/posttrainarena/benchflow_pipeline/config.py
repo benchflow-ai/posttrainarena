@@ -10,6 +10,11 @@ from typing import Any, Literal
 
 
 BENCHFLOW_COMMIT = "2a97db55947d6742b765ad34ddd91d74c20d625f"
+# `runtime.sandbox = "hf-sandbox"` (Hugging Face Sandboxes) needs the HF sandbox backend, which the pinned commit
+# lacks: branch sandbox/hf-sandbox-2a97db5 of benchflow-ai/benchflow is BENCHFLOW_COMMIT plus that backend. Install
+# BenchFlow from BENCHFLOW_HF_SANDBOX_COMMIT (with the `sandbox-hf` extra) for such runs.
+BENCHFLOW_HF_SANDBOX_COMMIT = "8ebd1e2b84450e0c92604e46e95c63dd982c065a"
+SANDBOXES = ("docker", "daytona", "hf-sandbox")
 GrpoRunPolicy = Literal["on_reward", "always"]
 HarnessSkillMode = Literal["no-skill", "with-skill"]
 UsageTrackingPolicy = Literal["required"]
@@ -222,8 +227,8 @@ class PipelineConfig:
                 errors.append(f"{label} must be a non-empty string")
         if not isinstance(self.evaluation.sync_base_to_vllm, bool):
             errors.append("evaluation.sync_base_to_vllm must be boolean")
-        if self.sandbox not in {"docker", "daytona"}:
-            errors.append("runtime.sandbox must be docker or daytona")
+        if self.sandbox not in SANDBOXES:
+            errors.append("runtime.sandbox must be docker, daytona or hf-sandbox")
         if self.runtime.num_generations < 2:
             errors.append("runtime.num_generations must be at least 2 for GRPO")
         if self.runtime.max_completion_length < 1:

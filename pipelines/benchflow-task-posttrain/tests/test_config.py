@@ -8,7 +8,11 @@ from pathlib import Path
 import pytest
 from benchflow.agents.registry import AGENTS
 
-from posttrainarena.benchflow_pipeline.config import BENCHFLOW_COMMIT, load_config
+from posttrainarena.benchflow_pipeline.config import (
+    BENCHFLOW_COMMIT,
+    BENCHFLOW_HF_SANDBOX_COMMIT,
+    load_config,
+)
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -213,6 +217,21 @@ def test_config_rejects_non_opencode_harness() -> None:
 
     with pytest.raises(ValueError, match="harness.agent must be opencode"):
         config.validate()
+
+
+def test_config_accepts_hf_sandbox_and_rejects_unknown_sandboxes() -> None:
+    config = load_config(ROOT / "configs/qwen3-4b-data-agent-smoke.toml")
+    hf = replace(config, runtime=replace(config.runtime, sandbox="hf-sandbox"))
+    hf.validate()
+    assert hf.sandbox == "hf-sandbox"
+    bad = replace(config, runtime=replace(config.runtime, sandbox="modal"))
+    with pytest.raises(ValueError, match="runtime.sandbox must be docker, daytona or hf-sandbox"):
+        bad.validate()
+
+
+def test_hf_sandbox_benchflow_commit_is_a_full_sha() -> None:
+    assert len(BENCHFLOW_HF_SANDBOX_COMMIT) == 40
+    assert BENCHFLOW_HF_SANDBOX_COMMIT != BENCHFLOW_COMMIT
 
 
 @pytest.mark.parametrize(
