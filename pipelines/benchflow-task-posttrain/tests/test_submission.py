@@ -4,18 +4,21 @@ import json
 import tomllib
 from pathlib import Path
 
+import pytest
+
 from posttrainarena.benchflow_pipeline.submission import prepare_submission
 
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def test_prepare_submission_emits_pinned_portable_recipe(tmp_path: Path) -> None:
+@pytest.mark.parametrize("legacy_contact", ["", "contact_email: alpha@example.com\n"])
+def test_prepare_submission_emits_pinned_portable_recipe(tmp_path: Path, legacy_contact: str) -> None:
     entry = tmp_path / "team-alpha"
     task = entry / "envs" / "task-one"
     task.mkdir(parents=True)
     (entry / "submission.yaml").write_text(
-        "team_name: Team Alpha\ncontact_email: alpha@example.com\ntrack: environments\n"
+        f"team_name: Team Alpha\n{legacy_contact}track: environments\n"
     )
     (task / "task.md").write_text("---\nversion: '1.0'\n---\n\n## prompt\nSolve.\n")
     (task / "environment").mkdir()
@@ -56,7 +59,7 @@ def test_prepare_submission_rejects_incomplete_task(tmp_path: Path) -> None:
     task = entry / "envs" / "broken"
     task.mkdir(parents=True)
     (entry / "submission.yaml").write_text(
-        "team_name: Team Alpha\ncontact_email: alpha@example.com\ntrack: environments\n"
+        "team_name: Team Alpha\ntrack: environments\n"
     )
     (task / "task.md").write_text("---\nversion: '1.0'\n---\n\n## prompt\nSolve.\n")
 

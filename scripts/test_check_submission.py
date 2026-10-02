@@ -25,7 +25,7 @@ def _collection(parent, name="my-collection"):
     root = os.path.join(parent, name)
     shutil.copytree(TEMPLATE, os.path.join(root, "envs", "my-task"))
     with open(os.path.join(root, "submission.yaml"), "w", encoding="utf-8") as fh:
-        fh.write("team_name: Test Team\ncontact_email: test@example.org\ntrack: environments\n")
+        fh.write("team_name: Test Team\ntrack: environments\n")
     return root
 
 
@@ -52,6 +52,26 @@ def test_a_collection_folder_is_checked_as_one_collection():
             code, out = _run(arg)
             assert code == 0, out
             assert out.strip() == "✓ my-collection — structure valid", out
+
+
+def test_legacy_manifest_with_email_still_passes():
+    with tempfile.TemporaryDirectory() as tmp:
+        folder = _collection(tmp)
+        with open(os.path.join(folder, "submission.yaml"), "a", encoding="utf-8") as fh:
+            fh.write("contact_email: test@example.org\n")
+        code, out = _run(folder)
+        assert code == 0, out
+
+
+def test_manifest_still_requires_team_name_and_track():
+    with tempfile.TemporaryDirectory() as tmp:
+        folder = _collection(tmp)
+        with open(os.path.join(folder, "submission.yaml"), "w", encoding="utf-8") as fh:
+            fh.write("# Missing the collection fields\n")
+        code, out = _run(folder)
+        assert code == 1, out
+        assert "submission.yaml missing: team_name" in out and "submission.yaml missing: track" in out
+        assert "contact_email" not in out
 
 
 def test_a_folder_of_collections_checks_each_one():
