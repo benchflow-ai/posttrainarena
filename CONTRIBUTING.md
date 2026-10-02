@@ -15,19 +15,20 @@ The hosted Arena accepts environment collections. You control one variable, the 
 
 ### 1. Create a team entry
 
-From a fresh clone, run the following at the repository root. Replace `your-team`, `your-env-name`, and the contact details before submitting. If your team already has a manifest, edit it instead of overwriting it.
+From a fresh clone, run the following at the repository root. Replace `your-team` and `your-env-name` before submitting. If your team already has a manifest, edit it instead of overwriting it.
 
 ```bash
 mkdir -p submissions/your-team/envs
 cp -R starting-kit/template submissions/your-team/envs/your-env-name
 cat > submissions/your-team/submission.yaml <<'YAML'
 team_name: Your Team
-contact_email: you@example.com
 track: environments
 YAML
 ```
 
 Use a descriptive package name such as `finance-fed-minutes-classify`. The Arena accepts **1–200 environment packages** in a collection, and `scripts/check_submission.py` checks the same range. See the [collection contract](submissions/README.md).
+
+Set each task's `metadata.author_hub` to its author's Hugging Face username or organization. The Arena records the authenticated submitting Hub account as the collection's owner and contact; no email or separate contact field is needed.
 
 ### 2. Complete the task package
 

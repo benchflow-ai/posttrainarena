@@ -61,8 +61,6 @@ REQUIRED_FRONTMATTER = (
     "environment",
 )
 REQUIRED_METADATA = (
-    "author_name",
-    "author_email",
     "category",
 )
 
@@ -938,6 +936,8 @@ def check_task(task_dir: Path) -> list[str]:
             if required not in top_keys:
                 issues.append(f"task.md frontmatter missing: {required}")
         metadata_keys = parse_metadata_keys(frontmatter)
+        if not {"author_hub", "author_name"} & metadata_keys:
+            issues.append("task.md metadata.author_hub required (legacy author_name is accepted)")
         for required in REQUIRED_METADATA:
             if required not in metadata_keys:
                 issues.append(f"task.md metadata.{required} required")

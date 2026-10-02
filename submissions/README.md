@@ -26,9 +26,10 @@ submissions/<team-entry>/
 
 ```yaml
 team_name: Your Team
-contact_email: you@example.com
 track: environments
 ```
+
+The Arena records the authenticated submitting Hub account as the collection's owner and contact. Use that Hub profile and the dataset's discussions for communication; the manifest needs no email or separate contact field. Each task credits its author with `metadata.author_hub`, a Hugging Face username or organization.
 
 The local submission checker ignores entry directory names starting with `_`. Use an ordinary entry directory for a contribution; this local convention is not a hosted validation bypass.
 

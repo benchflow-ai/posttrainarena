@@ -1,8 +1,7 @@
 ---
 version: "1.0"
 metadata:
-  author_name: Your Name
-  author_email: you@example.com
+  author_hub: your-hf-username  # Hugging Face username or organization
   license: Apache-2.0         # SPDX identifier of the license you release this task under
   # category is one of: software-engineering, system-administration, security,
   # scientific-computing, data-science, data-processing, data-querying,

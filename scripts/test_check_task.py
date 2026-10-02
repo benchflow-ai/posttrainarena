@@ -84,6 +84,33 @@ def test_the_template_runs_its_verifier_offline():
     assert "allow_internet: false" in (TEMPLATE / "task.md").read_text()
 
 
+def test_hub_author_needs_no_display_name_or_email():
+    text = (TEMPLATE / "task.md").read_text()
+    assert "author_hub:" in text
+    assert "author_name:" not in text and "author_email:" not in text
+    assert C.check_task(TEMPLATE) == []
+
+
+def test_legacy_author_name_is_accepted_without_email():
+    with tempfile.TemporaryDirectory() as tmp:
+        task = _task(tmp)
+        md = task / "task.md"
+        md.write_text(md.read_text().replace("author_hub: your-hf-username", "author_name: Legacy Author"))
+        assert C.check_task(task) == []
+
+
+def test_task_still_requires_author_credit_and_category():
+    with tempfile.TemporaryDirectory() as tmp:
+        task = _task(tmp)
+        md = task / "task.md"
+        md.write_text("\n".join(line for line in md.read_text().splitlines()
+                                if not line.strip().startswith(("author_hub:", "category:"))))
+        issues = C.check_task(task)
+        assert "task.md metadata.author_hub required (legacy author_name is accepted)" in issues
+        assert "task.md metadata.category required" in issues
+        assert not any("author_email" in issue for issue in issues)
+
+
 def test_no_example_needs_the_network_it_turns_off():
     for task in sorted((KIT / "examples").iterdir()):
         if (task / "task.md").is_file():
