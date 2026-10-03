@@ -26,9 +26,10 @@ submissions/<team-entry>/
 
 ```yaml
 team_name: Your Team
-contact_email: you@example.com
 track: environments
 ```
+
+The Hugging Face account that submits the collection is its contact. An older manifest's `contact_email` line is accepted but not required.
 
 The local submission checker ignores entry directory names starting with `_`. Use an ordinary entry directory for a contribution; this local convention is not a hosted validation bypass.
 

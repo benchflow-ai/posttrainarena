@@ -433,3 +433,17 @@ if __name__ == "__main__":
     for test in tests:
         test()
     print(f"{len(tests)} passed")
+
+
+def test_credit_needs_a_hub_handle_or_a_legacy_author_name():
+    # Space PR #4 (hub identities): author_hub replaces author_name and author_email; a legacy author_name still counts.
+    with tempfile.TemporaryDirectory() as tmp:
+        task = _task(tmp)
+        md = task / "task.md"
+        template = md.read_text()
+        assert "  author_hub: " in template and "author_email" not in template
+        assert C.check_task(task) == []
+        md.write_text(template.replace("  author_hub: your-hf-username", "  author_name: Your Name"))
+        assert C.check_task(task) == []
+        md.write_text(template.replace("  author_hub: your-hf-username", "  author_email: you@example.com"))
+        assert C.check_task(task) == ["task.md metadata.author_hub required (legacy author_name is also accepted)"]

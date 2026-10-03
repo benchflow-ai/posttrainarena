@@ -6,12 +6,13 @@ A competition entry is one directory under submissions/ owned by one
 team, on one track:
 
     submissions/<team-entry>/
-      submission.yaml        # flat key: value — team_name, contact_email, track
+      submission.yaml        # flat key: value — team_name, track
       envs/<env-name>/...    # track: environments — task packages
       skills/<skill-name>/   # track: skills — SKILL.md packages
 
 Validates:
-- submission.yaml exists with team_name, contact_email, and a known track
+- submission.yaml exists with team_name and a known track (the submitting Hugging Face
+  account is the collection's contact; a contact_email is accepted but not required)
 - the entry has at least one package for its track
 - environment packages pass the same structural check as the
   starting-kit examples (delegated to scripts/check_task.py)
@@ -38,7 +39,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from check_task import check_task  # noqa: E402
 
-REQUIRED_FIELDS = ("team_name", "contact_email", "track")
+REQUIRED_FIELDS = ("team_name", "track")
 
 # track -> (min, max) packages per entry. Environments: the hosted Arena accepts
 # 1-200 task packages per collection. Skills: the legacy format's bounds.
@@ -130,7 +131,7 @@ def collections_in(folder: Path) -> tuple[list[Path], str | None]:
 def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(
         prog="check_submission.py",
-        description="Check team collections' structure: submission.yaml (team_name, contact_email, track), then every "
+        description="Check team collections' structure: submission.yaml (team_name, track), then every "
                     "package under envs/ (the same check as scripts/check_task.py) and the package count (environments 1-200).",
         epilog="This checks structure only, not metadata values or whether a task works: scripts/run_local.sh replays the "
                "oracle and an empty trial, and the Arena's validate checks category, license and origin.")

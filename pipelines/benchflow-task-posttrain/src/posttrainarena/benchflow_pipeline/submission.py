@@ -12,7 +12,7 @@ from typing import Any
 from .io import write_json
 
 
-REQUIRED_FIELDS = ("team_name", "contact_email", "track")
+REQUIRED_FIELDS = ("team_name", "track")
 SAFE_SLUG = re.compile(r"[^a-z0-9]+")
 
 
