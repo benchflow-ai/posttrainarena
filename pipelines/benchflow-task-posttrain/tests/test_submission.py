@@ -72,3 +72,21 @@ def test_prepare_submission_rejects_incomplete_task(tmp_path: Path) -> None:
         assert "missing environment/Dockerfile" in str(exc)
     else:
         raise AssertionError("expected ValueError")
+
+
+def test_a_manifest_without_contact_email_loads(tmp_path: Path) -> None:
+    """Space PR #4 (hub identities): the submitting Hub account is the contact, so contact_email is optional."""
+    from posttrainarena.benchflow_pipeline.submission import _load_entry
+
+    entry = tmp_path / "team-hub"
+    task = entry / "envs" / "task-one"
+    for directory in ("environment", "verifier", "oracle"):
+        (task / directory).mkdir(parents=True)
+    (entry / "submission.yaml").write_text("team_name: Hub Team\ntrack: environments\n")
+    (task / "task.md").write_text("---\nversion: '1.0'\n---\n\n## prompt\nSolve.\n")
+    (task / "environment" / "Dockerfile").write_text("FROM python:3.12-slim\n")
+    (task / "verifier" / "test.sh").write_text("#!/bin/sh\n")
+    (task / "oracle" / "solve.sh").write_text("#!/bin/sh\n")
+    manifest, tasks = _load_entry(entry)
+    assert manifest == {"team_name": "Hub Team", "track": "environments"}
+    assert [task.name for task in tasks] == ["task-one"]

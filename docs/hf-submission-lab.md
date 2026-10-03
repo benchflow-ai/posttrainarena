@@ -20,7 +20,7 @@ A collected result also reports `stderr_pp`, the standard error of Δ. With one 
 
 ## Submit a collection and run it
 
-Host the collection in a public GitHub repository or a public, ungated HF dataset: a flat `submission.yaml` with your own `team_name`, `contact_email` and `track: environments`, and **1–200** packages under `envs/`. Use the [task specification](https://posttrain.com/docs/spec) and the [starting kit](../starting-kit/README.md), and declare each task's author, license, category and origin. Check each package locally first with `scripts/check_task.py` and `scripts/run_local.sh` (see [CONTRIBUTING](../CONTRIBUTING.md#3-validate-structure-and-behavior)).
+Host the collection in a public GitHub repository or a public, ungated HF dataset: a flat `submission.yaml` with your own `team_name` and `track: environments` (the submitting Hugging Face account is the contact), and **1–200** packages under `envs/`. Use the [task specification](https://posttrain.com/docs/spec) and the [starting kit](../starting-kit/README.md), and declare each task's author, license, category and origin. Check each package locally first with `scripts/check_task.py` and `scripts/run_local.sh` (see [CONTRIBUTING](../CONTRIBUTING.md#3-validate-structure-and-behavior)).
 
 The commands use `tb2-9b`, the open challenge at the time of writing, which is a smoke test. Replace it with the challenge you enter. `arena_cli.py` needs Python 3.10+ and only its standard library; `run` without `--execute` is a preflight that reserves nothing, and the launch prints the run's receipt, which you keep as `run-receipt.json`.
 

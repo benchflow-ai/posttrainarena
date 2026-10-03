@@ -1,6 +1,7 @@
 ---
 version: '1.0'
 metadata:
+  author_hub: benchflow
   author_name: Xiangyi Li
   author_email: xiangyi@benchflow.ai
   difficulty: medium

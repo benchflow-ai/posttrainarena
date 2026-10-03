@@ -61,8 +61,6 @@ REQUIRED_FRONTMATTER = (
     "environment",
 )
 REQUIRED_METADATA = (
-    "author_name",
-    "author_email",
     "category",
 )
 
@@ -941,6 +939,9 @@ def check_task(task_dir: Path) -> list[str]:
         for required in REQUIRED_METADATA:
             if required not in metadata_keys:
                 issues.append(f"task.md metadata.{required} required")
+        # Credit goes to a Hugging Face account or organization (author_hub); a legacy author_name still counts.
+        if not metadata_keys.intersection(("author_hub", "author_name")):
+            issues.append("task.md metadata.author_hub required (legacy author_name is also accepted)")
         if "## prompt" not in body:
             issues.append("task.md body must contain a '## prompt' section")
 

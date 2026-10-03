@@ -110,3 +110,18 @@ if __name__ == "__main__":
     for t in tests:
         t()
     print(f"{len(tests)} tests passed")
+
+
+def test_the_submitting_hub_account_is_the_contact():
+    # Space PR #4 (hub identities): submission.yaml needs only team_name and track; an older contact_email still passes.
+    with tempfile.TemporaryDirectory() as tmp:
+        folder = _collection(tmp)
+        manifest = os.path.join(folder, "submission.yaml")
+        with open(manifest, "w", encoding="utf-8") as fh:
+            fh.write("team_name: Test Team\ntrack: environments\n")
+        code, out = _run(folder)
+        assert code == 0, out
+        with open(manifest, "w", encoding="utf-8") as fh:
+            fh.write("team_name: Test Team\n")
+        code, out = _run(folder)
+        assert code != 0 and "submission.yaml missing: track" in out, out

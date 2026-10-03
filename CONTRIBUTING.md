@@ -15,14 +15,13 @@ The hosted Arena accepts environment collections. You control one variable, the 
 
 ### 1. Create a team entry
 
-From a fresh clone, run the following at the repository root. Replace `your-team`, `your-env-name`, and the contact details before submitting. If your team already has a manifest, edit it instead of overwriting it.
+From a fresh clone, run the following at the repository root. Replace `your-team` and `your-env-name` before submitting; the Hugging Face account that submits the collection is its contact, so no email is needed. If your team already has a manifest, edit it instead of overwriting it.
 
 ```bash
 mkdir -p submissions/your-team/envs
 cp -R starting-kit/template submissions/your-team/envs/your-env-name
 cat > submissions/your-team/submission.yaml <<'YAML'
 team_name: Your Team
-contact_email: you@example.com
 track: environments
 YAML
 ```
