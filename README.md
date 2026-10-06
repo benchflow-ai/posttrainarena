@@ -27,7 +27,7 @@ Run these commands from the repository root. The structural checks use only Pyth
 git clone https://github.com/benchflow-ai/posttrainarena.git
 cd posttrainarena
 
-# Check all eight examples and the template.
+# Check all five examples and the template.
 python3 scripts/check_task.py
 
 # Check the checked-in team manifests and package counts.

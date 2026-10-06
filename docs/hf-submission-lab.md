@@ -96,12 +96,10 @@ The fresh 50-step run and the historical hillclimb adapter have separate reload/
 
 The Google Auto runs' three original checks cover note existence, patch existence, and Java build success on one task. Those results do not establish three independent tasks, GRPO, a 41-task benchmark result, or held-out generalization.
 
-Recorded v2 runs (September 22, 2026), from collection `env-84f699e91142` (`benchflow/posttrain-generic-dogfood-20260922`, three unchanged starting-kit examples):
+A recorded v2 run (September 22, 2026), from collection `env-84f699e91142` (`benchflow/posttrain-generic-dogfood-20260922`):
 
 | Experiment | Task | Controls (empty, oracle) | Base model → trained |
 | --- | --- | --- | --- |
 | `exp-681ef6bcd913` (run `arena-87e2ec56f906`) | `dogfood-hello-text` | 0/6, 6/6 | 6/6 → 6/6 |
-| `exp-cc380b0dbb4a` (run `arena-70ca637bb6b8`) | `skillsbench-3d-scan-calc` | 0/2, 2/2 | 0/2 → 2/2 |
-| `exp-693ecc66b048` (run `arena-b740fd958104`) | `skillsbench-weighted-gdp-calc` | 11/27, 27/27 | 11/27 → 27/27 |
 
-Each run trained LoRA SFT on the task's `oracle/solve.sh` and evaluated the reloaded adapter (the first two records give 50 steps); scores are passed checks out of total checks on that one seen task. The base model already solved `dogfood-hello-text`, so that run validates the pipeline rather than showing lift. For `skillsbench-3d-scan-calc` the runner injected the package's `environment/skills/` at `/root/.claude/skills` for the oracle and the model's script.
+The run trained 50 steps of LoRA SFT on the task's `oracle/solve.sh` and evaluated the reloaded adapter; scores are passed checks out of total checks on that one seen task. The base model already solved `dogfood-hello-text`, so the run validates the pipeline rather than showing lift.

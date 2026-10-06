@@ -1,5 +1,4 @@
-# Plain Ubuntu base — the dogfooded SkillsBench tasks use the same starting
-# point. Add only what is task-specific.
+# Plain Ubuntu base. Add only what is task-specific.
 FROM ubuntu:24.04
 
 ENV DEBIAN_FRONTEND=noninteractive
