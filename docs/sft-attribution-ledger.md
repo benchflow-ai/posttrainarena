@@ -25,11 +25,7 @@ serving stack, same tasks), with bootstrap confidence intervals.
 4. **Paired eval.** Each eval-mixture component runs both arms over identical
    task sets in isolated sandboxes; per-component paired lift with bootstrap
    CIs; components aggregate under a ≤20% per-domain cap.
-5. **Two-stage screening.** The eval baseline is noisy (mean reward 0.340,
-   sd 0.444 across 12 SkillsBench tasks → a 1-attempt CI is roughly ±0.23
-   wide). So every checkpoint is screened at 1 attempt/task, and only the best
-   point estimate re-runs at 3 attempts (36 paired observations, half-width
-   ≈0.13). Only the confirmation run is reported.
+5. **Two-stage screening.** The eval baseline is noisy (mean reward 0.340, sd 0.444 across 12 held-out tasks → a 1-attempt CI is roughly ±0.23 wide). So every checkpoint is screened at 1 attempt/task, and only the best point estimate re-runs at 3 attempts (36 paired observations, half-width ≈0.13). Only the confirmation run is reported.
 
 ## Result 1 — training works (memorization probe)
 
@@ -47,10 +43,7 @@ therefore about *transfer*, not about broken training.
 
 ## Result 2 — five corpora, five negatives, one quantitative law
 
-Six SFT configurations, all paired deltas ≤ 0 on the 12-task SkillsBench
-mixture. The mechanism: **inference-time tool use tracks the training
-corpus's step count**, against a base model that makes ~30 tool calls per
-task:
+Six SFT configurations, all paired deltas ≤ 0 on the 12-task held-out mixture. The mechanism: **inference-time tool use tracks the training corpus's step count**, against a base model that makes ~30 tool calls per task:
 
 | corpus (calls/row) | calls at inference | paired delta |
 |---|---|---|

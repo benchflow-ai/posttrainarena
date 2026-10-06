@@ -37,14 +37,14 @@ extra_eval_args:
   - OPENAI_API_KEY=${MODEL_API_KEY}
 
 eval_mixture:
-  - name: skillsbench
-    domain: skills
-    # git clone https://github.com/benchflow-ai/skillsbench
-    tasks_dir: ./skillsbench/tasks
+  - name: heldout-mixture
+    domain: agentic
+    # A local directory with one subdirectory per task (or set source_repo).
+    tasks_dir: ./heldout-tasks
     include:
-      - citation-check
-      - data-to-d3
-      - dialogue-parser
+      - <task-a>
+      - <task-b>
+      - <task-c>
     expected_tasks: 3
     weight: 1.0
 

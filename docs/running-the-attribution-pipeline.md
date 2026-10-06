@@ -24,16 +24,11 @@ instrument behind every number in
    the same server — so the delta is the weights and nothing else. Any
    OpenAI-compatible endpoint works.
 
-4. **Tasks.** For the SkillsBench mixture used in the ledger:
-
-   ```bash
-   git clone https://github.com/benchflow-ai/skillsbench
-   ```
+4. **Tasks.** Each eval-mixture component reads its tasks from a local `tasks_dir` (one directory per task) or a remote `source_repo`. The example spec's one component, `heldout-mixture`, reads a local directory.
 
 ## Run
 
-Copy `configs/attribution.example.yaml`, fill in the model references and
-endpoint, then:
+Copy `configs/attribution.example.yaml`, fill in the model references, the endpoint and the tasks, then:
 
 ```bash
 MODEL_API_KEY=... python3 scripts/pta_attribute.py \
@@ -52,7 +47,7 @@ loudly on an unset variable.
 |---|---|
 | `scripts/pta_attribute.py` | the orchestrator described above |
 | `scripts/scoring.py` | capped aggregation (paired bootstrap, ≤20% per-domain water-filling) |
-| `scripts/build_skillsbench_sft.py` | render (instruction → oracle solution) SFT rows from a tasks dir, with the eval set held out (`--only` inverts the holdout to build a deliberate leak-control corpus) |
+| `scripts/build_skillsbench_sft.py` | render (instruction → oracle solution) SFT rows from a tasks dir, leaving out the tasks you evaluate on (`--exclude`; `--only` inverts this to build a deliberate leak-control corpus) |
 | `scripts/fireworks_sft.py` | upload a chat JSONL as a Fireworks dataset and launch the managed LoRA SFT job (the training step in the method above); `--status` polls a job |
 | `scripts/train_leak.py` | LoRA SFT for the leak control: train on the eval tasks' own oracles at maximal-memorization settings |
 | `scripts/memorization_probe.py` | token-F1 lift on training vs held-out rows — verify a checkpoint actually learned its data before interpreting any benchmark delta |
