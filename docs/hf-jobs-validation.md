@@ -9,11 +9,7 @@ completed the historical pipeline on an H100. July 11 allocation attempts
 through the HF Jobs scheduler were blocked by account credits, not code;
 paid-launch availability was not re-tested during that July 15 audit.
 
-This July 11 evidence predates the OpenCode evaluation migration. It validates
-the HF bundle, trainer, publishing, and earlier TRL evaluation path. The current
-OpenCode evaluator has separate real SkillsBench + Daytona canary evidence, but
-the full HF H100 flow must be rerun against the new shared vLLM endpoint and
-OpenCode custom-rollout GRPO path.
+This July 11 evidence predates the OpenCode evaluation migration. It validates the HF bundle, trainer, publishing, and earlier TRL evaluation path. The current OpenCode evaluator has separate real-task Daytona canary evidence, but the full HF H100 flow must be rerun against the new shared vLLM endpoint and OpenCode custom-rollout GRPO path.
 
 ## Validated flow
 
@@ -30,8 +26,7 @@ Run: `hf-wrapper-h100-fixed-20260711T010948Z`
 6. The same base/final checkpoint pair was evaluated on:
    - Data Agent:
      `benchflow/data_agent_rl_environment_eval@0ea976c79e3248c85737c4f7363484e4d47ce287`
-   - SkillsBench:
-     `benchflow/skillsbench@be2a6ce2cb1f4ff67ce937307cade0c5a0477a13`
+   - A held-out agentic suite, at a pinned revision
 7. Run artifacts, model weights, job logs, status, and benchmark scores were
    published to the Hub and consumed by the live leaderboard Space.
 
@@ -42,7 +37,7 @@ Run: `hf-wrapper-h100-fixed-20260711T010948Z`
 - Teacher reward: `1.0`
 - Primary baseline/final/delta: `0.0 / 0.0 / 0.0`
 - Data Agent baseline/final/delta: `0.0 / 0.0 / 0.0`
-- SkillsBench baseline/final/delta: `0.0 / 0.0 / 0.0`
+- Held-out agentic suite baseline/final/delta: `0.0 / 0.0 / 0.0`
 - Macro benchmark delta: `0.0`
 - Forced GRPO ran: `true`
 - Final BF16 model size: `8,044,982,080` bytes

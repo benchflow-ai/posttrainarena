@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build an SFT corpus from SkillsBench oracle solutions, holding out the eval set.
+"""Build an SFT corpus from SkillsBench oracle solutions, leaving out excluded tasks.
 
 Why this corpus exists
 ----------------------
@@ -13,14 +13,14 @@ The honest fix is in-domain data. Every SkillsBench task ships an `oracle/`
 directory containing a working solution, so the benchmark carries its own
 training signal. This renders (task instruction -> oracle solution) pairs.
 
-The held-out set is the whole point. Tasks scored by the hillclimb spec are
-excluded here, so a positive delta means the model generalized to tasks it
-never saw rather than memorizing the answers it was graded on. Training on the
-eval tasks would produce a large, meaningless number.
+Pass every task you evaluate on to --exclude, so a positive delta means the
+model generalized to tasks it never saw rather than memorizing the answers it
+was graded on. Training on the eval tasks would produce a large, meaningless
+number.
 
     python3 scripts/build_skillsbench_sft.py \\
         --tasks-dir <skillsbench>/tasks --out sft_skillsbench.jsonl \\
-        --exclude dialogue-parser citation-check ...
+        --exclude <eval-task> ...
 """
 
 from __future__ import annotations

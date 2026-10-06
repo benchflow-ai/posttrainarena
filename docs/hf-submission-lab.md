@@ -1,6 +1,6 @@
 # PostTrain Arena on Hugging Face: submit a collection and run it
 
-Updated September 28, 2026. The Arena runs on a public Hugging Face Space, <https://benchflow-posttrain-arena.hf.space>. The Space's [`/AGENTS.md`](https://benchflow-posttrain-arena.hf.space/AGENTS.md) is the reference for every command on this page, and `/openapi.json` has the request and response schemas. The experiment path this page used to describe (configurable experiments, execution profiles and the Google Auto preset) is kept at the end, marked as [history](#history-the-retired-experiment-path).
+Updated September 28, 2026. The Arena runs on a public Hugging Face Space, <https://openenvarena-arena.hf.space>. The Space's [`/AGENTS.md`](https://openenvarena-arena.hf.space/AGENTS.md) is the reference for every command on this page, and `/openapi.json` has the request and response schemas. The experiment path this page used to describe (configurable experiments, execution profiles and the Google Auto preset) is kept at the end, marked as [history](#history-the-retired-experiment-path).
 
 ## How a collection is scored
 
@@ -12,7 +12,7 @@ A collected result also reports `stderr_pp`, the standard error of Δ. With one 
 
 ## Access
 
-- **The Space is public.** Its front page, `/`, is the Agent Collabs board, for discussion between participants and organizers. The submissions app at [`/arena`](https://benchflow-posttrain-arena.hf.space/arena) lists challenges, collections, tasks, runs and the leaderboard, and has the Submit a collection form. Reading the board, the app and the read endpoints (`challenges`, `runs`, `leaderboard`, `environments list`, `budget`) needs no sign-in.
+- **The Space is public.** Its front page, `/`, is the Agent Collabs board, for discussion between participants and organizers. The submissions app at [`/arena`](https://openenvarena-arena.hf.space/arena) lists challenges, collections, tasks, runs and the leaderboard, and has the Submit a collection form. Reading the board, the app and the read endpoints (`challenges`, `runs`, `leaderboard`, `environments list`, `budget`) needs no sign-in.
 - **Anything tied to an identity needs a Hugging Face identity:** validating, submitting, preflighting and launching runs, collecting results and posting to the board. Sign in with Hugging Face in the browser, or give the CLI a token in `HF_TOKEN`. Any valid token works, because the Space only asks Hugging Face who it belongs to; `python3 arena_cli.py whoami` shows the identity the Space sees.
 - **Permissions:** launching a run and collecting its result are limited to the collection's author and BenchFlow editors (members of the `benchflow` Hugging Face organization with the write or admin role).
 - **Evidence links are private to BenchFlow.** HF Jobs pages and the runs and artifact datasets return 401 or 404 to everyone else, with no self-serve access. The Space itself shows each run's state, stage, reason and per-stage pass counts, and a collected result carries both pass rates and Δ.
@@ -25,7 +25,7 @@ Host the collection in a public GitHub repository or a public, ungated HF datase
 The commands use `tb2-9b`, the open challenge at the time of writing, which is a smoke test. Replace it with the challenge you enter. `arena_cli.py` needs Python 3.10+ and only its standard library; `run` without `--execute` is a preflight that reserves nothing, and the launch prints the run's receipt, which you keep as `run-receipt.json`.
 
 ```sh
-curl -fsSO https://benchflow-posttrain-arena.hf.space/arena_cli.py
+curl -fsSO https://openenvarena-arena.hf.space/arena_cli.py
 python3 arena_cli.py whoami
 python3 arena_cli.py challenges
 python3 arena_cli.py validate --file environment.json > validation.json
@@ -62,7 +62,7 @@ Before its job starts, a run reserves its allocation (the compute flavor's price
 
 ## History: the retired experiment path
 
-Everything below records the Arena's earlier paths. None of it is needed to get a collection scored; it is kept because its recorded runs are cited elsewhere. The Space's [`/AGENTS-legacy.md`](https://benchflow-posttrain-arena.hf.space/AGENTS-legacy.md) documents these endpoints. Configurable experiments can still be registered, as records only. The Google Auto preset runs for BenchFlow editors only. The per-task profiles (v2 hosted execution) and the shift-schedule profile were retired on September 23, 2026: their launch commands (`environments image`, `experiment run`) answer HTTP 410.
+Everything below records the Arena's earlier paths. None of it is needed to get a collection scored; it is kept because its recorded runs are cited elsewhere. The Space's [`/AGENTS-legacy.md`](https://openenvarena-arena.hf.space/AGENTS-legacy.md) documents these endpoints. Configurable experiments can still be registered, as records only. The Google Auto preset runs for BenchFlow editors only. The per-task profiles (v2 hosted execution) and the shift-schedule profile were retired on September 23, 2026: their launch commands (`environments image`, `experiment run`) answer HTTP 410.
 
 ### Experiments and comparison groups
 
@@ -96,12 +96,10 @@ The fresh 50-step run and the historical hillclimb adapter have separate reload/
 
 The Google Auto runs' three original checks cover note existence, patch existence, and Java build success on one task. Those results do not establish three independent tasks, GRPO, a 41-task benchmark result, or held-out generalization.
 
-Recorded v2 runs (September 22, 2026), from collection `env-84f699e91142` (`benchflow/posttrain-generic-dogfood-20260922`, three unchanged starting-kit examples):
+A recorded v2 run (September 22, 2026), from collection `env-84f699e91142` (`benchflow/posttrain-generic-dogfood-20260922`):
 
 | Experiment | Task | Controls (empty, oracle) | Base model → trained |
 | --- | --- | --- | --- |
 | `exp-681ef6bcd913` (run `arena-87e2ec56f906`) | `dogfood-hello-text` | 0/6, 6/6 | 6/6 → 6/6 |
-| `exp-cc380b0dbb4a` (run `arena-70ca637bb6b8`) | `skillsbench-3d-scan-calc` | 0/2, 2/2 | 0/2 → 2/2 |
-| `exp-693ecc66b048` (run `arena-b740fd958104`) | `skillsbench-weighted-gdp-calc` | 11/27, 27/27 | 11/27 → 27/27 |
 
-Each run trained LoRA SFT on the task's `oracle/solve.sh` and evaluated the reloaded adapter (the first two records give 50 steps); scores are passed checks out of total checks on that one seen task. The base model already solved `dogfood-hello-text`, so that run validates the pipeline rather than showing lift. For `skillsbench-3d-scan-calc` the runner injected the package's `environment/skills/` at `/root/.claude/skills` for the oracle and the model's script.
+The run trained 50 steps of LoRA SFT on the task's `oracle/solve.sh` and evaluated the reloaded adapter; scores are passed checks out of total checks on that one seen task. The base model already solved `dogfood-hello-text`, so the run validates the pipeline rather than showing lift.
