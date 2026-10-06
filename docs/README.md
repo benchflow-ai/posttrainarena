@@ -9,7 +9,7 @@
 - **Training operations:** read [the pipeline guide](training-pipeline.md), then [HF Jobs](hf-jobs.md) if using remote compute.
 - **Evidence review:** use [architecture/status](architecture-status.md) and the dated reports below. Configuration, job completion, optimizer updates, verifier success, and held-out improvement are different claims.
 
-The hosted Arena is a public Hugging Face Space: the Agent Collabs board at `/` and the submissions app at `/arena`, with a headless CLI/API. Start with the Space's [`/AGENTS.md`](https://benchflow-posttrain-arena.hf.space/AGENTS.md), then read [submitting a collection and running it](hf-submission-lab.md). Submitting a collection does not launch compute; runs on a challenge are preflighted and launched separately, and they train with this repository's OpenCode/TRL pipeline at a commit each challenge pins.
+The hosted Arena is a public Hugging Face Space: the Agent Collabs board at `/` and the submissions app at `/arena`, with a headless CLI/API. Start with the Space's [`/AGENTS.md`](https://openenvarena-arena.hf.space/AGENTS.md), then read [submitting a collection and running it](hf-submission-lab.md). Submitting a collection does not launch compute; runs on a challenge are preflighted and launched separately, and they train with this repository's OpenCode/TRL pipeline at a commit each challenge pins.
 
 On the retired experiment path, the [submitted shift-schedule profile](hf-submission-lab.md#recorded-evidence) completed a 50-step HF run with saved-adapter reload, independent verifier replay, and a reviewed public result: 8/9 → 9/9 checks on one seen task. That is seen-task practice; it does not establish held-out performance.
 
