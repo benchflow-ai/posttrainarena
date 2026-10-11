@@ -11,7 +11,7 @@ from pathlib import Path
 
 os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
 
-from .config import load_config
+from .config import PipelineConfig, load_config
 from .pipeline import Pipeline
 
 
@@ -61,6 +61,25 @@ def build_parser() -> argparse.ArgumentParser:
         if name == "run":
             command.add_argument("--dry-run", action="store_true")
             command.add_argument("--resume", action="store_true")
+    sft = subparsers.add_parser("sft")
+    sft.add_argument("--config", type=Path, required=True)
+    sft.add_argument("--train-jsonl", type=Path, required=True)
+    sft.add_argument("--adapter-dir", type=Path, required=True)
+    sft.add_argument("--output-dir", type=Path, required=True)
+    sft.add_argument("--run-name", required=True)
+    sft_worker = subparsers.add_parser("sft-worker")
+    sft_worker.add_argument("--config", type=Path, required=True)
+    sft_worker.add_argument("--train-jsonl", type=Path, required=True)
+    sft_worker.add_argument("--adapter-dir", type=Path, required=True)
+    sft_worker.add_argument("--run-name", required=True)
+    grpo_worker = subparsers.add_parser("grpo-worker")
+    grpo_worker.add_argument("--config", type=Path, required=True)
+    grpo_worker.add_argument("--model", required=True)
+    grpo_worker.add_argument("--tasks-dir", type=Path, required=True)
+    grpo_worker.add_argument("--task-ids-file", type=Path, required=True)
+    grpo_worker.add_argument("--jobs-dir", type=Path, required=True)
+    grpo_worker.add_argument("--adapter-dir", type=Path, required=True)
+    grpo_worker.add_argument("--run-name", required=True)
     prepare = subparsers.add_parser("prepare-submission")
     prepare.add_argument("--entry", type=Path, required=True)
     prepare.add_argument("--base-config", type=Path, required=True)
@@ -196,6 +215,44 @@ def _add_publish_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--artifact-repo", required=True)
     parser.add_argument("--leaderboard-repo", required=True)
     parser.add_argument("--job-id")
+
+
+def _run_worker(args: argparse.Namespace, config: PipelineConfig) -> int:
+    """Train one stage's adapter inside a launched process group."""
+    from .distributed import close_process_group
+    from .launcher import LaunchProfile, verify_worker_topology
+
+    stage = "sft" if args.command == "sft-worker" else "grpo"
+    topology = verify_worker_topology(
+        LaunchProfile.for_stage(config, stage),
+        timeout_sec=getattr(config, stage).ddp_timeout,
+    )
+    if stage == "sft":
+        from .sft import train_sft_adapter
+
+        metrics = train_sft_adapter(
+            config=config,
+            train_jsonl=args.train_jsonl,
+            adapter_dir=args.adapter_dir,
+            run_name=args.run_name,
+        )
+    else:
+        from .grpo import train_grpo_adapter
+        from .io import read_task_ids
+
+        metrics = train_grpo_adapter(
+            config=config,
+            model=args.model,
+            tasks_dir=args.tasks_dir,
+            task_ids=read_task_ids(args.task_ids_file),
+            jobs_dir=args.jobs_dir,
+            adapter_dir=args.adapter_dir,
+            run_name=args.run_name,
+        )
+    close_process_group()
+    if topology["process_index"] == 0:
+        print(json.dumps({**metrics, "topology": topology}, indent=2, sort_keys=True))
+    return 0
 
 
 def _git_ref() -> str:
@@ -413,14 +470,36 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     config = load_config(args.config)
     if args.command == "validate":
+        from .launcher import validate_profiles
+
         print(
             json.dumps(
-                {"config": str(config.source), "valid": True},
+                {
+                    "config": str(config.source),
+                    "launch": validate_profiles(config),
+                    "valid": True,
+                },
                 indent=2,
                 sort_keys=True,
             )
         )
         return 0
+    if args.command == "sft":
+        from .io import CommandRunner
+        from .launcher import run_sft_stage
+
+        result = run_sft_stage(
+            config=config,
+            runner=CommandRunner(cwd=config.source.parent),
+            train_jsonl=args.train_jsonl.expanduser().resolve(),
+            adapter_dir=args.adapter_dir.expanduser().resolve(),
+            output_dir=args.output_dir.expanduser().resolve(),
+            run_name=args.run_name,
+        )
+        print(json.dumps(result, indent=2, sort_keys=True, default=str))
+        return 0
+    if args.command in {"sft-worker", "grpo-worker"}:
+        return _run_worker(args, config)
     pipeline = Pipeline(
         config,
         run_name=args.run_name,

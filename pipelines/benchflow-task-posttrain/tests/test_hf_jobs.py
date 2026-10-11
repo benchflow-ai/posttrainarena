@@ -57,6 +57,36 @@ def test_hf_job_restores_published_run_state(
     )
 
 
+def test_job_bundle_carries_stage_profiles(tmp_path: Path) -> None:
+    source = ROOT / "configs/qwen3-4b-data-agent-smoke.toml"
+    recipes = tmp_path / "recipes"
+    (recipes / "accelerate").mkdir(parents=True)
+    profile = ROOT / "configs/accelerate/ddp-2gpu.yaml"
+    (recipes / "accelerate" / "ddp.yaml").write_text(profile.read_text())
+    recipe = recipes / "profiled.toml"
+    recipe.write_text(
+        source.read_text()
+        .replace('task_list = "../task-lists/', f'task_list = "{ROOT}/task-lists/')
+        .replace("[sft]\n", '[sft]\naccelerate_config = "accelerate/ddp.yaml"\n')
+    )
+
+    bundle = create_job_bundle(
+        config_path=recipe,
+        output_dir=tmp_path / "bundle",
+        run_id="run-2",
+        submission_id="team-beta",
+        team_name="Team Beta",
+        artifact_repo="benchflow/results",
+        leaderboard_repo="benchflow/leaderboard",
+        model_repo=None,
+    )
+
+    config = tomllib.loads(bundle.config_path.read_text())
+    assert config["sft"]["accelerate_config"] == "accelerate/sft.yaml"
+    assert "accelerate_config" not in config["grpo"]
+    assert (bundle.root / "accelerate" / "sft.yaml").read_text() == profile.read_text()
+
+
 def test_job_bundle_is_portable_and_contains_no_secrets(tmp_path: Path) -> None:
     benchmark_list = tmp_path / "benchmark.txt"
     benchmark_list.write_text("0000_369_369503_qa_1\n")

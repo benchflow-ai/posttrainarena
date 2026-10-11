@@ -73,6 +73,22 @@ exploratory 16-train/14-eval public canary completed the corrected path and
 observed a same-domain pass-rate increase from `8/14` to `11/14`; the full
 public-reference run and private competition readiness remain unproven.
 
+## Single-node multi-GPU training
+
+SFT and GRPO support optional per-stage Accelerate profiles for single-node DDP and FSDP2, targeting text-only bf16 LoRA on NVIDIA GPUs.
+Omitting a profile preserves the in-process launch path and existing CLI commands; older run plans without a launch section remain compatible with that default, subject to the normal checkpoint provenance checks.
+Profile settings participate in resume identity and are bundled with HF Jobs and prepared submissions.
+Profiled workers extract the adapter collectively before a CPU merged export runs in the coordinator after worker exit.
+
+Real HPC GPU checks covered SFT training and export under DDP and FSDP2, and online OpenCode GRPO completed in both modes with two training ranks and a separate inference GPU.
+Each online mode produced eight real rollouts, four optimizer steps, nonzero saved LoRA updates, and verified adapter/merged exports.
+The online checks used a local experimental BenchFlow Apptainer checkout, not the unchanged pinned upstream dependency, and do not establish equivalent multi-rank online behavior on Daytona or improved held-out scores.
+This evidence is separate from the earlier single-trainer canary uplift described above.
+
+Launch/profile and legacy-plan tests cover the configuration contract; two-process CPU tests cover distributed ordering and segment-gradient equivalence, while the real GPU runs exercise training, sampling, and export.
+Multi-node training, full fine-tuning, quantization, and larger-model full-pipeline synchronization remain outside this validation.
+Example launch profiles are in the pipeline's [`configs/accelerate/`](../pipelines/benchflow-task-posttrain/configs/accelerate/) directory.
+
 ## Ownership boundaries
 
 | Layer | Current owner | Responsibility |

@@ -82,6 +82,7 @@ class HarnessConfig:
     sandbox_setup_timeout_sec: int = 300
     agent_idle_timeout_sec: int = 300
     agent_timeout_sec: int = 900
+    opencode_steps: int | None = None
     reasoning_effort: str | None = None
 
 
@@ -121,6 +122,8 @@ class SftConfig:
     lora_r: int = 16
     lora_alpha: int = 32
     lora_dropout: float = 0.05
+    accelerate_config: Path | None = None
+    ddp_timeout: int = 1800
 
 
 @dataclass(frozen=True)
@@ -142,6 +145,8 @@ class GrpoConfig:
     rollout_attempts: int = 2
     require_reward_variance: bool = False
     vllm_server_base_url_env: str = "TRL_VLLM_SERVER_BASE_URL"
+    accelerate_config: Path | None = None
+    ddp_timeout: int = 1800
 
 
 @dataclass(frozen=True)
@@ -170,8 +175,21 @@ class PipelineConfig:
     def sandbox(self) -> str:
         return self.runtime.sandbox or "daytona"
 
+    @property
+    def generation_batch_size(self) -> int:
+        """Global GRPO generation batch, shared by every trainer rank."""
+        return (
+            self.grpo.generation_batch_size
+            or self.runtime.num_generations * self.harness.concurrency
+        )
+
     def validate(self) -> None:
         errors: list[str] = []
+        for stage in ("sft", "grpo"):
+            if not _is_positive_int(getattr(self, stage).ddp_timeout):
+                errors.append(
+                    f"{stage}.ddp_timeout must be a positive number of seconds"
+                )
         if self.harness.agent != "opencode":
             errors.append("harness.agent must be opencode")
         if self.harness.skill_mode not in {"no-skill", "with-skill"}:
@@ -206,6 +224,10 @@ class PipelineConfig:
             errors.append("harness.agent_idle_timeout_sec must be positive")
         if not _is_positive_int(self.harness.agent_timeout_sec):
             errors.append("harness.agent_timeout_sec must be positive")
+        if self.harness.opencode_steps is not None and not _is_positive_int(
+            self.harness.opencode_steps
+        ):
+            errors.append("harness.opencode_steps must be positive")
         if self.harness.reasoning_effort is not None and (
             not isinstance(self.harness.reasoning_effort, str)
             or not self.harness.reasoning_effort.strip()
@@ -339,13 +361,22 @@ class PipelineConfig:
         for label, path in (
             ("train_dataset.task_list", self.train_dataset.task_list),
             ("eval_dataset.task_list", self.eval_dataset.task_list),
+            ("sft.accelerate_config", self.sft.accelerate_config),
+            ("grpo.accelerate_config", self.grpo.accelerate_config),
         ):
-            if not path.is_file():
+            if path is not None and not path.is_file():
                 errors.append(f"{label} does not exist: {path}")
         if self.sft.enabled and not self.teacher.enabled:
             errors.append("sft.enabled requires teacher.enabled")
         if errors:
             raise ValueError("Invalid pipeline config:\n- " + "\n- ".join(errors))
+
+
+def _stage_table(base: Path, table: dict[str, Any]) -> dict[str, Any]:
+    profile = table.get("accelerate_config")
+    if profile is None:
+        return table
+    return {**table, "accelerate_config": _resolve(base, str(profile))}
 
 
 def load_config(path: str | Path) -> PipelineConfig:
@@ -397,8 +428,8 @@ def load_config(path: str | Path) -> PipelineConfig:
         ),
         evaluation=EvaluationConfig(**evaluation),
         teacher=TeacherConfig(**teacher),
-        sft=SftConfig(**sft),
-        grpo=GrpoConfig(**grpo),
+        sft=SftConfig(**_stage_table(base, sft)),
+        grpo=GrpoConfig(**_stage_table(base, grpo)),
         tracking=TrackingConfig(**tracking),
         output_root=_resolve(base, str(output.get("root", "../runs"))),
     )

@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from .io import write_json
+from .launcher import bundle_stage_profiles
 
 
 REQUIRED_FIELDS = ("team_name", "contact_email", "track")
@@ -146,6 +147,11 @@ def _portable_recipe(
         }
     )
     data["eval_dataset"]["task_list"] = "task-lists/eval.txt"
+    bundle_stage_profiles(
+        data,
+        source_dir=base_config_path.parent,
+        output_dir=output_path.parent,
+    )
     teacher = data.setdefault("teacher", {})
     teacher["min_verified"] = len(train_task_ids)
     teacher["require_all_tasks"] = True

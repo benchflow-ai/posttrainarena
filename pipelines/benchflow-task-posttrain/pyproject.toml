@@ -19,10 +19,12 @@ Documentation = "https://github.com/benchflow-ai/posttrainarena/blob/main/docs/t
 
 [project.optional-dependencies]
 train = [
+  "accelerate>=1.10,<2",
   "benchflow[trl,sandbox-daytona] @ git+https://github.com/benchflow-ai/benchflow.git@2a97db55947d6742b765ad34ddd91d74c20d625f",
   "openenv @ git+https://github.com/huggingface/OpenEnv.git@6823135a714814e3efb3e39c4a9edff01e1a2a98",
   "openai>=2.0",
   "peft>=0.19,<0.20",
+  "pyyaml>=6,<7",
   "torch==2.11.0; sys_platform == 'linux'",
   "transformers>=5.6,<5.14",
   "trl==1.8.0",
@@ -34,11 +36,13 @@ hf = [
   "tomli-w>=1.2,<2",
 ]
 test = [
+  "accelerate>=1.10,<2",
   "benchflow[trl] @ git+https://github.com/benchflow-ai/benchflow.git@2a97db55947d6742b765ad34ddd91d74c20d625f",
   "huggingface_hub>=0.36,<2",
   "openenv @ git+https://github.com/huggingface/OpenEnv.git@6823135a714814e3efb3e39c4a9edff01e1a2a98",
   "peft>=0.19,<0.20",
   "pytest>=8.0",
+  "pyyaml>=6,<7",
   "tomli-w>=1.2,<2",
   "transformers>=5.6,<5.14",
   "trl==1.8.0",

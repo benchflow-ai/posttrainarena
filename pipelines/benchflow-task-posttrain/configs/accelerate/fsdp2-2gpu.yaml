@@ -1,0 +1,18 @@
+# Two FSDP2 trainer ranks on two GPUs the vLLM server does not use.
+# Launched as: accelerate launch --config_file <this file> -m ... sft-worker|grpo-worker
+# FULL_STATE_DICT is required: Trainer.save_model writes no adapter otherwise.
+compute_environment: LOCAL_MACHINE
+distributed_type: FSDP
+num_processes: 2
+num_machines: 1
+mixed_precision: bf16
+gpu_ids: all
+use_cpu: false
+fsdp_config:
+  fsdp_version: 2
+  fsdp_auto_wrap_policy: TRANSFORMER_BASED_WRAP
+  fsdp_reshard_after_forward: true
+  fsdp_state_dict_type: FULL_STATE_DICT
+  fsdp_offload_params: false
+  fsdp_cpu_ram_efficient_loading: true
+  fsdp_activation_checkpointing: false

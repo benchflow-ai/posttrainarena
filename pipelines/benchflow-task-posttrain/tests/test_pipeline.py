@@ -7,16 +7,146 @@ from pathlib import Path
 import pytest
 
 from posttrainarena.benchflow_pipeline.config import load_config
-from posttrainarena.benchflow_pipeline.io import directory_sha256
+from posttrainarena.benchflow_pipeline.io import directory_sha256, file_sha256
 from posttrainarena.benchflow_pipeline.grpo import grpo_training_recipe
 from posttrainarena.benchflow_pipeline.pipeline import (
     Pipeline,
+    _reference_sha256,
+    _resume_plan_compatible,
     _sha256,
     _teacher_sources_sha256,
 )
 
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+@pytest.mark.parametrize("steps", [None, 40])
+def test_resume_legacy_plan_without_opencode_steps(steps: int | None) -> None:
+    config = load_config(ROOT / "configs/qwen3-4b-data-agent-smoke.toml")
+    config = replace(config, harness=replace(config.harness, opencode_steps=steps))
+    current = Pipeline(config, run_name="legacy-steps", dry_run=True).plan()
+    legacy = json.loads(json.dumps(current, default=str))
+    del legacy["harness"]["opencode_steps"]
+    assert _resume_plan_compatible(legacy, current) is (steps is None)
+    assert "opencode_steps" not in legacy["harness"]
+
+
+@pytest.mark.parametrize("change", [None, "learning_rate", "sft", "grpo"])
+def test_resume_reads_legacy_plan_without_launch_profiles(
+    tmp_path: Path, change: str | None
+) -> None:
+    config = replace(
+        load_config(ROOT / "configs/qwen3-4b-data-agent-smoke.toml"),
+        output_root=tmp_path,
+    )
+    previous = Pipeline(config, run_name="legacy")
+    previous._prepare_run_plan()
+    plan_path = previous.layout.reports / "plan.json"
+    legacy = json.loads(plan_path.read_text())
+    del legacy["launch"]
+    plan_path.write_text(json.dumps(legacy))
+
+    if change == "learning_rate":
+        config = replace(config, sft=replace(config.sft, learning_rate=1e-3))
+    elif change is not None:
+        config = replace(
+            config,
+            **{
+                change: replace(
+                    getattr(config, change),
+                    accelerate_config=ROOT / "configs/accelerate/ddp-2gpu.yaml",
+                )
+            },
+        )
+    resumed = Pipeline(config, run_name="legacy", resume=True)
+    if change is None:
+        resumed._prepare_run_plan()
+        assert json.loads(plan_path.read_text())["launch"] == {
+            "sft": None,
+            "grpo": None,
+        }
+    else:
+        with pytest.raises(RuntimeError, match="incompatible run plan"):
+            resumed._prepare_run_plan()
+        assert json.loads(plan_path.read_text()) == legacy
+
+
+def test_timeout_change_preserves_training_identity(tmp_path: Path) -> None:
+    config = replace(
+        load_config(ROOT / "configs/qwen3-4b-data-agent-smoke.toml"),
+        output_root=tmp_path,
+    )
+    extended = replace(
+        config,
+        sft=replace(config.sft, ddp_timeout=3600),
+        grpo=replace(config.grpo, ddp_timeout=21600),
+    )
+    previous = Pipeline(config, run_name="timeout")
+    previous._prepare_run_plan()
+    resumed = Pipeline(extended, run_name="timeout", resume=True)
+    assert previous.plan() == resumed.plan()
+    assert grpo_training_recipe(config) == grpo_training_recipe(extended)
+    resumed._prepare_run_plan()
+
+
+@pytest.mark.parametrize(
+    "addition",
+    [
+        "enable_cpu_affinity: true\n",
+        "parallelism_config:\n  parallelism_config_cp_size: 2\n",
+    ],
+)
+def test_grpo_resume_rejects_additional_profile_settings(
+    tmp_path: Path, addition: str
+) -> None:
+    profile = tmp_path / "ddp.yaml"
+    original = (ROOT / "configs/accelerate/ddp-2gpu.yaml").read_text()
+    profile.write_text(original)
+    config = load_config(ROOT / "configs/qwen3-4b-data-agent-smoke.toml")
+    config = replace(
+        config,
+        output_root=tmp_path / "runs",
+        harness=replace(config.harness, concurrency=2),
+        grpo=replace(config.grpo, accelerate_config=profile),
+    )
+    previous = Pipeline(config, run_name="profile")
+    previous._prepare_run_plan()
+    adapter, merged = previous.layout.grpo_adapter, previous.layout.grpo_merged
+    for directory in (adapter, merged):
+        directory.mkdir(parents=True)
+        (directory / "weights.bin").write_bytes(b"checkpoint fixture")
+    metrics = merged / "train_metrics.json"
+    metrics.write_text(
+        json.dumps(
+            {
+                "mode": "grpo",
+                "model": config.model,
+                "task_ids": previous.train_task_ids,
+                "training_recipe": grpo_training_recipe(config),
+                "adapter_dir": str(adapter),
+                "merged_model_dir": str(merged),
+                "base_checkpoint_sha256": _reference_sha256(
+                    config.model, revision=config.model_revision
+                ),
+                "adapter_sha256": directory_sha256(adapter),
+                "merged_model_sha256": directory_sha256(merged),
+            }
+        )
+    )
+    assert previous._grpo_checkpoint_is_current(
+        metrics, input_model=config.model, output_model=merged
+    )
+
+    profile.write_text(original + addition)
+    resumed = Pipeline(config, run_name="profile", resume=True)
+    with pytest.raises(
+        (ValueError, RuntimeError), match="parallelism_config|incompatible run plan"
+    ):
+        resumed._prepare_run_plan()
+    assert not resumed._grpo_checkpoint_is_current(
+        metrics, input_model=config.model, output_model=merged
+    )
 
 
 def test_plan_exposes_public_stage_contract(tmp_path: Path) -> None:
@@ -44,6 +174,7 @@ def test_plan_exposes_public_stage_contract(tmp_path: Path) -> None:
         "sandbox_setup_timeout_sec": 300,
         "agent_idle_timeout_sec": 300,
         "agent_timeout_sec": 900,
+        "opencode_steps": None,
         "reasoning_effort": None,
     }
     assert plan["evaluation"] == {
@@ -1007,3 +1138,84 @@ def test_resume_rejects_task_list_content_drift_with_the_same_count(
 
     with pytest.raises(RuntimeError, match="Changed fields: train_task_ids"):
         changed._prepare_run_plan()
+
+
+def test_dry_run_records_worker_launches_for_profiled_stages(tmp_path: Path) -> None:
+    config = load_config(ROOT / "configs/qwen3-4b-data-agent-smoke.toml")
+    profiles = ROOT / "configs" / "accelerate"
+    config = replace(
+        config,
+        output_root=tmp_path,
+        harness=replace(config.harness, concurrency=2),
+        sft=replace(config.sft, accelerate_config=profiles / "one-process.yaml"),
+        grpo=replace(config.grpo, accelerate_config=profiles / "ddp-2gpu.yaml"),
+    )
+    pipeline = Pipeline(config, run_name="launches", dry_run=True)
+
+    plan = pipeline.plan()
+    result = pipeline.run()
+
+    assert plan["launch"]["sft"]["num_processes"] == 1
+    assert plan["launch"]["grpo"]["distributed_type"] == "MULTI_GPU"
+    assert "accelerate_config" not in plan["sft"]
+    assert "accelerate_config" not in plan["grpo"]
+    sft = next(item for item in result["commands"] if item["name"] == "train_sft")
+    grpo = next(item for item in result["commands"] if item["name"] == "train_grpo")
+    assert sft["launch"]["profile"] == str(profiles / "one-process.yaml")
+    assert len(grpo["launch"]["profile_sha256"]) == 64
+    assert sft["launch"]["command"][1:4] == [
+        "-m",
+        "posttrainarena.benchflow_pipeline.cli",
+        "sft-worker",
+    ]
+    assert grpo["launch"]["command"][1:3] == ["-m", "accelerate.commands.launch"]
+    assert grpo["launch"]["command"][-1] == "launches-grpo"
+    assert (
+        str(pipeline.layout.jobs / "grpo-train" / "task_ids.txt")
+        in grpo["launch"]["command"]
+    )
+
+
+def test_sft_resume_restarts_when_the_launch_profile_changes(tmp_path: Path) -> None:
+    config = load_config(ROOT / "configs/qwen3-4b-data-agent-smoke.toml")
+    config = replace(config, output_root=tmp_path)
+    pipeline = Pipeline(config, run_name="launch-resume", dry_run=True, resume=True)
+    pipeline.layout.sft_jsonl.parent.mkdir(parents=True)
+    pipeline.layout.sft_jsonl.write_text("{}\n")
+    for directory in (pipeline.layout.sft_adapter, pipeline.layout.sft_merged):
+        directory.mkdir(parents=True)
+        (directory / "weights.bin").write_bytes(b"weights")
+    metrics = {
+        "mode": "sft",
+        "base_model": config.model,
+        "model_revision": config.model_revision,
+        "adapter_dir": str(pipeline.layout.sft_adapter),
+        "merged_model_dir": str(pipeline.layout.sft_merged),
+        "launch": None,
+        "train_jsonl_sha256": file_sha256(pipeline.layout.sft_jsonl),
+        "adapter_sha256": directory_sha256(pipeline.layout.sft_adapter),
+        "merged_model_sha256": directory_sha256(pipeline.layout.sft_merged),
+    }
+    metrics_path = pipeline.layout.sft_merged / "train_metrics.json"
+    metrics_path.write_text(json.dumps(metrics))
+
+    assert pipeline._sft_checkpoint_is_current(
+        metrics_path, output_model=pipeline.layout.sft_merged
+    )
+
+    profiled = Pipeline(
+        replace(
+            config,
+            sft=replace(
+                config.sft,
+                accelerate_config=ROOT / "configs/accelerate/ddp-2gpu.yaml",
+            ),
+        ),
+        run_name="launch-resume",
+        dry_run=True,
+        resume=True,
+    )
+
+    assert not profiled._sft_checkpoint_is_current(
+        metrics_path, output_model=pipeline.layout.sft_merged
+    )

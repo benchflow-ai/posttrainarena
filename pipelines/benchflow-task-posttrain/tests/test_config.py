@@ -14,6 +14,17 @@ from posttrainarena.benchflow_pipeline.config import BENCHFLOW_COMMIT, load_conf
 ROOT = Path(__file__).resolve().parents[1]
 
 
+@pytest.mark.parametrize("stage", ["sft", "grpo"])
+@pytest.mark.parametrize("value", [0, -1, True, 1.5])
+def test_stage_timeout_requires_positive_seconds(stage: str, value: object) -> None:
+    config = load_config(ROOT / "configs/qwen3-4b-data-agent-smoke.toml")
+    config = replace(
+        config, **{stage: replace(getattr(config, stage), ddp_timeout=value)}
+    )
+    with pytest.raises(ValueError, match=f"{stage}.ddp_timeout"):
+        config.validate()
+
+
 def test_benchflow_dependency_pins_match_runtime_commit() -> None:
     project = tomllib.loads((ROOT / "pyproject.toml").read_text())["project"]
     optional = project["optional-dependencies"]
@@ -261,6 +272,8 @@ def test_config_rejects_invalid_evaluation_values(
         ("agent_idle_timeout_sec", "300", "harness.agent_idle_timeout_sec"),
         ("agent_timeout_sec", 0, "harness.agent_timeout_sec"),
         ("agent_timeout_sec", True, "harness.agent_timeout_sec"),
+        ("opencode_steps", 0, "harness.opencode_steps"),
+        ("opencode_steps", True, "harness.opencode_steps"),
         ("reasoning_effort", "", "harness.reasoning_effort"),
         ("reasoning_effort", 1, "harness.reasoning_effort"),
     ],
@@ -496,3 +509,39 @@ agent = "opencode"
 
     with pytest.raises(ValueError, match="does not exist"):
         load_config(config)
+
+
+def test_stage_accelerate_profiles_resolve_relative_to_the_recipe(
+    tmp_path: Path,
+) -> None:
+    source = ROOT / "configs/qwen3-4b-data-agent-smoke.toml"
+    task_lists = tmp_path / "task-lists"
+    task_lists.mkdir()
+    for name in ("data-agent-train-15.txt", "data-agent-eval-2.txt"):
+        (task_lists / name).write_text((ROOT / "task-lists" / name).read_text())
+    configs = tmp_path / "configs"
+    (configs / "accelerate").mkdir(parents=True)
+    profile = configs / "accelerate" / "ddp.yaml"
+    profile.write_text((ROOT / "configs/accelerate/ddp-2gpu.yaml").read_text())
+    config_path = configs / "profiled.toml"
+    config_path.write_text(
+        source.read_text().replace(
+            "[grpo]\n", '[grpo]\naccelerate_config = "accelerate/ddp.yaml"\n'
+        )
+    )
+
+    config = load_config(config_path)
+
+    assert config.sft.accelerate_config is None
+    assert config.grpo.accelerate_config == profile
+    assert config.generation_batch_size == (
+        config.runtime.num_generations * config.harness.concurrency
+    )
+
+    config_path.write_text(
+        source.read_text().replace(
+            "[sft]\n", '[sft]\naccelerate_config = "accelerate/missing.yaml"\n'
+        )
+    )
+    with pytest.raises(ValueError, match="sft.accelerate_config does not exist"):
+        load_config(config_path)

@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from .io import write_json
+from .launcher import bundle_stage_profiles
 
 
 TERMINAL_JOB_STAGES = {"COMPLETED", "ERROR", "CANCELED", "CANCELLED"}
@@ -58,6 +59,7 @@ def create_job_bundle(
         destination = task_lists / f"{table_name}.txt"
         shutil.copy2(task_list, destination)
         table["task_list"] = f"task-lists/{destination.name}"
+    bundle_stage_profiles(data, source_dir=source.parent, output_dir=output_dir)
     data.setdefault("output", {})["root"] = "runs"
     portable_config = output_dir / "config.toml"
     portable_config.write_text(tomli_w.dumps(data))
